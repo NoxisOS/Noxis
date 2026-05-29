@@ -8,9 +8,7 @@
 #include <hal/gdt.h>
 #include <hal/idt.h>
 #include <hal/pic.h>
-#include <hal/ports.h>
 #include <kernel/isr.h>
-#include <drivers/keyboard.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
@@ -18,14 +16,10 @@
 #define VGA_BUFFER   ((volatile uint16_t*)0xB8000)
 #define VGA_COLOR(fg, bg)  ((uint8_t)(((bg) << 4) | ((fg) & 0x0F)))
 
-/* ── VGA colors ────────────────────────────────────────────── */
 #define VGA_BLACK         0x0
-#define VGA_GREEN         0x2
-#define VGA_RED           0x4
 #define VGA_LIGHT_GREY    0x7
-#define VGA_WHITE         0xF
+#define VGA_GREEN         0x2
 
-/* ── file-scope state ──────────────────────────────────────── */
 static uint32_t g_row;
 static uint32_t g_col;
 static uint8_t  g_color;
@@ -54,36 +48,19 @@ static void _vga_scroll(void) {
 }
 
 static void _vga_put_char(uint8_t c) {
-    if (c == '\n') {
-        g_col = 0;
-        g_row++;
-    } else if (c == '\r') {
-        g_col = 0;
-    } else if (c == '\t') {
-        g_col = (g_col + 4) & ~3;
-        if (g_col >= VGA_WIDTH) {
-            g_col = 0;
-            g_row++;
-        }
-    } else {
-        uint32_t idx = g_row * VGA_WIDTH + g_col;
-        VGA_BUFFER[idx] = (uint16_t)c | ((uint16_t)g_color << 8);
+    if (c == '\n') { g_col = 0; g_row++; }
+    else if (c == '\r') { g_col = 0; }
+    else if (c == '\t') { g_col = (g_col + 4) & ~3; if (g_col >= VGA_WIDTH) { g_col = 0; g_row++; } }
+    else {
+        VGA_BUFFER[g_row * VGA_WIDTH + g_col] = (uint16_t)c | ((uint16_t)g_color << 8);
         g_col++;
-        if (g_col >= VGA_WIDTH) {
-            g_col = 0;
-            g_row++;
-        }
+        if (g_col >= VGA_WIDTH) { g_col = 0; g_row++; }
     }
-    if (g_row >= VGA_HEIGHT) {
-        _vga_scroll();
-        g_row = VGA_HEIGHT - 1;
-    }
+    if (g_row >= VGA_HEIGHT) { _vga_scroll(); g_row = VGA_HEIGHT - 1; }
 }
 
 static void _vga_write(const uint8_t* str) {
-    for (uint32_t i = 0; str[i] != '\0'; i++) {
-        _vga_put_char(str[i]);
-    }
+    for (uint32_t i = 0; str[i] != '\0'; i++) { _vga_put_char(str[i]); }
 }
 
 /* ── public functions ──────────────────────────────────────── */
@@ -93,48 +70,14 @@ void kernel_main(void) {
     _vga_clear();
 
     _vga_write((const uint8_t*)"\n");
-    _vga_write((const uint8_t*)"   Noxis OS v0.1.0\n");
+    _vga_write((const uint8_t*)"   Noxis OS v0.2.0\n");
     _vga_write((const uint8_t*)"   ===============\n\n");
 
-    _vga_write((const uint8_t*)"   [HAL] Initializing GDT... ");
-    gdt_init();
-    _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [HAL] GDT... ");   gdt_init();    _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [HAL] IDT... ");   idt_init();    _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [HAL] PIC... ");   pic_remap();   _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [KRN] ISR... ");   isr_init();    _vga_write((const uint8_t*)"OK\n");
 
-    _vga_write((const uint8_t*)"   [HAL] Initializing IDT... ");
-    idt_init();
-    _vga_write((const uint8_t*)"OK\n");
-
-    _vga_write((const uint8_t*)"   [HAL] Remapping PIC... ");
-    pic_remap();
-    _vga_write((const uint8_t*)"OK\n");
-
-    _vga_write((const uint8_t*)"   [KRN] Initializing ISR dispatcher... ");
-    isr_init();
-    _vga_write((const uint8_t*)"OK\n");
-
-    _vga_write((const uint8_t*)"   [DRV] Initializing keyboard... ");
-    kbd_init();
-    _vga_write((const uint8_t*)"OK\n");
-
-    /* Enable interrupts — keyboard ISR can now fire */
-    cpu_sti();
-
-    _vga_write((const uint8_t*)"\n   Type something:\n\n   > ");
-
-    /* Echo loop */
-    for (;;) {
-        uint8_t c;
-        kbd_read(&c);
-
-        if (c == '\b' && g_col > 4) {
-            g_col--;
-            _vga_put_char(' ');
-            g_col--;
-        } else if (c == '\n') {
-            _vga_put_char('\n');
-            _vga_write((const uint8_t*)"   > ");
-        } else if (c >= ' ' && c <= '~') {
-            _vga_put_char(c);
-        }
-    }
+    _vga_write((const uint8_t*)"\n   System halted.\n");
+    for (;;);
 }

@@ -11,10 +11,6 @@
 /* ── public functions ──────────────────────────────────────── */
 
 os_status_t pic_remap(void) {
-    /* Save current masks */
-    uint8_t mask_master = port_byte_in(PIC_MASTER_DATA);
-    uint8_t mask_slave  = port_byte_in(PIC_SLAVE_DATA);
-
     /* ICW1: Start initialization in cascade mode */
     port_byte_out(PIC_MASTER_CMD, 0x11);
     io_delay();
@@ -33,15 +29,15 @@ os_status_t pic_remap(void) {
     port_byte_out(PIC_SLAVE_DATA, 0x02);   /* cascade identity */
     io_delay();
 
-    /* ICW4: 8086/88 mode, auto EOI off, buffered off */
+    /* ICW4: 8086/88 mode */
     port_byte_out(PIC_MASTER_DATA, 0x01);
     io_delay();
     port_byte_out(PIC_SLAVE_DATA, 0x01);
     io_delay();
 
-    /* Restore masks */
-    port_byte_out(PIC_MASTER_DATA, mask_master);
-    port_byte_out(PIC_SLAVE_DATA, mask_slave);
+    /* Mask all interrupts — drivers unmask individually */
+    port_byte_out(PIC_MASTER_DATA, 0xFF);
+    port_byte_out(PIC_SLAVE_DATA, 0xFF);
 
     return OS_OK;
 }

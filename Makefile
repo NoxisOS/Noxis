@@ -39,8 +39,7 @@ KERNEL_C_OBJS   = build/kernel/early.o \
                   build/kernel/panic.o \
                   build/hal/gdt.o \
                   build/hal/idt.o \
-                  build/hal/pic.o \
-                  build/drivers/keyboard.o
+                  build/hal/pic.o
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
                   build/asm/ports.o \
                   build/asm/gdt_load.o \

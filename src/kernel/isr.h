@@ -17,11 +17,20 @@
 
 /**
  * @brief Stack frame passed to every ISR handler.
- *        Matches the exact order of pushes in isr_common.
+ *        Matches the exact order of pushes in isr_common:
+ *          1. pushad → EAX,ECX,EDX,EBX,ESP,EBP,ESI,EDI
+ *          2. push ds, es, fs, gs
+ *          3. error_code, vector (pushed by stub)
+ *          4. eip, cs, eflags (pushed by CPU)
  *        Fields are ordered from ESP (lowest) upward.
  */
 typedef struct __attribute__((packed)) {
-    /* pushad: EDI last (at highest pushad address), EAX first */
+    /* pushed by isr_common: segment registers (last-in = at ESP) */
+    uint32_t gs;
+    uint32_t fs;
+    uint32_t es;
+    uint32_t ds;
+    /* pushad: EDI last, EAX first */
     uint32_t edi;
     uint32_t esi;
     uint32_t ebp;
@@ -30,11 +39,6 @@ typedef struct __attribute__((packed)) {
     uint32_t edx;
     uint32_t ecx;
     uint32_t eax;
-    /* segment registers */
-    uint32_t gs;
-    uint32_t fs;
-    uint32_t es;
-    uint32_t ds;
     /* pushed by stub */
     uint32_t error_code;
     uint32_t vector;
