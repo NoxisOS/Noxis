@@ -39,7 +39,8 @@ KERNEL_C_OBJS   = build/kernel/early.o \
                   build/kernel/panic.o \
                   build/hal/gdt.o \
                   build/hal/idt.o \
-                  build/hal/pic.o
+                  build/hal/pic.o \
+                  build/mm/pmm.o
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
                   build/asm/ports.o \
                   build/asm/gdt_load.o \
@@ -93,6 +94,11 @@ build/kernel/%.o: src/kernel/%.c
 
 build/hal/%.o: src/hal/%.c
 	@if not exist build\hal mkdir build\hal
+	@echo CC   $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/mm/%.o: src/mm/%.c
+	@if not exist build\mm mkdir build\mm
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 

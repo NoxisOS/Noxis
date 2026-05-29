@@ -9,6 +9,7 @@
 #include <hal/idt.h>
 #include <hal/pic.h>
 #include <kernel/isr.h>
+#include <mm/pmm.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
@@ -77,6 +78,7 @@ void kernel_main(void) {
     _vga_write((const uint8_t*)"   [HAL] IDT... ");   idt_init();    _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [HAL] PIC... ");   pic_remap();   _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [KRN] ISR... ");   isr_init();    _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [MM]  PMM... ");   pmm_init(128 * 1024 * 1024); _vga_write((const uint8_t*)"OK\n");
 
     _vga_write((const uint8_t*)"\n   System halted.\n");
     for (;;);
