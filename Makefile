@@ -42,7 +42,8 @@ KERNEL_C_OBJS   = build/kernel/early.o \
                   build/hal/pic.o \
                   build/mm/pmm.o \
                   build/mm/vmm.o \
-                  build/mm/heap.o
+                  build/mm/heap.o \
+                  build/drivers/pit.o
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
                   build/asm/ports.o \
                   build/asm/gdt_load.o \

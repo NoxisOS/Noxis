@@ -12,6 +12,8 @@
 #include <mm/pmm.h>
 #include <mm/vmm.h>
 #include <mm/heap.h>
+#include <drivers/pit.h>
+#include <hal/ports.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
@@ -81,10 +83,35 @@ void kernel_main(void) {
     _vga_write((const uint8_t*)"   [HAL] PIC... ");   pic_remap();   _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [KRN] ISR... ");   isr_init();    _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  PMM... ");   pmm_init(128 * 1024 * 1024); _vga_write((const uint8_t*)"OK\n");
-    _vga_write((const uint8_t*)"   [MM]  VMM... ");                     _vga_write((const uint8_t*)"OK (paging active)\n");
+    _vga_write((const uint8_t*)"   [MM]  VMM... ");                     _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  HEAP.. ");  heap_init();       _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [DRV] PIT... ");   pit_init(1000);    _vga_write((const uint8_t*)"OK\n");
 
-    _vga_write((const uint8_t*)"\n   Higher-half kernel at 0xC0100000.\n");
-    _vga_write((const uint8_t*)"   System halted.\n");
-    for (;;);
+    cpu_sti();
+
+    _vga_write((const uint8_t*)"\n   Higher-half kernel at 0xC0100000.\n\n");
+
+    /* Show uptime */
+    for (;;) {
+        _vga_write((const uint8_t*)"   Uptime: ");
+        uint32_t ms = pit_uptime_ms();
+        /* Simple integer print to VGA */
+        uint8_t buf[12];
+        uint32_t idx = 10;
+        buf[11] = '\0';
+        uint32_t secs = ms / 1000;
+        if (secs == 0) {
+            buf[10] = '0';
+            idx = 10;
+        } else {
+            while (secs > 0 && idx > 0) {
+                buf[idx] = (uint8_t)('0' + (secs % 10));
+                secs /= 10;
+                idx--;
+            }
+        }
+        _vga_write((const uint8_t*)&buf[idx + 1]);
+        _vga_write((const uint8_t*)"s\r");
+        pit_sleep_ms(100);
+    }
 }

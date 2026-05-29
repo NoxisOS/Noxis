@@ -39,9 +39,9 @@ typedef struct __attribute__((packed)) {
     uint32_t edx;
     uint32_t ecx;
     uint32_t eax;
-    /* pushed by stub */
-    uint32_t error_code;
+    /* pushed by stub — vector pushed last, so it sits at the lower address */
     uint32_t vector;
+    uint32_t error_code;
     /* pushed by CPU */
     uint32_t eip;
     uint32_t cs;
