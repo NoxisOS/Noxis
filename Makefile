@@ -39,7 +39,8 @@ KERNEL_C_OBJS   = build/kernel/early.o \
                   build/kernel/panic.o \
                   build/hal/gdt.o \
                   build/hal/idt.o \
-                  build/hal/pic.o
+                  build/hal/pic.o \
+                  build/drivers/keyboard.o
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
                   build/asm/ports.o \
                   build/asm/gdt_load.o \
@@ -96,6 +97,11 @@ build/hal/%.o: src/hal/%.c
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 
+build/drivers/%.o: src/drivers/%.c
+	@if not exist build\drivers mkdir build\drivers
+	@echo CC   $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
 # ── Kernel ASM objects ───────────────────────────────────────
 build/asm/%.o: src/asm/%.asm
 	@if not exist build\asm mkdir build\asm
@@ -107,12 +113,14 @@ QEMU = "D:\Program Files\qemu\qemu-system-i386"
 
 run: $(DISK_IMG)
 	@echo RUN  QEMU
+	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	$(QEMU) -fda $(DISK_IMG) -no-reboot -no-shutdown
 
 # ── Run with GDB ─────────────────────────────────────────────
 run-debug: $(DISK_IMG)
+	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo RUN  QEMU + GDB on :1234
-	start "QEMU" /B $(QEMU) -fda $(DISK_IMG) -no-reboot -no-shutdown -s -S
+	start "QEMU-DEBUG" /B $(QEMU) -fda $(DISK_IMG) -no-reboot -no-shutdown -s -S
 	@echo Connect: i686-elf-gdb -x .gdbinit
 
 # ── Clean ────────────────────────────────────────────────────

@@ -19,4 +19,8 @@ uint32_t port_dword_in(uint16_t port);
 void     port_dword_out(uint16_t port, uint32_t data);
 void     io_delay(void);
 
+void     cpu_sti(void);
+void     cpu_cli(void);
+void     cpu_hlt(void);
+
 #endif /* HAL_PORTS_H */

@@ -8,7 +8,9 @@
 #include <hal/gdt.h>
 #include <hal/idt.h>
 #include <hal/pic.h>
+#include <hal/ports.h>
 #include <kernel/isr.h>
+#include <drivers/keyboard.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
@@ -110,7 +112,29 @@ void kernel_main(void) {
     isr_init();
     _vga_write((const uint8_t*)"OK\n");
 
-    _vga_write((const uint8_t*)"\n   System halted.\n");
+    _vga_write((const uint8_t*)"   [DRV] Initializing keyboard... ");
+    kbd_init();
+    _vga_write((const uint8_t*)"OK\n");
 
-    for (;;);
+    /* Enable interrupts — keyboard ISR can now fire */
+    cpu_sti();
+
+    _vga_write((const uint8_t*)"\n   Type something:\n\n   > ");
+
+    /* Echo loop */
+    for (;;) {
+        uint8_t c;
+        kbd_read(&c);
+
+        if (c == '\b' && g_col > 4) {
+            g_col--;
+            _vga_put_char(' ');
+            g_col--;
+        } else if (c == '\n') {
+            _vga_put_char('\n');
+            _vga_write((const uint8_t*)"   > ");
+        } else if (c >= ' ' && c <= '~') {
+            _vga_put_char(c);
+        }
+    }
 }

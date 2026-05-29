@@ -19,6 +19,9 @@ global port_word_out
 global port_dword_in
 global port_dword_out
 global io_delay
+global cpu_sti
+global cpu_cli
+global cpu_hlt
 
 ; ── Port byte I/O ────────────────────────────────────────────
 
@@ -68,4 +71,17 @@ port_dword_out:
 ; ── I/O delay (writes to unused port 0x80) ───────────────────
 io_delay:
     out  0x80, al
+    ret
+
+; ── CPU control ──────────────────────────────────────────────
+cpu_sti:
+    sti
+    ret
+
+cpu_cli:
+    cli
+    ret
+
+cpu_hlt:
+    hlt
     ret
