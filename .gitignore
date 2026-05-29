@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+*.o
+*.obj
+*.elf
+*.iso
+*.img
+
+# Debug
+*.log
+qemu.log
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Cross-compiler (if built locally)
+opt/cross/
+
+# Disk images
+*.dsk
+*.qcow2
