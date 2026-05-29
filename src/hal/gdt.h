@@ -40,14 +40,21 @@
 
 /**
  * @brief A single GDT entry (8 bytes, hardware format)
+ *
+ * Hardware layout:
+ *   [0-1]  limit[15:0]
+ *   [2-3]  base[15:0]
+ *   [4]    base[23:16]
+ *   [5]    access byte
+ *   [6]    flags[3:0] << 4 | limit[19:16]
+ *   [7]    base[31:24]
  */
 typedef struct __attribute__((packed)) {
     uint16_t limit_low;
     uint16_t base_low;
     uint8_t  base_mid;
     uint8_t  access;
-    uint8_t  limit_high : 4;
-    uint8_t  flags      : 4;
+    uint8_t  granularity;   /* flags in high nibble, limit_high in low nibble */
     uint8_t  base_high;
 } gdt_entry_t;
 

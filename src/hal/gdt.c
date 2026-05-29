@@ -22,13 +22,12 @@ extern void gdt_flush(gdt_ptr_t* ptr);
 static void _gdt_encode(uint32_t index,
                         uint32_t base, uint32_t limit,
                         uint8_t access, uint8_t flags) {
-    g_gdt[index].limit_low  = (uint16_t)(limit & 0xFFFF);
-    g_gdt[index].base_low   = (uint16_t)(base & 0xFFFF);
-    g_gdt[index].base_mid   = (uint8_t)((base >> 16) & 0xFF);
-    g_gdt[index].access     = access;
-    g_gdt[index].limit_high = (uint8_t)((limit >> 16) & 0x0F);
-    g_gdt[index].flags      = flags & 0x0F;
-    g_gdt[index].base_high  = (uint8_t)((base >> 24) & 0xFF);
+    g_gdt[index].limit_low   = (uint16_t)(limit & 0xFFFF);
+    g_gdt[index].base_low    = (uint16_t)(base & 0xFFFF);
+    g_gdt[index].base_mid    = (uint8_t)((base >> 16) & 0xFF);
+    g_gdt[index].access      = access;
+    g_gdt[index].granularity = ((flags & 0x0F) << 4) | ((limit >> 16) & 0x0F);
+    g_gdt[index].base_high   = (uint8_t)((base >> 24) & 0xFF);
 }
 
 /* ── public functions ──────────────────────────────────────── */
