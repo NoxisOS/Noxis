@@ -34,8 +34,17 @@ ASFLAGS   = -f elf32
 BOOTFLAGS = -f bin
 
 # ── Kernel sources ───────────────────────────────────────────
-KERNEL_C_OBJS   = build/kernel/early.o
-KERNEL_ASM_OBJS = build/asm/kernel_entry.o
+KERNEL_C_OBJS   = build/kernel/early.o \
+                  build/kernel/isr.o \
+                  build/kernel/panic.o \
+                  build/hal/gdt.o \
+                  build/hal/idt.o \
+                  build/hal/pic.o
+KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
+                  build/asm/ports.o \
+                  build/asm/gdt_load.o \
+                  build/asm/idt_load.o \
+                  build/asm/isr_stubs.o
 KERNEL_OBJS     = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
 # ── Output files ─────────────────────────────────────────────
@@ -79,6 +88,11 @@ $(LOADER_BIN): src/boot/loader.asm src/boot/defines.asm
 # ── Kernel C objects ─────────────────────────────────────────
 build/kernel/%.o: src/kernel/%.c
 	@if not exist build\kernel mkdir build\kernel
+	@echo CC   $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/hal/%.o: src/hal/%.c
+	@if not exist build\hal mkdir build\hal
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 

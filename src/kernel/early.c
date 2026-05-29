@@ -1,10 +1,14 @@
 /**
  * @file    kernel/early.c
- * @brief   Early kernel initialization — VGA output, main entry
+ * @brief   Early kernel initialization — VGA output, HAL setup
  * @author  Noxis Team
  * @date    2026-05-29
  */
 #include <common/types.h>
+#include <hal/gdt.h>
+#include <hal/idt.h>
+#include <hal/pic.h>
+#include <kernel/isr.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
@@ -37,11 +41,9 @@ static void _vga_clear(void) {
 
 static void _vga_scroll(void) {
     volatile uint16_t* buf = VGA_BUFFER;
-    /* Move lines 1-24 up by one row */
     for (uint32_t i = 0; i < VGA_WIDTH * (VGA_HEIGHT - 1); i++) {
         buf[i] = buf[i + VGA_WIDTH];
     }
-    /* Clear last line */
     uint16_t blank = (uint16_t)' ' | ((uint16_t)g_color << 8);
     uint32_t last = VGA_WIDTH * (VGA_HEIGHT - 1);
     for (uint32_t i = 0; i < VGA_WIDTH; i++) {
@@ -84,23 +86,31 @@ static void _vga_write(const uint8_t* str) {
 
 /* ── public functions ──────────────────────────────────────── */
 
-/**
- * @brief Kernel main entry point — called from ASM trampoline
- */
 void kernel_main(void) {
-    /* Initialize VGA with green-on-black */
     g_color = VGA_COLOR(VGA_LIGHT_GREY, VGA_BLACK);
     _vga_clear();
 
     _vga_write((const uint8_t*)"\n");
     _vga_write((const uint8_t*)"   Noxis OS v0.1.0\n");
-    _vga_write((const uint8_t*)"   ===============\n");
-    _vga_write((const uint8_t*)"\n");
-    _vga_write((const uint8_t*)"   Booted successfully in 32-bit protected mode.\n");
-    _vga_write((const uint8_t*)"   Kernel loaded at 0x100000.\n");
-    _vga_write((const uint8_t*)"\n");
-    _vga_write((const uint8_t*)"   System halted.\n");
+    _vga_write((const uint8_t*)"   ===============\n\n");
 
-    /* Halt forever */
+    _vga_write((const uint8_t*)"   [HAL] Initializing GDT... ");
+    gdt_init();
+    _vga_write((const uint8_t*)"OK\n");
+
+    _vga_write((const uint8_t*)"   [HAL] Initializing IDT... ");
+    idt_init();
+    _vga_write((const uint8_t*)"OK\n");
+
+    _vga_write((const uint8_t*)"   [HAL] Remapping PIC... ");
+    pic_remap();
+    _vga_write((const uint8_t*)"OK\n");
+
+    _vga_write((const uint8_t*)"   [KRN] Initializing ISR dispatcher... ");
+    isr_init();
+    _vga_write((const uint8_t*)"OK\n");
+
+    _vga_write((const uint8_t*)"\n   System halted.\n");
+
     for (;;);
 }
