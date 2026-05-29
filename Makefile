@@ -24,7 +24,7 @@ CFLAGS    = -std=c11 -ffreestanding -nostdlib -nostdinc \
             -mno-mmx -mno-sse -mgeneral-regs-only \
             -I src
 
-CFLAGS   += -O2
+CFLAGS   += -O0 -g
 
 # ── Linker flags ─────────────────────────────────────────────
 LDFLAGS   = -T linker.ld -nostdlib -m elf_i386

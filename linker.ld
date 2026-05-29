@@ -13,9 +13,9 @@ SECTIONS
 {
     . = 0x100000;
 
-    /* ── Code section ──────────────────────────────────── */
-    .text : {
-        KEEP(*(.text._start))
+    /* ── Entry point (must be first in binary) ──────────── */
+    .text BLOCK(4K) : {
+        KEEP(*(.text.entry))
         *(.text*)
     }
 

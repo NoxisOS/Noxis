@@ -17,7 +17,7 @@
 ;          EAX, ECX, EDX, EFLAGS may be destroyed
 ; ─────────────────────────────────────────────────────────────
 
-section .text
+section .text.entry
 [BITS 32]
 
 ; ── Exports ──────────────────────────────────────────────────
