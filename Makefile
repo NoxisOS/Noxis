@@ -40,12 +40,15 @@ KERNEL_C_OBJS   = build/kernel/early.o \
                   build/hal/gdt.o \
                   build/hal/idt.o \
                   build/hal/pic.o \
-                  build/mm/pmm.o
+                  build/mm/pmm.o \
+                  build/mm/vmm.o \
+                  build/mm/heap.o
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
                   build/asm/ports.o \
                   build/asm/gdt_load.o \
                   build/asm/idt_load.o \
-                  build/asm/isr_stubs.o
+                  build/asm/isr_stubs.o \
+                  build/asm/paging.o
 KERNEL_OBJS     = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
 # ── Output files ─────────────────────────────────────────────

@@ -1,80 +1,108 @@
 ; ─────────────────────────────────────────────────────────────
-; asm/kernel_entry.asm — Kernel entry trampoline
+; asm/kernel_entry.asm — Kernel entry: setup paging, jump to higher-half
 ;
-; Purpose: First code executed after the bootloader jumps to the
-;          kernel at 0x100000. Sets up segment registers, zeroes
-;          BSS (using a temporary stack to avoid self-clobber),
-;          then calls kernel_main().
+; Purpose: First code at physical 0x100000. Sets up 2-level
+;          paging (identity map 0-4MB + kernel at 0xC0000000),
+;          enables paging, far-jumps to higher-half, then
+;          calls kernel_main() at virtual address.
 ;
 ; Entry:  Bootloader jumps here at physical 0x100000.
-;         CPU is in 32-bit protected mode, paging disabled.
-;         Segment registers are already set to KERNEL_DS (0x10).
+;         CPU: 32-bit protected mode, paging disabled.
+;         Segments: CS=0x08, DS/ES/FS/GS/SS=0x10 (flat 4GB).
 ;
-; Exit:   Calls kernel_main(), which never returns.
+; Page structures (hardcoded physical addresses):
+;   0x400000 — Page Directory (4 KB)
+;   0x401000 — Page Table 0: identity-map 0-4 MB
+;   0x402000 — Kernel PT: map 0xC0000000 → physical 0x00000000
 ;
-; Register convention:
-;   cdecl: EBX, ESI, EDI, EBP, ESP preserved
-;          EAX, ECX, EDX, EFLAGS may be destroyed
+; Exit:   Calls kernel_main() at higher-half, never returns.
 ; ─────────────────────────────────────────────────────────────
+
+%define PD_PHYS          0x400000
+%define PT0_PHYS         0x401000
+%define PTK_PHYS         0x402000
+%define TEMP_STACK       0x20000
+%define PHYS_TO_VIRT(v)  ((v) + 0xC0000000)
 
 section .text.entry
 [BITS 32]
 
-; ── Exports ──────────────────────────────────────────────────
 global _start
+extern vmm_init
+extern load_cr3
+extern enable_paging
 extern kernel_main
-
-; ── Linker symbols ───────────────────────────────────────────
 extern _bss_start
 extern _bss_end
 
-; ── Entry point ──────────────────────────────────────────────
 _start:
-    ; Segment registers are already set by the bootloader.
-    ; Re-set them to be absolutely sure.
-    mov  ax, 0x10                   ; kernel data segment selector
+    ; Segment registers (already set, but redo for safety)
+    mov  ax, 0x10
     mov  ds, ax
     mov  es, ax
     mov  fs, ax
     mov  gs, ax
     mov  ss, ax
 
-    ; ── Set up a temporary stack ─────────────────────────────
-    ; We cannot use the BSS-based kernel stack yet because it
-    ; hasn't been zeroed. Using a location in low memory that
-    ; is safe (no BIOS active in protected mode).
-    mov  esp, 0x20000
+    ; ── Temporary stack in low memory ────────────────────────
+    mov  esp, TEMP_STACK
 
-    ; ── Zero the BSS section ─────────────────────────────────
-    ; This is done inline (no call/ret) because the BSS contains
-    ; the kernel stack itself. Using call/ret would place the
-    ; return address on the BSS stack, then rep stosd would
-    ; overwrite it, causing a crash on ret.
+    ; ── Zero BSS (using physical addresses) ──────────────────
+    ; _bss_start and _bss_end are virtual addresses (0xC01xxxxx).
+    ; Before paging, physical = virtual - 0xC0000000.
     mov  edi, _bss_start
+    sub  edi, 0xC0000000
     mov  ecx, _bss_end
-    sub  ecx, edi                   ; BSS size in bytes
-    jz   .bss_done                  ; skip if BSS is empty
-    shr  ecx, 2                     ; dword count
-    xor  eax, eax                   ; zero fill value
+    sub  ecx, 0xC0000000
+    sub  ecx, edi               ; BSS size in bytes
+    jz   .bss_done
+    shr  ecx, 2                 ; dword count
+    xor  eax, eax
     cld
-    rep  stosd                      ; fill BSS with zeros
+    rep  stosd
 .bss_done:
 
-    ; ── Switch to kernel stack ───────────────────────────────
+    ; ── Initialize page tables (C function, identity-mapped) ─
+    push dword PTK_PHYS
+    push dword PT0_PHYS
+    push dword PD_PHYS
+    call vmm_init
+    add  esp, 12
+
+    ; ── Load CR3, enable paging ─────────────────────────────
+    push dword PD_PHYS
+    call load_cr3
+    add  esp, 4
+
+    call enable_paging
+
+    ; ── Far jump to higher-half ──────────────────────────────
+    ; After paging: 0xC0100000 virtual → 0x100000 physical
+    jmp  0x08:higher_half
+
+higher_half:
+    ; Reload segment registers with kernel data selector
+    mov  ax, 0x10
+    mov  ds, ax
+    mov  es, ax
+    mov  fs, ax
+    mov  gs, ax
+    mov  ss, ax
+
+    ; ── Kernel stack at virtual address ─────────────────────
     mov  esp, _kernel_stack_top
 
-    ; ── Call C kernel main ───────────────────────────────────
+    ; ── Call C kernel main (at higher-half) ────────────────
     call kernel_main
 
-    ; If kernel_main ever returns, halt forever
-.halt:
+.halt_loop:
     cli
     hlt
-    jmp  .halt
+    jmp  .halt_loop
 
-; ── Kernel stack (16 KB, zeroed by rep stosd above) ──────────
+; ── Kernel stack (16 KB, in BSS) ────────────────────────────
 section .bss
 align 16
 _kernel_stack_bottom:
-    resb 16384                      ; 16 KB kernel stack
+    resb 16384
 _kernel_stack_top:

@@ -11,7 +11,7 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x100000;
+    . = 0xC0100000;
 
     /* ── Entry point (must be first in binary) ──────────── */
     .text BLOCK(4K) : {

@@ -10,6 +10,8 @@
 #include <hal/pic.h>
 #include <kernel/isr.h>
 #include <mm/pmm.h>
+#include <mm/vmm.h>
+#include <mm/heap.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
@@ -71,7 +73,7 @@ void kernel_main(void) {
     _vga_clear();
 
     _vga_write((const uint8_t*)"\n");
-    _vga_write((const uint8_t*)"   Noxis OS v0.2.0\n");
+    _vga_write((const uint8_t*)"   Noxis OS v0.3.0\n");
     _vga_write((const uint8_t*)"   ===============\n\n");
 
     _vga_write((const uint8_t*)"   [HAL] GDT... ");   gdt_init();    _vga_write((const uint8_t*)"OK\n");
@@ -79,7 +81,10 @@ void kernel_main(void) {
     _vga_write((const uint8_t*)"   [HAL] PIC... ");   pic_remap();   _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [KRN] ISR... ");   isr_init();    _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  PMM... ");   pmm_init(128 * 1024 * 1024); _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [MM]  VMM... ");                     _vga_write((const uint8_t*)"OK (paging active)\n");
+    _vga_write((const uint8_t*)"   [MM]  HEAP.. ");  heap_init();       _vga_write((const uint8_t*)"OK\n");
 
-    _vga_write((const uint8_t*)"\n   System halted.\n");
+    _vga_write((const uint8_t*)"\n   Higher-half kernel at 0xC0100000.\n");
+    _vga_write((const uint8_t*)"   System halted.\n");
     for (;;);
 }
