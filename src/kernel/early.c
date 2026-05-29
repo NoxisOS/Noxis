@@ -91,7 +91,8 @@ void kernel_main(void) {
 
     _vga_write((const uint8_t*)"\n   Entering user mode...\n");
 
-    /* Jump to ring 3 (sets TSS ESP0 for return path) */
-    gdt_set_kernel_stack(0xD0000000 + 0x10000); /* temp kernel stack for user→kernel */
+    /* Jump to ring 3 — TSS ESP0 must point at the TOP of a valid kernel
+       stack, since CPU pushes (SS,ESP,EFLAGS,CS,EIP) on every int 0x80. */
+    gdt_set_kernel_stack(scheduler_current()->kstack_top);
     user_enter(0x400000, 0x500000 + 0x1000);    /* entry, stack top */
 }
