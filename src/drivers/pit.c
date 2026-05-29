@@ -8,6 +8,7 @@
 #include <kernel/isr.h>
 #include <hal/ports.h>
 #include <hal/pic.h>
+#include <proc/scheduler.h>
 #include <common/types.h>
 
 /* ── PIT port constants ─────────────────────────────────────── */
@@ -19,8 +20,8 @@ static volatile uint32_t g_ticks;
 
 /* ── ISR handler ───────────────────────────────────────────── */
 static void _pit_isr(isr_frame_t* frame) {
-    (void)frame;
     g_ticks++;
+    scheduler_tick(frame);
 }
 
 /* ── public functions ──────────────────────────────────────── */

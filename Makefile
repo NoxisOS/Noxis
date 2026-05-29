@@ -43,7 +43,9 @@ KERNEL_C_OBJS   = build/kernel/early.o \
                   build/mm/pmm.o \
                   build/mm/vmm.o \
                   build/mm/heap.o \
-                  build/drivers/pit.o
+                  build/drivers/pit.o \
+                  build/proc/process.o \
+                  build/proc/scheduler.o
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o \
                   build/asm/ports.o \
                   build/asm/gdt_load.o \
@@ -108,6 +110,11 @@ build/mm/%.o: src/mm/%.c
 
 build/drivers/%.o: src/drivers/%.c
 	@if not exist build\drivers mkdir build\drivers
+	@echo CC   $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/proc/%.o: src/proc/%.c
+	@if not exist build\proc mkdir build\proc
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 

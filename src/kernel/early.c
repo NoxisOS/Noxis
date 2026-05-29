@@ -8,110 +8,73 @@
 #include <hal/gdt.h>
 #include <hal/idt.h>
 #include <hal/pic.h>
+#include <hal/ports.h>
 #include <kernel/isr.h>
 #include <mm/pmm.h>
 #include <mm/vmm.h>
 #include <mm/heap.h>
 #include <drivers/pit.h>
-#include <hal/ports.h>
+#include <proc/process.h>
+#include <proc/scheduler.h>
 
-/* ── VGA constants ─────────────────────────────────────────── */
 #define VGA_WIDTH    80
 #define VGA_HEIGHT   25
 #define VGA_BUFFER   ((volatile uint16_t*)0xB8000)
 #define VGA_COLOR(fg, bg)  ((uint8_t)(((bg) << 4) | ((fg) & 0x0F)))
-
 #define VGA_BLACK         0x0
 #define VGA_LIGHT_GREY    0x7
-#define VGA_GREEN         0x2
 
-static uint32_t g_row;
-static uint32_t g_col;
+static uint32_t g_row, g_col;
 static uint8_t  g_color;
 
-/* ── private functions ─────────────────────────────────────── */
 static void _vga_clear(void) {
-    volatile uint16_t* buf = VGA_BUFFER;
     uint16_t blank = (uint16_t)' ' | ((uint16_t)g_color << 8);
-    for (uint32_t i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
-        buf[i] = blank;
-    }
-    g_row = 0;
-    g_col = 0;
+    for (uint32_t i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) VGA_BUFFER[i] = blank;
+    g_row = g_col = 0;
 }
-
 static void _vga_scroll(void) {
-    volatile uint16_t* buf = VGA_BUFFER;
-    for (uint32_t i = 0; i < VGA_WIDTH * (VGA_HEIGHT - 1); i++) {
-        buf[i] = buf[i + VGA_WIDTH];
-    }
+    for (uint32_t i = 0; i < VGA_WIDTH * (VGA_HEIGHT - 1); i++)
+        VGA_BUFFER[i] = VGA_BUFFER[i + VGA_WIDTH];
     uint16_t blank = (uint16_t)' ' | ((uint16_t)g_color << 8);
-    uint32_t last = VGA_WIDTH * (VGA_HEIGHT - 1);
-    for (uint32_t i = 0; i < VGA_WIDTH; i++) {
-        buf[last + i] = blank;
-    }
+    for (uint32_t i = 0; i < VGA_WIDTH; i++)
+        VGA_BUFFER[VGA_WIDTH * (VGA_HEIGHT - 1) + i] = blank;
 }
-
 static void _vga_put_char(uint8_t c) {
     if (c == '\n') { g_col = 0; g_row++; }
     else if (c == '\r') { g_col = 0; }
     else if (c == '\t') { g_col = (g_col + 4) & ~3; if (g_col >= VGA_WIDTH) { g_col = 0; g_row++; } }
     else {
         VGA_BUFFER[g_row * VGA_WIDTH + g_col] = (uint16_t)c | ((uint16_t)g_color << 8);
-        g_col++;
-        if (g_col >= VGA_WIDTH) { g_col = 0; g_row++; }
+        g_col++; if (g_col >= VGA_WIDTH) { g_col = 0; g_row++; }
     }
     if (g_row >= VGA_HEIGHT) { _vga_scroll(); g_row = VGA_HEIGHT - 1; }
 }
-
 static void _vga_write(const uint8_t* str) {
-    for (uint32_t i = 0; str[i] != '\0'; i++) { _vga_put_char(str[i]); }
+    for (uint32_t i = 0; str[i]; i++) _vga_put_char(str[i]);
 }
 
-/* ── public functions ──────────────────────────────────────── */
+static void _demo_task(void) {
+    for (;;);
+}
 
 void kernel_main(void) {
     g_color = VGA_COLOR(VGA_LIGHT_GREY, VGA_BLACK);
     _vga_clear();
 
-    _vga_write((const uint8_t*)"\n");
-    _vga_write((const uint8_t*)"   Noxis OS v0.3.0\n");
-    _vga_write((const uint8_t*)"   ===============\n\n");
-
+    _vga_write((const uint8_t*)"\n   Noxis OS v0.4.0\n   ===============\n\n");
     _vga_write((const uint8_t*)"   [HAL] GDT... ");   gdt_init();    _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [HAL] IDT... ");   idt_init();    _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [HAL] PIC... ");   pic_remap();   _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [KRN] ISR... ");   isr_init();    _vga_write((const uint8_t*)"OK\n");
-    _vga_write((const uint8_t*)"   [MM]  PMM... ");   pmm_init(128 * 1024 * 1024); _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [MM]  PMM... ");   pmm_init(128*1024*1024); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  VMM... ");                     _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  HEAP.. ");  heap_init();       _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [DRV] PIT... ");   pit_init(1000);    _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [PROC] SCHED.. "); scheduler_init(); _vga_write((const uint8_t*)"OK\n");
+
+    process_t* demo = proc_spawn((const uint8_t*)"demo", _demo_task, 0);
+    if (demo) scheduler_add(demo);
 
     cpu_sti();
-
-    _vga_write((const uint8_t*)"\n   Higher-half kernel at 0xC0100000.\n\n");
-
-    /* Show uptime */
-    for (;;) {
-        _vga_write((const uint8_t*)"   Uptime: ");
-        uint32_t ms = pit_uptime_ms();
-        /* Simple integer print to VGA */
-        uint8_t buf[12];
-        uint32_t idx = 10;
-        buf[11] = '\0';
-        uint32_t secs = ms / 1000;
-        if (secs == 0) {
-            buf[10] = '0';
-            idx = 10;
-        } else {
-            while (secs > 0 && idx > 0) {
-                buf[idx] = (uint8_t)('0' + (secs % 10));
-                secs /= 10;
-                idx--;
-            }
-        }
-        _vga_write((const uint8_t*)&buf[idx + 1]);
-        _vga_write((const uint8_t*)"s\r");
-        pit_sleep_ms(100);
-    }
+    _vga_write((const uint8_t*)"\n   Higher-half kernel at 0xC0100000.\n   Scheduler running.\n\n");
 }
