@@ -30,11 +30,11 @@
 #define GDT_RW         0x02
 #define GDT_ACCESSED   0x01
 
-/* ── granularity flags ─────────────────────────────────────── */
-#define GDT_GRAN_1B    0x00
-#define GDT_GRAN_4K    0x80
-#define GDT_SIZE_16    0x00
-#define GDT_SIZE_32    0x40
+/* ── granularity flags (nibble values for the flags field) ── */
+#define GDT_GRAN_1B    0x0   /* byte granularity */
+#define GDT_GRAN_4K    0x8   /* 4 KB granularity */
+#define GDT_SIZE_16    0x0   /* 16-bit protected mode */
+#define GDT_SIZE_32    0x4   /* 32-bit protected mode */
 
 /* ── types ─────────────────────────────────────────────────── */
 
