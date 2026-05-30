@@ -18,7 +18,6 @@
 #include <drivers/ata.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
-#include <proc/user.h>
 #include <syscall/syscall.h>
 
 #define VGA_WIDTH    80

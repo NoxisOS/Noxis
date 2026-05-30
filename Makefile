@@ -31,8 +31,8 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/gdt_load.o build/asm/idt_load.o \
                   build/asm/isr_stubs.o build/asm/paging.o \
-                  build/asm/tss_load.o build/asm/user_enter.o \
-                  build/asm/syscall_stub.o build/asm/user_demo.o \
+                  build/asm/tss_load.o \
+                  build/asm/syscall_stub.o \
                   build/asm/msr.o build/asm/sysenter_stub.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
