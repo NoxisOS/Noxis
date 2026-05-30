@@ -94,22 +94,27 @@ _start:
     jz   .child_path
 
     ; ── parent ───────────────────────────────────────────────
-    mov  edi, eax            ; save child_pid in EDI (preserved across sysenter)
+    ; NOTE: SYSWRITE clobbers EDI (sysenter_entry restores it to the
+    ; value EDI had at sysenter time = the length arg).  Save child_pid
+    ; on the user stack so it survives across SYSWRITE calls.
+    push eax             ; [esp] = child_pid
 
     SYSWRITE msg_parent_fork, msg_parent_fork_len, .w1
 
-    ; sys_waitpid(child_pid)
+    ; sys_waitpid(child_pid) — pop the saved pid into EBX
+    pop  ebx             ; ebx = child_pid
     mov  eax, SYS_WAITPID
-    mov  ebx, edi
     lea  edx, [.after_wait]
     mov  ecx, esp
     sysenter
 .after_wait:
-    ; EAX = child exit code.  Save in EDI (untouched by SYSWRITE / sysenter
-    ; since the macro only sets eax/ebx/esi/edx/ecx and the stub saves/restores edi).
-    mov  edi, eax
+    ; EAX = child exit code.  Same problem: save it on the stack before
+    ; SYSWRITE clobbers EDI/EBX/ESI.
+    push eax             ; [esp] = exit_code
+
     SYSWRITE msg_parent_wait, msg_parent_wait_len, .w2
-    mov  ebx, edi
+
+    pop  ebx             ; ebx = exit_code
     call print_u32
     SYSWRITE msg_nl, 1, .w3
 

@@ -27,6 +27,7 @@
 #include <hal/gdt.h>
 #include <drivers/pit.h>
 #include <mm/vmm.h>
+#include <fs/pipe.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
@@ -340,6 +341,20 @@ uint32_t scheduler_fork_spawn(isr_frame_t* frame) {
     child->ppid          = parent->pid;
     child->fork_eip      = frame->eip;      /* sysenter return addr (user EDX) */
     child->fork_esp      = frame->user_esp; /* user ESP (user ECX at sysenter)  */
+
+    /* ── Inherit parent's open file descriptors ───────────────
+       The fd_table lives in the kernel process_t (not in user memory),
+       so vmm_fork_pd does NOT copy it.  We do it explicitly here.
+       For pipe fds, increment the pipe's refcount so that the child
+       closing its end doesn't prematurely signal EOF to the other end. */
+    for (uint32_t i = 0; i < PROC_MAX_FD; i++) {
+        child->fd_table[i] = parent->fd_table[i];
+        if (parent->fd_table[i].used &&
+            parent->fd_table[i].type == FD_PIPE &&
+            parent->fd_table[i].pipe) {
+            parent->fd_table[i].pipe->refs++;
+        }
+    }
 
     scheduler_add(child);
     return child->pid;

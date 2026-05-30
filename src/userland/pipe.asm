@@ -62,7 +62,11 @@ _start:
     jz   .child
 
     ; ── PARENT ────────────────────────────────────────────
-    ; Close write-end (fd[1])
+    ; EAX = child_pid from fork.  Save it on the stack — it will be
+    ; clobbered by every subsequent syscall.
+    push eax             ; [esp] = child_pid
+
+    ; Close write-end (fd[1]) so pipe_read can detect EOF when child exits.
     mov  eax, SYS_CLOSE
     mov  ebx, [fds + 4]
     lea  edx, [.r_close_w]
@@ -70,30 +74,31 @@ _start:
     sysenter
 .r_close_w:
 
-    ; Save child pid
-    mov  edi, eax
-
-    ; Read from pipe (fd[0])
+    ; Read from pipe (fd[0]) — blocks until child writes then closes its end.
     mov  eax, SYS_READ
-    mov  ebx, [fds]          ; read-end fd
+    mov  ebx, [fds]
     lea  esi, [buf]
     mov  edi, 256
     lea  edx, [.r_read]
     mov  ecx, esp
     sysenter
 .r_read:
+    push eax             ; [esp] = bytes_read, [esp+4] = child_pid
 
-    ; Print what we read
-    mov  ebx, 1              ; stdout
+    ; Print what we read (bytes_read bytes from buf).
+    pop  edi             ; edi = bytes_read
+    push edi             ; put it back so stack stays balanced for child_pid pop
+    mov  ebx, 1
     lea  esi, [buf]
-    mov  edi, eax            ; bytes read
+    ; edi already = bytes_read (arg3 for sys_write)
     mov  eax, SYS_WRITE
     lea  edx, [.r_show]
     mov  ecx, esp
     sysenter
 .r_show:
+    add  esp, 4          ; discard bytes_read
 
-    ; Close read-end
+    ; Close read-end.
     mov  eax, SYS_CLOSE
     mov  ebx, [fds]
     lea  edx, [.r_close_r]
@@ -101,10 +106,13 @@ _start:
     sysenter
 .r_close_r:
 
-    ; waitpid(child) (we saved child_pid before fork, need to get it)
-    ; Actually, we need the child pid from fork. Let me re-grab it.
-    ; The fork return value was clobbered by the close syscall.
-    ; Let's just skip waitpid for the test - the child exits quickly.
+    ; waitpid(child_pid) so the child is properly reaped.
+    pop  ebx             ; ebx = child_pid
+    mov  eax, SYS_WAITPID
+    lea  edx, [.r_wait]
+    mov  ecx, esp
+    sysenter
+.r_wait:
 
     SYSEXIT 0, .parent_done
 
