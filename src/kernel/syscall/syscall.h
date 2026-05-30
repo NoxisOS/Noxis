@@ -30,6 +30,7 @@
 #define SYS_GETDENTS  16 /* EBX=fd, ESI=buf, EDI=len, EDX=off → EAX=read          */
 #define SYS_STAT      17 /* EBX=path, ESI=statbuf → EAX=0/-1                      */
 #define SYS_LSEEK     18 /* EBX=fd, ESI=offset, EDI=whence → EAX=pos              */
+#define SYS_EXECVE    19 /* EBX=path → replaces image, does not return (or -1)    */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

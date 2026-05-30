@@ -22,6 +22,7 @@
 #include <drivers/vga.h>
 #include <drivers/tty/tty.h>
 #include <proc/scheduler.h>
+#include <proc/exec.h>
 #include <kernel/syscall/syscall.h>
 #include <fs/vfs/vfs.h>
 #include <fs/noxfs/noxfs.h>
@@ -165,5 +166,18 @@ void kernel_main(void) {
 
     cpu_sti();
     vga_put_char('\n');
+
+    /* Hand off to the ring-3 init process if present; otherwise fall back
+       to the in-kernel shell.  init runs as a normal user program (its own
+       page directory) and uses fork+execve+waitpid to launch others. */
+    vfs_file_t* init_elf = vfs_lookup((const uint8_t*)"init.elf");
+    if (init_elf) {
+        int code;
+        const uint8_t* argv[] = { (const uint8_t*)"init.elf", (const uint8_t*)0 };
+        exec_run(init_elf->data, init_elf->size, 1, argv, &code);
+    }
+
+    /* init exited or was missing — fall back to the kernel shell so the
+       machine stays usable rather than halting. */
     shell_run();
 }

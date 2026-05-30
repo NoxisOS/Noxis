@@ -78,7 +78,8 @@ USER_LD   = src/userland/user.ld
 USER_ELFS = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/fread.elf  build/fork.elf   build/write.elf  \
             build/pipe.elf   build/signal.elf \
-            build/ttytest.elf build/pftest.elf build/segv.elf
+            build/ttytest.elf build/pftest.elf build/segv.elf \
+            build/init.elf
 
 build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
@@ -91,6 +92,7 @@ build/signal.o:  src/userland/signal.asm  ; $(AS) $(ASFLAGS) $< -o $@
 build/ttytest.o: src/userland/ttytest.asm ; $(AS) $(ASFLAGS) $< -o $@
 build/pftest.o:  src/userland/pftest.asm  ; $(AS) $(ASFLAGS) $< -o $@
 build/segv.o:    src/userland/segv.asm    ; $(AS) $(ASFLAGS) $< -o $@
+build/init.o:    src/userland/init.asm    ; $(AS) $(ASFLAGS) $< -o $@
 
 build/%.elf: build/%.o $(USER_LD)
 	@echo LD   $@

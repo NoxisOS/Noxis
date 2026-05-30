@@ -20,6 +20,10 @@
 #include <common/types.h>
 #include <common/signal.h>
 #include <mm/virt/vmm.h>
+#include <mm/virt/paging.h>
+#include <mm/virt/uvm.h>
+#include <mm/phys/pmm.h>
+#include <proc/elf.h>
 
 #define MSR_SYSENTER_CS   0x174
 #define MSR_SYSENTER_ESP  0x175
@@ -30,6 +34,7 @@ extern void sysenter_entry(void);
 extern void msr_write(uint32_t msr, uint32_t low, uint32_t high);
 extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
 extern void gdt_set_kernel_stack(uint32_t esp);
+extern void user_enter(uint32_t entry, uint32_t stack);
 
 /* Scheduler internals needed for inline waitpid blocking. */
 extern process_t* g_current;
@@ -547,6 +552,80 @@ static void _sys_read(isr_frame_t* frame) {
     frame->eax = (uint32_t)-1;
 }
 
+/* ── execve: replace the current process image ───────────────────
+   Tears down the calling process's user address space and loads a new
+   ELF in its place, then enters ring 3 at the new entry point.  Designed
+   to be called from a fork child (the classic fork+execve shell pattern):
+   the child has its own kernel stack + page directory, so freeing user
+   space and re-entering ring 3 is self-contained.
+
+   Failure model:
+     - Bad path / not found  → return -1 (old image still intact).
+     - Failure AFTER teardown → proc_terminate(127): the old image is gone,
+       so there is nothing to return to. */
+static void _sys_execve(isr_frame_t* frame) {
+    const uint8_t* upath = (const uint8_t*)frame->ebx;
+    if (!upath || !_user_range_ok(frame->ebx, 1)) {
+        frame->eax = (uint32_t)-1; return;
+    }
+
+    /* Copy the program name into a kernel buffer BEFORE tearing down user
+       space — upath points into memory we are about to free. */
+    uint8_t name[64];
+    uint32_t nlen = 0;
+    for (; nlen < sizeof(name) - 1 && upath[nlen]; nlen++) name[nlen] = upath[nlen];
+    name[nlen] = 0;
+
+    vfs_file_t* f = vfs_lookup(name);
+    if (!f) { frame->eax = (uint32_t)-1; return; }   /* recoverable */
+
+    /* ── Point of no return: free PDEs 1..767 (pure user space).
+       The recursive slot (1023) and the kernel higher-half (768+, which
+       includes our own kernel stack) are left untouched. */
+    process_t* proc = scheduler_current();
+    uint32_t* pd = (uint32_t*)0xFFFFF000u;
+    for (uint32_t pde = 1; pde < 768; pde++) {
+        if (!(pd[pde] & PAGE_PRESENT)) continue;
+        uint32_t* pt = (uint32_t*)(0xFFC00000u + pde * PAGE_SIZE);
+        for (uint32_t pte = 0; pte < 1024; pte++)
+            if (pt[pte] & PAGE_PRESENT) pmm_free_frame(pt[pte] & ~0xFFFu);
+        uint32_t pt_phys = pd[pde] & ~0xFFFu;
+        pd[pde] = 0;
+        vmm_invlpg((uint32_t)pt);
+        pmm_free_frame(pt_phys);
+    }
+
+    /* Load the new image into the now-empty user address space. */
+    uint32_t entry;
+    if (elf_load(f->data, f->size, &entry) != OS_OK)
+        proc_terminate(127);   /* old image gone — cannot recover */
+
+    /* Fresh user stack: only the top page is mapped; the rest grows on
+       demand through the page-fault handler. */
+    uint32_t stack_phys;
+    if (pmm_alloc_frame(&stack_phys) != OS_OK ||
+        vmm_map_page(USER_STACK_INIT, stack_phys,
+                     PAGE_PRESENT | PAGE_RW | PAGE_USER) != OS_OK)
+        proc_terminate(127);
+
+    /* Build argv = { name, NULL } on the new stack.  The name string is
+       copied here (it survives the teardown).  Frame layout matches
+       exec_run: [esp]=argc, [esp+4]=argv[0], ... */
+    uint32_t sp = USER_STACK_TOP;
+    sp -= (nlen + 1);
+    for (uint32_t k = 0; k <= nlen; k++) ((uint8_t*)sp)[k] = name[k];
+    uint32_t arg0 = sp;
+    sp &= ~3u;
+    sp -= 4; *(uint32_t*)sp = 0;        /* argv[1] = NULL */
+    sp -= 4; *(uint32_t*)sp = arg0;     /* argv[0]        */
+    sp -= 4; *(uint32_t*)sp = 1;        /* argc           */
+
+    /* Point sysenter at our kernel stack and drop to ring 3. */
+    gdt_set_kernel_stack(proc->kstack_top);
+    msr_write(MSR_SYSENTER_ESP, proc->kstack_top, 0);
+    user_enter(entry, sp);   /* does not return */
+}
+
 static void _syscall_dispatch(isr_frame_t* frame) {
     switch (frame->eax) {
     case SYS_WRITE:     _sys_write(frame);    break;
@@ -568,6 +647,7 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_GETDENTS:  _sys_getdents(frame); break;
     case SYS_STAT:      _sys_stat(frame);     break;
     case SYS_LSEEK:     _sys_lseek(frame);    break;
+    case SYS_EXECVE:    _sys_execve(frame);   break;
     default: break;
     }
 }
