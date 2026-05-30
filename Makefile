@@ -24,6 +24,7 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
                   build/hal/gdt.o build/hal/idt.o build/hal/pic.o \
                   build/mm/pmm.o build/mm/vmm.o build/mm/heap.o \
                   build/drivers/pit.o \
+                  build/drivers/ata.o \
                   build/proc/process.o build/proc/scheduler.o \
                   build/syscall/syscall.o
 
@@ -49,7 +50,9 @@ all: $(DISK_IMG)
 
 $(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN)
 	@echo BUILD $(DISK_IMG)
-	powershell -NoProfile -Command "$$img='$(DISK_IMG)'; $$bytes=2880*512; $$f=New-Object IO.FileStream($$img,'Create'); $$f.SetLength($$bytes); $$f.Close(); $$fs=New-Object IO.FileStream($$img,'Open'); $$fs.Position=0; $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Close(); echo '  -> 1.44 MB floppy image ready'"
+	powershell -NoProfile -Command "$$bytes=1474560; $$f=New-Object IO.FileStream('$(DISK_IMG)','Create'); $$f.SetLength($$bytes); $$f.Dispose(); $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs=New-Object IO.FileStream('$(DISK_IMG)','Open'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Dispose(); echo '  -> floppy'"
+	@echo BUILD build/disk.img
+	powershell -NoProfile -Command "$$fd=New-Object IO.FileStream('build/disk.img','Create'); $$fd.SetLength(1048576); $$fd.Dispose(); $$t='Noxis ATA disk ready!'; $$b=[Text.Encoding]::ASCII.GetBytes($$t); $$fs=New-Object IO.FileStream('build/disk.img','Open'); $$fs.Write($$b,0,$$b.Length); $$fs.Dispose(); echo '  -> 1 MB disk'"
 
 $(KERNEL_ELF): $(KERNEL_OBJS) linker.ld
 	@echo LD   $@
@@ -107,12 +110,12 @@ build/asm/%.o: src/asm/%.asm
 run: $(DISK_IMG)
 	@echo RUN  QEMU
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
-	$(QEMU) -fda $(DISK_IMG) -no-reboot -no-shutdown
+	$(QEMU) -fda $(DISK_IMG) -hda build/disk.img -no-reboot -no-shutdown
 
 run-debug: $(DISK_IMG)
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo RUN  QEMU + GDB on :1234
-	start "QEMU-DEBUG" /B $(QEMU) -fda $(DISK_IMG) -no-reboot -no-shutdown -s -S
+	start "QEMU-DEBUG" /B $(QEMU) -fda $(DISK_IMG) -hda build/disk.img -no-reboot -no-shutdown -s -S
 	@echo Connect: i686-elf-gdb -x .gdbinit
 
 clean:

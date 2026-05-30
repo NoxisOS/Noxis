@@ -19,6 +19,7 @@
 #include <proc/scheduler.h>
 #include <proc/user.h>
 #include <syscall/syscall.h>
+#include <drivers/ata.h>
 
 #define VGA_WIDTH    80
 #define VGA_HEIGHT   25
@@ -69,6 +70,23 @@ void kernel_main(void) {
     _vga_write((const uint8_t*)"   [MM]  VMM... "); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  HEAP.. "); heap_init(); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [DRV] PIT... "); pit_init(1000); _vga_write((const uint8_t*)"OK\n");
+    _vga_write((const uint8_t*)"   [DRV] ATA... ");
+    if (ata_init(ATA_PRIMARY, ATA_MASTER) == OS_OK) {
+        _vga_write((const uint8_t*)"OK\n");
+        /* Read first sector and display */
+        uint16_t buf[256];
+        _vga_write((const uint8_t*)"\n   [ATA] LBA 0: ");
+        if (ata_read(ATA_PRIMARY, ATA_MASTER, 0, 1, buf) == OS_OK) {
+            for (uint32_t i = 0; i < 30 && ((uint8_t*)buf)[i]; i++) {
+                _vga_put_char(((uint8_t*)buf)[i]);
+            }
+        } else {
+            _vga_write((const uint8_t*)"read error");
+        }
+    } else {
+        _vga_write((const uint8_t*)"not found\n");
+    }
+    _vga_write((const uint8_t*)"\n");
     _vga_write((const uint8_t*)"   [PROC] SCHED.. "); scheduler_init(); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [SYS] SYSCALL. "); syscall_init(); _vga_write((const uint8_t*)"OK\n");
 
