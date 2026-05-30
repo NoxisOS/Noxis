@@ -24,6 +24,7 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
                   build/hal/gdt.o build/hal/idt.o build/hal/pic.o \
                   build/mm/pmm.o build/mm/vmm.o build/mm/heap.o \
                   build/drivers/pit.o \
+                  build/drivers/kbd.o \
                   build/drivers/ata.o \
                   build/proc/process.o build/proc/scheduler.o \
                   build/syscall/syscall.o
@@ -49,6 +50,7 @@ QEMU = "D:\Program Files\qemu\qemu-system-i386"
 all: $(DISK_IMG)
 
 $(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN)
+	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo BUILD $(DISK_IMG)
 	powershell -NoProfile -Command "$$bytes=1474560; $$f=New-Object IO.FileStream('$(DISK_IMG)','Create'); $$f.SetLength($$bytes); $$f.Dispose(); $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs=New-Object IO.FileStream('$(DISK_IMG)','Open'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Dispose(); echo '  -> floppy'"
 	@echo BUILD build/disk.img

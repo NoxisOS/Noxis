@@ -16,6 +16,7 @@
 #include <mm/paging.h>
 #include <drivers/pit.h>
 #include <drivers/ata.h>
+#include <drivers/kbd.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <syscall/syscall.h>
@@ -47,6 +48,15 @@ static void _set_color(uint8_t fg, uint8_t bg) {
     g_color = VGA_COLOR(fg, bg);
 }
 
+/* Move the blinking hw cursor to (g_row, g_col) via CRTC ports. */
+static void _vga_update_cursor(void) {
+    uint16_t pos = (uint16_t)(g_row * VGA_WIDTH + g_col);
+    port_byte_out(0x3D4, 0x0F);
+    port_byte_out(0x3D5, (uint8_t)(pos & 0xFF));
+    port_byte_out(0x3D4, 0x0E);
+    port_byte_out(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
 static void _vga_clear(void) {
     uint16_t b = (uint16_t)' ' | ((uint16_t)g_color << 8);
     for (uint32_t i = 0; i < VGA_WIDTH*VGA_HEIGHT; i++) VGA_BUFFER[i]=b;
@@ -64,6 +74,7 @@ static void _vga_put_char(uint8_t c) {
     else if(c=='\r'){g_col=0;}
     else{VGA_BUFFER[g_row*VGA_WIDTH+g_col]=(uint16_t)c|((uint16_t)g_color<<8);g_col++;if(g_col>=VGA_WIDTH){g_col=0;g_row++;}}
     if(g_row>=VGA_HEIGHT){_vga_scroll();g_row=VGA_HEIGHT-1;}
+    _vga_update_cursor();
 }
 static void _vga_write(const uint8_t* s) {
     for(uint32_t i=0;s[i];i++)_vga_put_char(s[i]);
@@ -173,9 +184,97 @@ static void _footer(void) {
     _set_color(VGA_WHITE, VGA_BLACK);
     _vga_write((const uint8_t*)"System ready ");
     _set_color(VGA_DARK_GREY, VGA_BLACK);
-    _vga_write((const uint8_t*)"\xFA CPU halted");  /* · */
+    _vga_write((const uint8_t*)"\xFA type 'help'");  /* · */
     _set_color(VGA_LIGHT_GREY, VGA_BLACK);
     _vga_put_char('\n');
+}
+
+/* ── Tiny REPL ──────────────────────────────────────────────── */
+
+static void _prompt(void) {
+    _set_color(VGA_LIGHT_GREEN, VGA_BLACK);
+    _vga_write((const uint8_t*)"   noxis");
+    _set_color(VGA_DARK_GREY, VGA_BLACK);
+    _vga_write((const uint8_t*)" > ");
+    _set_color(VGA_WHITE, VGA_BLACK);
+}
+
+static void _backspace_visual(void) {
+    if (g_col > 0) {
+        g_col--;
+        VGA_BUFFER[g_row * VGA_WIDTH + g_col] =
+            (uint16_t)' ' | ((uint16_t)g_color << 8);
+    }
+}
+
+static int _streq(const uint8_t* a, const uint8_t* b) {
+    uint32_t i = 0;
+    while (a[i] && b[i]) { if (a[i] != b[i]) return 0; i++; }
+    return a[i] == b[i];
+}
+
+static void _cmd_help(void) {
+    _set_color(VGA_DARK_GREY, VGA_BLACK);
+    _vga_write((const uint8_t*)"   commands: ");
+    _set_color(VGA_LIGHT_CYAN, VGA_BLACK);
+    _vga_write((const uint8_t*)"help  uptime  clear  halt\n");
+}
+
+static void _cmd_uptime(void) {
+    uint32_t ms = pit_uptime_ms();
+    uint32_t s  = ms / 1000;
+    /* decimal print */
+    uint8_t buf[12]; uint32_t i = 11; buf[11] = 0;
+    if (s == 0) { buf[--i] = '0'; }
+    else { while (s) { buf[--i] = (uint8_t)('0' + (s % 10)); s /= 10; } }
+    _set_color(VGA_DARK_GREY, VGA_BLACK);
+    _vga_write((const uint8_t*)"   ");
+    _set_color(VGA_YELLOW, VGA_BLACK);
+    _vga_write(&buf[i]);
+    _set_color(VGA_DARK_GREY, VGA_BLACK);
+    _vga_write((const uint8_t*)" seconds since boot\n");
+}
+
+static void _cmd_unknown(const uint8_t* line) {
+    _set_color(VGA_LIGHT_RED, VGA_BLACK);
+    _vga_write((const uint8_t*)"   unknown: ");
+    _set_color(VGA_WHITE, VGA_BLACK);
+    _vga_write(line);
+    _vga_put_char('\n');
+}
+
+static void _run_command(const uint8_t* line) {
+    if (line[0] == 0) return;
+    if      (_streq(line, (const uint8_t*)"help"))   _cmd_help();
+    else if (_streq(line, (const uint8_t*)"uptime")) _cmd_uptime();
+    else if (_streq(line, (const uint8_t*)"clear"))  { _vga_clear(); }
+    else if (_streq(line, (const uint8_t*)"halt"))   { for (;;) cpu_hlt(); }
+    else                                              _cmd_unknown(line);
+}
+
+static void _repl(void) {
+    uint8_t line[80];
+    uint32_t len = 0;
+
+    _prompt();
+    for (;;) {
+        uint8_t c = kbd_getchar();
+        if (c == '\n') {
+            _vga_put_char('\n');
+            line[len] = 0;
+            _run_command(line);
+            len = 0;
+            _prompt();
+        } else if (c == '\b') {
+            if (len > 0) { len--; _backspace_visual(); }
+        } else if (c >= ' ' && c < 0x7F) {
+            if (len < sizeof(line) - 1) {
+                line[len++] = c;
+                _set_color(VGA_WHITE, VGA_BLACK);
+                _vga_put_char(c);
+            }
+        }
+    }
 }
 
 /* ── Entry ──────────────────────────────────────────────────── */
@@ -194,11 +293,14 @@ void kernel_main(void) {
     STEP("MM",   "VMM",     (void)0);
     STEP("MM",   "HEAP",    heap_init());
     STEP("DRV",  "PIT",     pit_init(1000));
+    STEP("DRV",  "KBD",     kbd_init());
     STEP("DRV",  "ATA",     ata_init(ATA_PRIMARY, ATA_MASTER));
     STEP("PROC", "SCHED",   scheduler_init());
     STEP("SYS",  "SYSCALL", syscall_init());
 
     _footer();
 
-    for (;;);
+    cpu_sti();    /* make sure IRQs are on for kbd + pit */
+    _vga_put_char('\n');
+    _repl();
 }
