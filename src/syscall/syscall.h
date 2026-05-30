@@ -12,7 +12,13 @@
 
 /* ── syscall numbers ───────────────────────────────────────── */
 #define SYS_EXIT     0
-#define SYS_WRITE    1
+#define SYS_WRITE    1   /* (fd=EBX implicit stdout, buf=EBX, len=ESI)  */
+#define SYS_READ     2   /* EBX=fd, ESI=buf, EDI=max_len → EAX=read    */
+
+/* ── file descriptors ──────────────────────────────────────── */
+#define STDIN_FD     0
+#define STDOUT_FD    1
+#define STDERR_FD    2
 
 /**
  * @brief Initializes the syscall table and registers int 0x80 handler

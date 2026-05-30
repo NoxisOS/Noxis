@@ -12,6 +12,7 @@
 #include <proc/process.h>
 #include <proc/exec.h>
 #include <drivers/vga.h>
+#include <drivers/kbd.h>
 #include <common/types.h>
 
 #define MSR_SYSENTER_CS   0x174
@@ -42,9 +43,45 @@ static void _sys_exit(isr_frame_t* frame) {
     exec_return((int)frame->ebx);
 }
 
+/* Line-mode read from the keyboard. Echoes typed characters so the user
+   sees what they're entering, supports backspace, terminates on '\n'.
+   Returns the number of bytes written to the user buffer (incl. trailing
+   newline if one was typed). */
+static void _sys_read(isr_frame_t* frame) {
+    uint32_t fd      = frame->ebx;
+    uint8_t* buf     = (uint8_t*)frame->esi;
+    uint32_t maxlen  = frame->edi;
+
+    if (fd != STDIN_FD || maxlen == 0) {
+        frame->eax = (uint32_t)-1;
+        return;
+    }
+
+    uint32_t len = 0;
+    for (;;) {
+        uint8_t c = kbd_getchar();
+        if (c == '\b') {
+            if (len > 0) { len--; vga_backspace(); }
+            continue;
+        }
+        if (c == '\n' || c == '\r') {
+            vga_put_char('\n');
+            if (len < maxlen) buf[len++] = '\n';
+            break;
+        }
+        if (c < ' ' || c >= 0x7F) continue;
+        if (len + 1 >= maxlen) continue;  /* keep room for terminator */
+        buf[len++] = c;
+        vga_put_char(c);
+    }
+    if (len < maxlen) buf[len] = 0;
+    frame->eax = len;
+}
+
 static void _syscall_dispatch(isr_frame_t* frame) {
     switch (frame->eax) {
     case SYS_WRITE: _sys_write(frame); break;
+    case SYS_READ:  _sys_read(frame);  break;
     case SYS_EXIT:  _sys_exit(frame);  break;
     default: break;
     }

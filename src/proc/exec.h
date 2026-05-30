@@ -14,10 +14,21 @@
 /**
  * @brief Load and run an ELF in ring 3. Blocks until the user calls
  *        sys_exit (which longjmps back into this function).
- * @return OS_OK if the user exited cleanly,
- *         OS_ERR_* if the ELF could not be loaded.
+ *
+ * Stack layout seen by the user's _start:
+ *   [esp+0]      argc
+ *   [esp+4]      argv[0]   ← pointer to first string
+ *   [esp+8]      argv[1]
+ *   ...
+ *   [esp+4*argc] NULL
+ *   (above)      argv strings, null-terminated
+ *
+ * @param argc     number of argv entries (argv[0] is the program name)
+ * @param argv     argc pointers to null-terminated strings (kernel memory)
  */
-os_status_t exec_run(const uint8_t* elf, uint32_t size, int* exit_code_out);
+os_status_t exec_run(const uint8_t* elf, uint32_t size,
+                     uint32_t argc, const uint8_t* const* argv,
+                     int* exit_code_out);
 
 /**
  * @brief Called by sys_exit. Longjmps back to exec_run().

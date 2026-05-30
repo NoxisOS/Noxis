@@ -21,10 +21,12 @@ $OUT       = 'build/disk.img'
 
 # Files to ship — order matters for LBA assignment.
 $files = @(
-    @{ Name = 'motd';      Path = 'rootfs/motd'      },
-    @{ Name = 'version';   Path = 'rootfs/version'   },
-    @{ Name = 'readme';    Path = 'rootfs/readme'    },
-    @{ Name = 'hello.elf'; Path = 'build/hello.elf'  }
+    @{ Name = 'motd';       Path = 'rootfs/motd'       },
+    @{ Name = 'version';    Path = 'rootfs/version'    },
+    @{ Name = 'readme';     Path = 'rootfs/readme'     },
+    @{ Name = 'hello.elf';  Path = 'build/hello.elf'   },
+    @{ Name = 'echo.elf';   Path = 'build/echo.elf'    },
+    @{ Name = 'prompt.elf'; Path = 'build/prompt.elf'  }
 )
 
 # ── build sector 0 ──────────────────────────────────────────

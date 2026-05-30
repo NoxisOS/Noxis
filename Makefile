@@ -59,18 +59,40 @@ QEMU = "D:\Program Files\qemu\qemu-system-i386"
 .PHONY: all clean run run-debug
 all: $(DISK_IMG)
 
-ROOTFS_FILES = rootfs/motd rootfs/version rootfs/readme
+ROOTFS_FILES  = rootfs/motd rootfs/version rootfs/readme
+USER_ELFS     = build/hello.elf build/echo.elf build/prompt.elf
+
+# ── userland ELFs ──────────────────────────────────────────
+USER_LD = src/userland/user.ld
 
 build/hello.o: src/userland/hello.asm
 	@if not exist build mkdir build
 	@echo AS   $<
 	$(AS) -f elf32 $< -o $@
 
-build/hello.elf: build/hello.o src/userland/hello.ld
+build/hello.elf: build/hello.o $(USER_LD)
 	@echo LD   $@
-	$(LD) -T src/userland/hello.ld -nostdlib -m elf_i386 -o $@ build/hello.o
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ build/hello.o
 
-$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(ROOTFS_FILES) build/hello.elf tools/build_disk.ps1
+build/echo.o: src/userland/echo.asm
+	@if not exist build mkdir build
+	@echo AS   $<
+	$(AS) -f elf32 $< -o $@
+
+build/echo.elf: build/echo.o $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ build/echo.o
+
+build/prompt.o: src/userland/prompt.asm
+	@if not exist build mkdir build
+	@echo AS   $<
+	$(AS) -f elf32 $< -o $@
+
+build/prompt.elf: build/prompt.o $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ build/prompt.o
+
+$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(ROOTFS_FILES) $(USER_ELFS) tools/build_disk.ps1
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo BUILD $(DISK_IMG)
 	powershell -NoProfile -Command "$$bytes=1474560; $$f=New-Object IO.FileStream('$(DISK_IMG)','Create'); $$f.SetLength($$bytes); $$f.Dispose(); $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs=New-Object IO.FileStream('$(DISK_IMG)','Open'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Dispose(); echo '  -> floppy'"

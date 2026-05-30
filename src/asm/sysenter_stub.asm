@@ -46,8 +46,8 @@ sysenter_entry:
     push ebx                 ; ebx  = arg1 (e.g. msg pointer)
     push dword 0             ; esp_val placeholder
     push ebp                 ; ebp
-    push esi                 ; esi  = arg2 (e.g. msg length)
-    push dword 0             ; edi
+    push esi                 ; esi  = arg2
+    push edi                 ; edi  = arg3 (e.g. sys_read length)
 
     ; ── segment regs, gs LAST → lands at offset 0 ───────────────
     push dword 0x23          ; ds
@@ -55,10 +55,17 @@ sysenter_entry:
     push dword 0x23          ; fs
     push dword 0x23          ; gs
 
+    ; sysenter clears IF — re-enable so blocking syscalls
+    ; (SYS_READ → kbd_getchar → hlt) peuvent être réveillés par les IRQs.
+    sti
+
     ; Call C dispatcher with pointer to frame
     push esp
     call syscall_handler
     add  esp, 4
+
+    ; Disable interrupts before restoring user state + sysexit
+    cli
 
     ; ── tear down frame ─────────────────────────────────────────
     add  esp, 16             ; skip gs, fs, es, ds
