@@ -67,33 +67,17 @@ static buf_t* _hash_lookup(uint32_t dev, uint32_t blockno) {
     return (buf_t*)0;
 }
 
-/* Find a free buffer (not B_BUSY, not B_DIRTY, LRU tail first).
-   Falls back to scanning g_buffers when the LRU list is empty. */
+/* Find a free buffer (not B_BUSY, not B_DIRTY, LRU tail first). */
 static buf_t* _evict(void) {
-    buf_t* p;
-    /* Try LRU list first */
-    p = g_lru_tail_sentinel.lru_prev;
+    buf_t* p = g_lru_tail_sentinel.lru_prev;
     while (p && p != &g_lru_head_sentinel) {
         if (!(p->flags & B_BUSY) && !(p->flags & B_DIRTY)) return p;
         p = p->lru_prev;
     }
-    /* Try dirty-but-not-busy from LRU */
     p = g_lru_tail_sentinel.lru_prev;
     while (p && p != &g_lru_head_sentinel) {
         if (!(p->flags & B_BUSY)) { bwrite(p); return p; }
         p = p->lru_prev;
-    }
-    /* LRU empty (fresh boot) — scan all buffers */
-    for (uint32_t i = 0; i < NBUF; i++) {
-        if (!(g_buffers[i].flags & B_BUSY) &&
-            !(g_buffers[i].flags & B_DIRTY))
-            return &g_buffers[i];
-    }
-    for (uint32_t i = 0; i < NBUF; i++) {
-        if (!(g_buffers[i].flags & B_BUSY)) {
-            bwrite(&g_buffers[i]);
-            return &g_buffers[i];
-        }
     }
     return (buf_t*)0;
 }
@@ -107,10 +91,15 @@ void buf_init(void) {
     g_lru_tail_sentinel.lru_next = (buf_t*)0;
 
     for (uint32_t i = 0; i < NBUF; i++) {
-        g_buffers[i].flags    = 0;
-        g_buffers[i].dev      = 0;
-        g_buffers[i].blockno  = 0;
+        g_buffers[i].flags     = 0;
+        g_buffers[i].dev       = 0;
+        g_buffers[i].blockno   = 0;
         g_buffers[i].hash_next = (buf_t*)0;
+        /* Link into LRU list so _evict can always find a candidate. */
+        g_buffers[i].lru_prev = &g_lru_head_sentinel;
+        g_buffers[i].lru_next = g_lru_head_sentinel.lru_next;
+        g_lru_head_sentinel.lru_next->lru_prev = &g_buffers[i];
+        g_lru_head_sentinel.lru_next = &g_buffers[i];
     }
     for (uint32_t i = 0; i < HASH_SIZE; i++)
         g_hash[i] = (buf_t*)0;

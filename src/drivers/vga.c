@@ -50,6 +50,9 @@ void vga_set_color(uint8_t fg, uint8_t bg) {
 uint8_t vga_color(void) { return g_color; }
 
 void vga_put_char(uint8_t c) {
+    /* Protect global g_row/g_col/cursor against interleaving when
+       multiple threads write to VGA concurrently. */
+    __asm__ __volatile__("cli");
     if (c == '\n') { g_col = 0; g_row++; }
     else if (c == '\r') { g_col = 0; }
     else {
@@ -59,6 +62,7 @@ void vga_put_char(uint8_t c) {
     }
     if (g_row >= VGA_HEIGHT) { _scroll(); g_row = VGA_HEIGHT - 1; }
     vga_update_cursor();
+    __asm__ __volatile__("sti");
 }
 
 void vga_write(const uint8_t* s) {

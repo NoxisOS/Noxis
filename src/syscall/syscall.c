@@ -32,11 +32,30 @@ extern process_t* g_current;
 extern process_t* g_ready_head;
 extern process_t* g_ready_tail;
 
+/* ── user-pointer validation ───────────────────────────────── */
+
+#define USER_VIRT_BASE  0x00400000u
+#define USER_VIRT_TOP   0xC0000000u
+
+static int _user_range_ok(uint32_t ptr, uint32_t len) {
+    if (ptr < USER_VIRT_BASE)   return 0;
+    if (ptr + len < ptr)        return 0;  /* overflow */
+    if (ptr + len > USER_VIRT_TOP) return 0;
+    return 1;
+}
+
+/* ── syscall handlers ────────────────────────────────────────── */
+
 static void _sys_write(isr_frame_t* frame) {
     uint32_t fd  = frame->ebx;
     const uint8_t* buf = (const uint8_t*)frame->esi;
     uint32_t len = frame->edi;
     if (len == 0) return;
+
+    if (!_user_range_ok(frame->esi, len)) {
+        frame->eax = (uint32_t)-1;
+        return;
+    }
 
     if (fd == STDOUT_FD || fd == STDERR_FD || fd == 0) {
         /* stdout / stderr → VGA */
@@ -153,7 +172,7 @@ static void _sys_waitpid(isr_frame_t* frame) {
 
 static void _sys_open(isr_frame_t* frame) {
     const uint8_t* name = (const uint8_t*)frame->ebx;
-    if (!name) { frame->eax = (uint32_t)-1; return; }
+    if (!name || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
 
     vfs_file_t* f = vfs_lookup(name);
     if (!f) { frame->eax = (uint32_t)-1; return; }
@@ -173,7 +192,7 @@ static void _sys_open(isr_frame_t* frame) {
 
 static void _sys_creat(isr_frame_t* frame) {
     const uint8_t* name = (const uint8_t*)frame->ebx;
-    if (!name) { frame->eax = (uint32_t)-1; return; }
+    if (!name || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
 
     vfs_file_t* f = vfs_creat(name);
     if (!f) { frame->eax = (uint32_t)-1; return; }
@@ -212,6 +231,7 @@ static void _sys_read(isr_frame_t* frame) {
     uint32_t maxlen  = frame->edi;
 
     if (maxlen == 0 || !buf) { frame->eax = (uint32_t)-1; return; }
+    if (!_user_range_ok(frame->esi, maxlen)) { frame->eax = (uint32_t)-1; return; }
 
     process_t* proc = scheduler_current();
 
