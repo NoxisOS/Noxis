@@ -82,6 +82,16 @@ static void _sys_exit(isr_frame_t* frame) {
         }
         scheduler_exit(); /* does not return */
     } else {
+        /* Close all file descriptors opened by this process before
+           returning to the shell, so fd slots don't leak across execs. */
+        process_t* proc = scheduler_current();
+        for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
+            if (proc->fd_table[i].used) {
+                proc->fd_table[i].used = FALSE;
+                proc->fd_table[i].file = (vfs_file_t*)0;
+                proc->fd_table[i].pos  = 0;
+            }
+        }
         vfs_sync();
         exec_return(code);
     }

@@ -150,8 +150,9 @@ buf_t* bread(uint32_t dev, uint32_t blockno) {
 
 void bwrite(buf_t* bp) {
     if (!bp || !(bp->flags & B_DIRTY)) return;
-    ata_write(ATA_PRIMARY, ATA_MASTER, bp->blockno, 1,
-              (const uint16_t*)bp->data);
+    if (ata_write(ATA_PRIMARY, ATA_MASTER, bp->blockno, 1,
+                  (const uint16_t*)bp->data) != OS_OK)
+        return;  /* keep B_DIRTY so caller can retry */
     bp->flags &= ~B_DIRTY;
 }
 

@@ -151,6 +151,7 @@ static void _scheduler_unblock(process_t* p) {
 void thread_sleep(uint32_t ms) {
     if (!g_current || ms == 0) return;
 
+    __asm__ __volatile__("cli");
     g_current->wake_tick = pit_uptime_ms() + ms;
     g_current->state     = PROC_BLOCKED;
 
@@ -167,8 +168,6 @@ void thread_sleep(uint32_t ms) {
         next->state = PROC_RUNNING;
         g_current   = next;
         DO_SWITCH(prev, next);
-        /* DO_SWITCH returns here with IF=0 (PIT ISR context).
-           Re-enable so the caller can interact with devices. */
         __asm__ __volatile__("sti");
     } else {
         while (g_current->wake_tick > pit_uptime_ms()) {
@@ -177,7 +176,6 @@ void thread_sleep(uint32_t ms) {
         _scheduler_unblock(g_current);
         g_current->wake_tick = 0;
         g_current->state     = PROC_RUNNING;
-        /* Loop ends with cli; re-enable interrupts. */
         __asm__ __volatile__("sti");
     }
 }
@@ -199,6 +197,11 @@ void scheduler_wake(process_t** waiter) {
 }
 
 void scheduler_block_on(process_t** waiter) {
+    /* Disable interrupts while we atomically set the waiter + dequeue
+       from the ready queue.  An ISR (keyboard, PIT) calling scheduler_wake
+       or scheduler_tick must not see a half-updated g_ready_head. */
+    __asm__ __volatile__("cli");
+
     *waiter = g_current;
     g_current->state     = PROC_BLOCKED;
     g_current->wake_tick = 0;

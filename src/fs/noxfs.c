@@ -227,7 +227,7 @@ int32_t noxfs_write(vfs_file_t* f, uint32_t offset,
     }
 
     /* Update directory entry on disk. */
-    _write_toc();
+    if (_write_toc() != OS_OK) return -1;
 
     return (int32_t)len;
 }
@@ -258,8 +258,14 @@ vfs_file_t* noxfs_creat(const uint8_t* name) {
     _next_lba++;
     _count++;
 
-    /* Write TOC and initialise the sector on disk. */
-    _write_toc();
+    if (_write_toc() != OS_OK) {
+        /* Failed to write TOC — roll back in-memory state. */
+        _count--;
+        _next_lba--;
+        kfree(nm);
+        kfree(buf);
+        return (vfs_file_t*)0;
+    }
 
     buf_t* bp = balloc(BUF_DEV_ATA, f->lba);
     if (bp) { bp->flags |= B_DIRTY; bwrite(bp); brelse(bp); }

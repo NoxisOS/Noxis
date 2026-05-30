@@ -217,7 +217,7 @@ os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
     for (uint32_t pde_idx = 1; pde_idx < 768; pde_idx++) {
         /* Read parent PDE. */
         uint32_t* parent_pd = _scratch(VMM_SCRATCH_0, parent_pd_phys);
-        if (!parent_pd) return OS_ERR_OOM;
+        if (!parent_pd) goto fail;
         uint32_t pde = parent_pd[pde_idx];
         vmm_invlpg(VMM_SCRATCH_0);
         if (!(pde & PAGE_PRESENT)) continue;
@@ -228,7 +228,7 @@ os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
         for (uint32_t pte_idx = 0; pte_idx < 1024; pte_idx++) {
             /* Read parent PTE. */
             uint32_t* parent_pt = _scratch(VMM_SCRATCH_0, parent_pt_phys);
-            if (!parent_pt) return OS_ERR_OOM;
+            if (!parent_pt) goto fail;
             uint32_t pte = parent_pt[pte_idx];
             vmm_invlpg(VMM_SCRATCH_0);
             if (!(pte & PAGE_PRESENT)) continue;
@@ -241,14 +241,14 @@ os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
 
             /* Allocate a new frame for the child's copy. */
             uint32_t dst_phys;
-            if (pmm_alloc_frame(&dst_phys) != OS_OK) return OS_ERR_OOM;
+            if (pmm_alloc_frame(&dst_phys) != OS_OK) goto fail;
 
             /* Copy: map src→scratch0, dst→scratch1, memcpy 4KB. */
             uint8_t* src = (uint8_t*)_scratch(VMM_SCRATCH_0, src_phys);
-            if (!src) return OS_ERR_OOM;
+            if (!src) goto fail;
 
             uint8_t* dst = (uint8_t*)_scratch(VMM_SCRATCH_1, dst_phys);
-            if (!dst) return OS_ERR_OOM;
+            if (!dst) goto fail;
 
             src = (uint8_t*)_scratch(VMM_SCRATCH_0, src_phys);
             for (uint32_t b = 0; b < PAGE_SIZE; b++) dst[b] = src[b];
@@ -258,12 +258,16 @@ os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
             /* Map the child's copy at the same virtual address. */
             uint32_t virt = (pde_idx << 22) | (pte_idx << 12);
             s = vmm_map_page_in(child_phys, virt, dst_phys, pte_flags);
-            if (s != OS_OK) return s;
+            if (s != OS_OK) goto fail;
         }
     }
 
     *child_pd_out = child_phys;
     return OS_OK;
+
+fail:
+    vmm_destroy_pd(child_phys);
+    return OS_ERR_OOM;
 }
 
 void vmm_switch_pd(uint32_t pd_phys) {
