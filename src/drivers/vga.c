@@ -5,7 +5,7 @@
  * @date    2026-05-30
  */
 #include <drivers/vga.h>
-#include <hal/ports.h>
+#include <kernel/hal/ports.h>
 #include <common/types.h>
 
 #define VGA_BUFFER  ((volatile uint16_t*)0xB8000)

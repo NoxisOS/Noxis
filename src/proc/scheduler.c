@@ -22,12 +22,12 @@
 #include <proc/scheduler.h>
 #include <proc/process.h>
 #include <proc/exec.h>
-#include <kernel/isr.h>
-#include <hal/ports.h>
-#include <hal/gdt.h>
+#include <kernel/isr/isr.h>
+#include <kernel/hal/ports.h>
+#include <kernel/hal/gdt.h>
 #include <drivers/pit.h>
-#include <mm/vmm.h>
-#include <fs/pipe.h>
+#include <mm/virt/vmm.h>
+#include <fs/pipe/pipe.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);

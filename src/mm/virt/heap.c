@@ -4,11 +4,11 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <mm/heap.h>
-#include <mm/paging.h>
-#include <mm/pmm.h>
-#include <mm/vmm.h>
-#include <hal/ports.h>
+#include <mm/virt/heap.h>
+#include <mm/virt/paging.h>
+#include <mm/phys/pmm.h>
+#include <mm/virt/vmm.h>
+#include <kernel/hal/ports.h>
 #include <common/types.h>
 
 /* ── constants ─────────────────────────────────────────────── */

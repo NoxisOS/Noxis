@@ -7,21 +7,21 @@
  * @date    2026-05-30
  */
 #include <common/types.h>
-#include <hal/gdt.h>
-#include <hal/idt.h>
-#include <hal/pic.h>
-#include <hal/ports.h>
-#include <kernel/isr.h>
-#include <mm/pmm.h>
-#include <mm/vmm.h>
-#include <mm/heap.h>
+#include <kernel/hal/gdt.h>
+#include <kernel/hal/idt.h>
+#include <kernel/hal/pic.h>
+#include <kernel/hal/ports.h>
+#include <kernel/isr/isr.h>
+#include <mm/phys/pmm.h>
+#include <mm/virt/vmm.h>
+#include <mm/virt/heap.h>
 #include <drivers/pit.h>
 #include <drivers/ata.h>
 #include <drivers/kbd.h>
 #include <drivers/vga.h>
 #include <proc/scheduler.h>
-#include <syscall/syscall.h>
-#include <fs/vfs.h>
+#include <kernel/syscall/syscall.h>
+#include <fs/vfs/vfs.h>
 #include <shell/shell.h>
 
 /* ── small string helper (used by banner centering) ─────────── */

@@ -5,7 +5,7 @@
  */
 #include <shell/shell.h>
 #include <drivers/vga.h>
-#include <fs/vfs.h>
+#include <fs/vfs/vfs.h>
 #include <proc/exec.h>
 #include <common/status.h>
 

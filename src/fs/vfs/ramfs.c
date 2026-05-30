@@ -4,7 +4,7 @@
  * @author  Noxis Team
  * @date    2026-05-30
  */
-#include <fs/vfs.h>
+#include <fs/vfs/vfs.h>
 
 /* ── canned file content ────────────────────────────────────── */
 

@@ -8,10 +8,10 @@
  * @author  Noxis Team
  * @date    2026-05-30
  */
-#include <fs/buffer.h>
+#include <fs/noxfs/buffer.h>
 #include <drivers/ata.h>
-#include <mm/heap.h>
-#include <hal/ports.h>
+#include <mm/virt/heap.h>
+#include <kernel/hal/ports.h>
 #include <common/types.h>
 
 #define NBUF        16

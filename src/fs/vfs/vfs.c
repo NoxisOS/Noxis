@@ -5,7 +5,7 @@
  * @author  Noxis Team
  * @date    2026-05-30
  */
-#include <fs/vfs.h>
+#include <fs/vfs/vfs.h>
 
 extern os_status_t  ramfs_init(void);
 extern uint32_t     ramfs_count(void);

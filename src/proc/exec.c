@@ -13,10 +13,10 @@
 #include <proc/exec.h>
 #include <proc/elf.h>
 #include <proc/scheduler.h>
-#include <mm/pmm.h>
-#include <mm/vmm.h>
-#include <mm/paging.h>
-#include <hal/gdt.h>
+#include <mm/phys/pmm.h>
+#include <mm/virt/vmm.h>
+#include <mm/virt/paging.h>
+#include <kernel/hal/gdt.h>
 #include <common/types.h>
 
 extern void user_enter(uint32_t entry, uint32_t stack);

@@ -4,7 +4,7 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <mm/pmm.h>
+#include <mm/phys/pmm.h>
 #include <common/types.h>
 
 /* ── file-scope state ──────────────────────────────────────── */

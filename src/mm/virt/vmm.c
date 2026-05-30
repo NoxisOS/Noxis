@@ -4,9 +4,9 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <mm/vmm.h>
-#include <mm/paging.h>
-#include <mm/pmm.h>
+#include <mm/virt/vmm.h>
+#include <mm/virt/paging.h>
+#include <mm/phys/pmm.h>
 #include <common/types.h>
 
 /* ── constants ──────────────────────────────────────────────── */

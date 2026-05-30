@@ -5,10 +5,10 @@
  * @author  Noxis Team
  * @date    2026-05-30
  */
-#include <fs/noxfs.h>
-#include <fs/buffer.h>
+#include <fs/noxfs/noxfs.h>
+#include <fs/noxfs/buffer.h>
 #include <drivers/ata.h>
-#include <mm/heap.h>
+#include <mm/virt/heap.h>
 #include <common/types.h>
 
 #define NOXFS_MAGIC   0x5346584Eu

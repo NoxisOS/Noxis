@@ -4,7 +4,7 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <kernel/panic.h>
+#include <kernel/core/panic.h>
 #include <common/types.h>
 
 /* ── VGA constants ─────────────────────────────────────────── */

@@ -8,7 +8,7 @@
 #define PROC_SCHEDULER_H
 
 #include <common/types.h>
-#include <kernel/isr.h>
+#include <kernel/isr/isr.h>
 #include <proc/process.h>
 #include <proc/exec.h>
 

@@ -5,10 +5,10 @@
  * @date    2026-05-29
  */
 #include <proc/process.h>
-#include <mm/heap.h>
-#include <mm/pmm.h>
-#include <mm/vmm.h>
-#include <mm/paging.h>
+#include <mm/virt/heap.h>
+#include <mm/phys/pmm.h>
+#include <mm/virt/vmm.h>
+#include <mm/virt/paging.h>
 #include <common/types.h>
 
 static uint32_t g_next_pid = 1;

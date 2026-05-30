@@ -5,10 +5,10 @@
  * @author  Noxis Team
  * @date    2026-05-30
  */
-#include <fs/pipe.h>
+#include <fs/pipe/pipe.h>
 #include <proc/scheduler.h>
-#include <mm/heap.h>
-#include <hal/ports.h>
+#include <mm/virt/heap.h>
+#include <kernel/hal/ports.h>
 #include <common/types.h>
 
 pipe_t* pipe_alloc(void) {

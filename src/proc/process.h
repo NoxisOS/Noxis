@@ -10,7 +10,7 @@
 #include <common/types.h>
 #include <common/status.h>
 #include <common/signal.h>
-#include <fs/vfs.h>
+#include <fs/vfs/vfs.h>
 
 /* ── constants ─────────────────────────────────────────────── */
 #define PROC_NAME_MAX    32

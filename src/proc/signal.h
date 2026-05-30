@@ -7,7 +7,7 @@
 #ifndef PROC_SIGNAL_H
 #define PROC_SIGNAL_H
 
-#include <kernel/isr.h>
+#include <kernel/isr/isr.h>
 
 /**
  * @brief Check and deliver pending signals to the current process.

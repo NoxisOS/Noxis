@@ -4,7 +4,7 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <hal/gdt.h>
+#include <kernel/hal/gdt.h>
 #include <common/types.h>
 
 static gdt_entry_t g_gdt[GDT_ENTRIES];

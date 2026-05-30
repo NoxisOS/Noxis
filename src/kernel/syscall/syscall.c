@@ -5,20 +5,20 @@
  * @author  Noxis Team
  * @date    2026-05-30
  */
-#include <syscall/syscall.h>
-#include <kernel/isr.h>
-#include <hal/idt.h>
+#include <kernel/syscall/syscall.h>
+#include <kernel/isr/isr.h>
+#include <kernel/hal/idt.h>
 #include <proc/scheduler.h>
 #include <proc/process.h>
 #include <proc/exec.h>
 #include <proc/signal.h>
 #include <drivers/vga.h>
 #include <drivers/kbd.h>
-#include <fs/vfs.h>
-#include <fs/pipe.h>
+#include <fs/vfs/vfs.h>
+#include <fs/pipe/pipe.h>
 #include <common/types.h>
 #include <common/signal.h>
-#include <mm/vmm.h>
+#include <mm/virt/vmm.h>
 
 #define MSR_SYSENTER_CS   0x174
 #define MSR_SYSENTER_ESP  0x175

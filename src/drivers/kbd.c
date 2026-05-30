@@ -5,9 +5,9 @@
  * @date    2026-05-30
  */
 #include <drivers/kbd.h>
-#include <kernel/isr.h>
-#include <hal/ports.h>
-#include <hal/pic.h>
+#include <kernel/isr/isr.h>
+#include <kernel/hal/ports.h>
+#include <kernel/hal/pic.h>
 #include <proc/scheduler.h>
 #include <common/types.h>
 

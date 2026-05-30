@@ -4,8 +4,8 @@
  */
 #include <shell/shell.h>
 #include <drivers/vga.h>
-#include <hal/ports.h>
-#include <fs/vfs.h>
+#include <kernel/hal/ports.h>
+#include <fs/vfs/vfs.h>
 
 static void run(const uint8_t* args) {
     (void)args;

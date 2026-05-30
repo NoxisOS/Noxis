@@ -4,7 +4,7 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <hal/idt.h>
+#include <kernel/hal/idt.h>
 #include <common/types.h>
 
 /* ── file-scope state ──────────────────────────────────────── */

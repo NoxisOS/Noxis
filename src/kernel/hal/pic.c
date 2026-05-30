@@ -4,8 +4,8 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <hal/pic.h>
-#include <hal/ports.h>
+#include <kernel/hal/pic.h>
+#include <kernel/hal/ports.h>
 #include <common/types.h>
 
 /* ── public functions ──────────────────────────────────────── */

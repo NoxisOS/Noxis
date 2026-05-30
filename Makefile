@@ -5,7 +5,7 @@
 SHELL     = cmd
 CC        = i686-elf-gcc
 LD        = i686-elf-ld
-AS        = C:\Users\gabin\AppData\Local\bin\NASM\nasm
+AS        = nasm
 OBJCOPY   = i686-elf-objcopy
 
 # ── Compiler / linker / assembler flags ──────────────────────
@@ -23,34 +23,37 @@ BOOTFLAGS = -f bin
 
 # ── Kernel C objects ─────────────────────────────────────────
 KERNEL_C_OBJS = \
-  build/kernel/early.o   build/kernel/isr.o    \
-  build/kernel/panic.o   \
-  build/hal/gdt.o        build/hal/idt.o        build/hal/pic.o  \
-  build/mm/pmm.o         build/mm/vmm.o         build/mm/heap.o  \
-  build/drivers/pit.o    build/drivers/kbd.o    \
-  build/drivers/ata.o    build/drivers/vga.o    \
-  build/proc/process.o   build/proc/scheduler.o \
-  build/proc/elf.o       build/proc/exec.o      \
-  build/syscall/syscall.o \
-  build/fs/vfs.o         build/fs/ramfs.o       build/fs/noxfs.o \
-  build/fs/buffer.o      build/fs/pipe.o \
-  build/shell/shell.o    \
-  build/shell/cmd_help.o    build/shell/cmd_uptime.o \
-  build/shell/cmd_ls.o      build/shell/cmd_cat.o    \
-  build/shell/cmd_exec.o    build/shell/cmd_clear.o  \
-  build/shell/cmd_halt.o    build/shell/cmd_sleep.o
+  build/kernel/core/early.o         build/kernel/isr/isr.o        \
+  build/kernel/core/panic.o         \
+  build/kernel/hal/gdt.o            build/kernel/hal/idt.o        \
+  build/kernel/hal/pic.o            \
+  build/mm/phys/pmm.o               build/mm/virt/vmm.o           \
+  build/mm/virt/heap.o              \
+  build/drivers/pit.o               build/drivers/kbd.o           \
+  build/drivers/ata.o               build/drivers/vga.o           \
+  build/proc/process.o              build/proc/scheduler.o        \
+  build/proc/elf.o                  build/proc/exec.o             \
+  build/kernel/syscall/syscall.o    \
+  build/fs/vfs/vfs.o                build/fs/vfs/ramfs.o          \
+  build/fs/noxfs/noxfs.o            build/fs/noxfs/buffer.o       \
+  build/fs/pipe/pipe.o              \
+  build/shell/shell.o               \
+  build/shell/commands/cmd_help.o   build/shell/commands/cmd_uptime.o \
+  build/shell/commands/cmd_ls.o     build/shell/commands/cmd_cat.o    \
+  build/shell/commands/cmd_exec.o   build/shell/commands/cmd_clear.o  \
+  build/shell/commands/cmd_halt.o   build/shell/commands/cmd_sleep.o
 
-# ── Kernel ASM objects (co-located with their C modules) ─────
+# ── Kernel ASM objects ───────────────────────────────────────
 KERNEL_ASM_OBJS = \
-  build/boot/kernel_entry.o   \
-  build/hal/gdt_load.o        build/hal/idt_load.o  \
-  build/hal/tss_load.o        build/hal/ports.o     \
-  build/mm/paging.o           \
-  build/kernel/isr_stubs.o    \
-  build/proc/kjmp.o           build/proc/kthread_switch.o \
-  build/proc/user_enter.o     \
-  build/syscall/msr.o         build/syscall/syscall_stub.o \
-  build/syscall/sysenter_stub.o
+  build/boot/kernel_entry.o         \
+  build/kernel/hal/gdt_load.o       build/kernel/hal/idt_load.o   \
+  build/kernel/hal/tss_load.o       build/kernel/hal/ports.o      \
+  build/mm/virt/paging.o            \
+  build/kernel/isr/isr_stubs.o      \
+  build/proc/kjmp.o                 build/proc/kthread_switch.o   \
+  build/proc/user_enter.o           \
+  build/kernel/syscall/msr.o        build/kernel/syscall/syscall_stub.o \
+  build/kernel/syscall/sysenter_stub.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
@@ -68,71 +71,20 @@ all: $(DISK_IMG)
 
 # ── Userland ELFs ─────────────────────────────────────────────
 USER_LD   = src/userland/user.ld
-USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf build/fread.elf build/fork.elf build/write.elf build/pipe.elf build/signal.elf
+USER_ELFS = build/hello.elf  build/echo.elf   build/prompt.elf \
+            build/fread.elf  build/fork.elf   build/write.elf  \
+            build/pipe.elf   build/signal.elf
 
-build/hello.o: src/userland/hello.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/hello.elf: build/hello.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
+build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
+build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
+build/prompt.o:  src/userland/prompt.asm  ; $(AS) $(ASFLAGS) $< -o $@
+build/fread.o:   src/userland/fread.asm   ; $(AS) $(ASFLAGS) $< -o $@
+build/fork.o:    src/userland/fork.asm    ; $(AS) $(ASFLAGS) $< -o $@
+build/write.o:   src/userland/write.asm   ; $(AS) $(ASFLAGS) $< -o $@
+build/pipe.o:    src/userland/pipe.asm    ; $(AS) $(ASFLAGS) $< -o $@
+build/signal.o:  src/userland/signal.asm  ; $(AS) $(ASFLAGS) $< -o $@
 
-build/echo.o: src/userland/echo.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/echo.elf: build/echo.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
-
-build/prompt.o: src/userland/prompt.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/prompt.elf: build/prompt.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
-
-build/fread.o: src/userland/fread.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/fread.elf: build/fread.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
-
-build/fork.o: src/userland/fork.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/fork.elf: build/fork.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
-
-build/write.o: src/userland/write.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/write.elf: build/write.o $(USER_LD)
-
-build/write.elf: build/write.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
-
-build/pipe.o: src/userland/pipe.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/pipe.elf: build/pipe.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
-
-build/signal.o: src/userland/signal.asm
-	@if not exist build mkdir build
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-build/signal.elf: build/signal.o $(USER_LD)
+build/%.elf: build/%.o $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
 
@@ -166,75 +118,14 @@ $(LOADER_BIN): src/boot/loader.asm src/boot/defines.asm
 	@echo AS   $@
 	$(AS) $(BOOTFLAGS) -isrc/boot/ $< -o $@
 
-# ── C compile rules (one per module) ─────────────────────────
-build/kernel/%.o: src/kernel/%.c
-	@if not exist build\kernel mkdir build\kernel
+# ── Generic compile rules (match any depth) ───────────────────
+build/%.o: src/%.c
+	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 
-build/hal/%.o: src/hal/%.c
-	@if not exist build\hal mkdir build\hal
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/mm/%.o: src/mm/%.c
-	@if not exist build\mm mkdir build\mm
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/drivers/%.o: src/drivers/%.c
-	@if not exist build\drivers mkdir build\drivers
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/proc/%.o: src/proc/%.c
-	@if not exist build\proc mkdir build\proc
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/syscall/%.o: src/syscall/%.c
-	@if not exist build\syscall mkdir build\syscall
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/fs/%.o: src/fs/%.c
-	@if not exist build\fs mkdir build\fs
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-build/shell/%.o: src/shell/%.c
-	@if not exist build\shell mkdir build\shell
-	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# ── ASM compile rules (co-located with C modules) ────────────
-build/boot/%.o: src/boot/%.asm
-	@if not exist build\boot mkdir build\boot
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/hal/%.o: src/hal/%.asm
-	@if not exist build\hal mkdir build\hal
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/mm/%.o: src/mm/%.asm
-	@if not exist build\mm mkdir build\mm
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/kernel/%.o: src/kernel/%.asm
-	@if not exist build\kernel mkdir build\kernel
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/proc/%.o: src/proc/%.asm
-	@if not exist build\proc mkdir build\proc
-	@echo AS   $<
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/syscall/%.o: src/syscall/%.asm
-	@if not exist build\syscall mkdir build\syscall
+build/%.o: src/%.asm
+	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
 	@echo AS   $<
 	$(AS) $(ASFLAGS) $< -o $@
 

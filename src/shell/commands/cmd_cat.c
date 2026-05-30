@@ -4,7 +4,7 @@
  */
 #include <shell/shell.h>
 #include <drivers/vga.h>
-#include <fs/vfs.h>
+#include <fs/vfs/vfs.h>
 
 static void run(const uint8_t* args) {
     if (args[0] == 0) {

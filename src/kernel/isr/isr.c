@@ -4,9 +4,9 @@
  * @author  Noxis Team
  * @date    2026-05-29
  */
-#include <kernel/isr.h>
-#include <kernel/panic.h>
-#include <hal/pic.h>
+#include <kernel/isr/isr.h>
+#include <kernel/core/panic.h>
+#include <kernel/hal/pic.h>
 #include <common/types.h>
 
 /* ── file-scope state ──────────────────────────────────────── */

@@ -9,7 +9,7 @@
 
 #include <common/types.h>
 #include <common/status.h>
-#include <fs/vfs.h>
+#include <fs/vfs/vfs.h>
 
 os_status_t        noxfs_init(void);
 uint32_t           noxfs_count(void);

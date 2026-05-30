@@ -8,7 +8,7 @@
 #define KERNEL_PANIC_H
 
 #include <common/types.h>
-#include <kernel/isr.h>
+#include <kernel/isr/isr.h>
 
 /**
  * @brief Halts the system with a fatal error message on VGA
