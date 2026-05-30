@@ -51,8 +51,10 @@ os_status_t pmm_init(uint32_t total_memory) {
         g_bitmap[i] = 0;
     }
 
-    /* Mark BIOS + kernel areas as used: 0x00000000 → PMM_KERNEL_END */
-    uint32_t kernel_end_frames = 0x00400000 / PMM_FRAME_SIZE; /* 1024 frames = 4 MB */
+    /* Mark BIOS + kernel image + early paging structures as used.
+       kernel_entry.asm hardcodes PD=0x400000, PT0=0x401000, PTK=0x402000;
+       reserving through 0x500000 leaves headroom for future static tables. */
+    uint32_t kernel_end_frames = 0x00500000 / PMM_FRAME_SIZE; /* 1280 frames = 5 MB */
     _mark_used(0, kernel_end_frames);
 
     /* Mark the bitmap itself as used */

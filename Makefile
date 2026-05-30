@@ -28,14 +28,16 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
                   build/drivers/ata.o \
                   build/proc/process.o build/proc/scheduler.o \
                   build/syscall/syscall.o \
-                  build/fs/vfs.o build/fs/ramfs.o
+                  build/fs/vfs.o build/fs/ramfs.o build/fs/noxfs.o \
+                  build/proc/elf.o
 
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/gdt_load.o build/asm/idt_load.o \
                   build/asm/isr_stubs.o build/asm/paging.o \
                   build/asm/tss_load.o \
                   build/asm/syscall_stub.o \
-                  build/asm/msr.o build/asm/sysenter_stub.o
+                  build/asm/msr.o build/asm/sysenter_stub.o \
+                  build/asm/user_enter.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
@@ -50,12 +52,23 @@ QEMU = "D:\Program Files\qemu\qemu-system-i386"
 .PHONY: all clean run run-debug
 all: $(DISK_IMG)
 
-$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN)
+ROOTFS_FILES = rootfs/motd rootfs/version rootfs/readme
+
+build/hello.o: src/userland/hello.asm
+	@if not exist build mkdir build
+	@echo AS   $<
+	$(AS) -f elf32 $< -o $@
+
+build/hello.elf: build/hello.o src/userland/hello.ld
+	@echo LD   $@
+	$(LD) -T src/userland/hello.ld -nostdlib -m elf_i386 -o $@ build/hello.o
+
+$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(ROOTFS_FILES) build/hello.elf tools/build_disk.ps1
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo BUILD $(DISK_IMG)
 	powershell -NoProfile -Command "$$bytes=1474560; $$f=New-Object IO.FileStream('$(DISK_IMG)','Create'); $$f.SetLength($$bytes); $$f.Dispose(); $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs=New-Object IO.FileStream('$(DISK_IMG)','Open'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Dispose(); echo '  -> floppy'"
 	@echo BUILD build/disk.img
-	powershell -NoProfile -Command "$$fd=New-Object IO.FileStream('build/disk.img','Create'); $$fd.SetLength(1048576); $$fd.Dispose(); $$t='Noxis ATA disk ready!'; $$b=[Text.Encoding]::ASCII.GetBytes($$t); $$fs=New-Object IO.FileStream('build/disk.img','Open'); $$fs.Write($$b,0,$$b.Length); $$fs.Dispose(); echo '  -> 1 MB disk'"
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_disk.ps1
 
 $(KERNEL_ELF): $(KERNEL_OBJS) linker.ld
 	@echo LD   $@

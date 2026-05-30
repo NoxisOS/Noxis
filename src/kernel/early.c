@@ -21,6 +21,7 @@
 #include <proc/scheduler.h>
 #include <syscall/syscall.h>
 #include <fs/vfs.h>
+#include <proc/elf.h>
 
 #define VGA_WIDTH    80
 #define VGA_HEIGHT   25
@@ -218,7 +219,56 @@ static void _cmd_help(void) {
     _set_color(VGA_DARK_GREY, VGA_BLACK);
     _vga_write((const uint8_t*)"   commands: ");
     _set_color(VGA_LIGHT_CYAN, VGA_BLACK);
-    _vga_write((const uint8_t*)"help  uptime  ls  cat <file>  clear  halt\n");
+    _vga_write((const uint8_t*)"help  uptime  ls  cat <f>  exec <f>  clear  halt\n");
+}
+
+extern void user_enter(uint32_t entry, uint32_t stack);
+#define USER_STACK_VIRT  0xB0000000u
+
+static void _cmd_exec(const uint8_t* name) {
+    const vfs_file_t* f = vfs_lookup(name);
+    if (!f) {
+        _set_color(VGA_LIGHT_RED, VGA_BLACK);
+        _vga_write((const uint8_t*)"   no such file: ");
+        _set_color(VGA_WHITE, VGA_BLACK);
+        _vga_write(name); _vga_put_char('\n');
+        return;
+    }
+
+    uint32_t entry;
+    if (elf_load(f->data, f->size, &entry) != OS_OK) {
+        _set_color(VGA_LIGHT_RED, VGA_BLACK);
+        _vga_write((const uint8_t*)"   not a valid ELF32 i386 binary\n");
+        return;
+    }
+
+    /* Allocate one user stack page at USER_STACK_VIRT */
+    uint32_t stack_phys;
+    if (pmm_alloc_frame(&stack_phys) != OS_OK) {
+        _set_color(VGA_LIGHT_RED, VGA_BLACK);
+        _vga_write((const uint8_t*)"   OOM allocating user stack\n");
+        return;
+    }
+    if (vmm_map_page(USER_STACK_VIRT, stack_phys,
+                     PAGE_PRESENT | PAGE_RW | PAGE_USER) != OS_OK) {
+        _set_color(VGA_LIGHT_RED, VGA_BLACK);
+        _vga_write((const uint8_t*)"   failed to map user stack\n");
+        return;
+    }
+
+    /* TSS ESP0 must point at a valid kernel-stack TOP — used by any IRQ
+       (PIT) that fires while we're in ring 3, and for the sysexit return path. */
+    gdt_set_kernel_stack(scheduler_current()->kstack_top);
+
+    _set_color(VGA_LIGHT_GREEN, VGA_BLACK);
+    _vga_write((const uint8_t*)"   exec: ");
+    _set_color(VGA_WHITE, VGA_BLACK);
+    _vga_write(name);
+    _set_color(VGA_DARK_GREY, VGA_BLACK);
+    _vga_write((const uint8_t*)"  (ring 3 — control will not return)\n\n");
+
+    user_enter(entry, USER_STACK_VIRT + PAGE_SIZE);
+    /* unreachable */
 }
 
 /* Print a uint32 padded right to `width` columns, in `fg` color */
@@ -316,6 +366,14 @@ static void _run_command(const uint8_t* line) {
             _vga_write((const uint8_t*)"   usage: cat <file>\n");
         } else {
             _cmd_cat(arg);
+        }
+    }
+    else if ((arg = _match_prefix(line, (const uint8_t*)"exec")) != 0) {
+        if (arg[0] == 0) {
+            _set_color(VGA_LIGHT_RED, VGA_BLACK);
+            _vga_write((const uint8_t*)"   usage: exec <file>\n");
+        } else {
+            _cmd_exec(arg);
         }
     }
     else                                              _cmd_unknown(line);
