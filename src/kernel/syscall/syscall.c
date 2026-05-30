@@ -14,6 +14,7 @@
 #include <proc/signal.h>
 #include <drivers/vga.h>
 #include <drivers/tty/tty.h>
+#include <drivers/pit.h>
 #include <fs/vfs/vfs.h>
 #include <fs/noxfs/noxfs.h>
 #include <fs/pipe/pipe.h>
@@ -655,6 +656,54 @@ static void _sys_brk(isr_frame_t* frame) {
     frame->eax = me->brk;
 }
 
+/* ── small POSIX-ish syscalls ───────────────────────────────── */
+
+static void _sys_getppid(isr_frame_t* frame) {
+    frame->eax = scheduler_current()->ppid;
+}
+
+static void _sys_getuid(isr_frame_t* frame) {
+    frame->eax = 0;   /* single-user system — everything runs as root */
+}
+
+static void _sys_time(isr_frame_t* frame) {
+    /* Seconds since boot (no RTC/epoch yet). Optional time_t* out in EBX. */
+    uint32_t secs = pit_uptime_ms() / 1000;
+    if (frame->ebx && _user_range_ok(frame->ebx, 4))
+        *(uint32_t*)frame->ebx = secs;
+    frame->eax = secs;
+}
+
+static void _sys_dup2(isr_frame_t* frame) {
+    uint32_t oldfd = frame->ebx;
+    uint32_t newfd = frame->esi;
+    process_t* proc = scheduler_current();
+
+    if (oldfd >= PROC_MAX_FD || newfd >= PROC_MAX_FD ||
+        !proc->fd_table[oldfd].used) { frame->eax = (uint32_t)-1; return; }
+    if (oldfd == newfd) { frame->eax = newfd; return; }
+
+    /* Close whatever currently occupies newfd. */
+    if (proc->fd_table[newfd].used &&
+        proc->fd_table[newfd].type == FD_PIPE && proc->fd_table[newfd].pipe)
+        pipe_close(proc->fd_table[newfd].pipe);
+
+    proc->fd_table[newfd]      = proc->fd_table[oldfd];
+    proc->fd_table[newfd].pos  = 0;
+    proc->fd_table[newfd].used = TRUE;
+
+    /* A duplicated pipe end adds a reference. */
+    if (proc->fd_table[newfd].type == FD_PIPE && proc->fd_table[newfd].pipe)
+        proc->fd_table[newfd].pipe->refs++;
+
+    frame->eax = newfd;
+}
+
+static void _sys_sleep(isr_frame_t* frame) {
+    thread_sleep(frame->ebx);   /* milliseconds; yields the CPU */
+    frame->eax = 0;
+}
+
 static void _syscall_dispatch(isr_frame_t* frame) {
     switch (frame->eax) {
     case SYS_WRITE:     _sys_write(frame);    break;
@@ -678,6 +727,11 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_LSEEK:     _sys_lseek(frame);    break;
     case SYS_EXECVE:    _sys_execve(frame);   break;
     case SYS_BRK:       _sys_brk(frame);      break;
+    case SYS_GETPPID:   _sys_getppid(frame);  break;
+    case SYS_GETUID:    _sys_getuid(frame);   break;
+    case SYS_TIME:      _sys_time(frame);     break;
+    case SYS_DUP2:      _sys_dup2(frame);     break;
+    case SYS_SLEEP:     _sys_sleep(frame);    break;
     default: break;
     }
 }

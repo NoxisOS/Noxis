@@ -32,6 +32,11 @@
 #define SYS_LSEEK     18 /* EBX=fd, ESI=offset, EDI=whence → EAX=pos              */
 #define SYS_EXECVE    19 /* EBX=path → replaces image, does not return (or -1)    */
 #define SYS_BRK       20 /* EBX=new break (0=query) → EAX=current break           */
+#define SYS_GETPPID   21 /* → EAX=parent pid                                      */
+#define SYS_GETUID    22 /* → EAX=0 (single-user)                                 */
+#define SYS_TIME      23 /* EBX=time_t* (opt) → EAX=seconds since boot            */
+#define SYS_DUP2      24 /* EBX=oldfd, ESI=newfd → EAX=newfd                       */
+#define SYS_SLEEP     25 /* EBX=ms → sleeps, EAX=0                                 */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0
