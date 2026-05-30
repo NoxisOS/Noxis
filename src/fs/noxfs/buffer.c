@@ -9,7 +9,7 @@
  * @date    2026-05-30
  */
 #include <fs/noxfs/buffer.h>
-#include <drivers/ata.h>
+#include <drivers/block/block.h>
 #include <mm/virt/heap.h>
 #include <kernel/hal/ports.h>
 #include <common/types.h>
@@ -109,8 +109,7 @@ buf_t* bread(uint32_t dev, uint32_t blockno) {
     buf_t* bp = _hash_lookup(dev, blockno);
     if (bp) {
         if (!(bp->flags & B_VALID)) {
-            ata_read(ATA_PRIMARY, ATA_MASTER, blockno, 1,
-                     (uint16_t*)bp->data);
+            blk_rw((int)dev, blockno, 1, bp->data, BLK_READ);
             bp->flags |= B_VALID;
         }
         _lru_remove(bp);
@@ -129,7 +128,7 @@ buf_t* bread(uint32_t dev, uint32_t blockno) {
     bp->blockno  = blockno;
     bp->flags    = 0;
 
-    ata_read(ATA_PRIMARY, ATA_MASTER, blockno, 1, (uint16_t*)bp->data);
+    blk_rw((int)dev, blockno, 1, bp->data, BLK_READ);
     bp->flags = B_VALID | B_BUSY;
 
     _lru_remove(bp);       /* remove from current LRU position before reinserting */
@@ -140,8 +139,7 @@ buf_t* bread(uint32_t dev, uint32_t blockno) {
 
 void bwrite(buf_t* bp) {
     if (!bp || !(bp->flags & B_DIRTY)) return;
-    if (ata_write(ATA_PRIMARY, ATA_MASTER, bp->blockno, 1,
-                  (const uint16_t*)bp->data) != OS_OK)
+    if (blk_rw((int)bp->dev, bp->blockno, 1, bp->data, BLK_WRITE) != OS_OK)
         return;  /* keep B_DIRTY so caller can retry */
     bp->flags &= ~B_DIRTY;
 }

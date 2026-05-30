@@ -7,7 +7,7 @@
 %define LOADER_SECTOR        1       ; Loader starts at LBA 1
 %define LOADER_SECTORS       4       ; Loader size in sectors (2 KB)
 %define KERNEL_SECTOR        5       ; Kernel binary starts at LBA 5
-%define KERNEL_SECTORS       64      ; Kernel max size (32 KB)
+%define KERNEL_SECTORS       128     ; Kernel max size (64 KB)
 %define KERNEL_LOAD_ADDR     0x10000 ; Temp load buffer (below 1 MB)
 %define KERNEL_LOAD_SEG      0x1000  ; Segment for KERNEL_LOAD_ADDR
 %define KERNEL_LOAD_OFF      0x0000  ; Offset for KERNEL_LOAD_ADDR

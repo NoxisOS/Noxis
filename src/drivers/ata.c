@@ -5,6 +5,7 @@
  * @date    2026-05-30
  */
 #include <drivers/ata.h>
+#include <drivers/block/block.h>
 #include <kernel/hal/ports.h>
 #include <common/types.h>
 
@@ -122,4 +123,61 @@ os_status_t ata_write(uint8_t bus, uint8_t drive, uint32_t lba,
     }
 
     return OS_OK;
+}
+
+/* ── block device layer integration ─────────────────────────── */
+
+/* IDENTIFY the primary master and return its LBA28 sector count, or 0. */
+static uint32_t _ata_identify_sectors(void) {
+    uint16_t base = ATA_PRIMARY_BASE;
+
+    port_byte_out(ATA_DRIVE(base), 0xA0);          /* master */
+    for (uint32_t i = 0; i < 4; i++) io_delay();
+    port_byte_out(ATA_COUNT(base), 0);
+    port_byte_out(ATA_LBA_LO(base), 0);
+    port_byte_out(ATA_LBA_MID(base), 0);
+    port_byte_out(ATA_LBA_HI(base), 0);
+    port_byte_out(ATA_STATUS(base), ATA_CMD_IDENTIFY);
+
+    if (port_byte_in(ATA_STATUS(base)) == 0) return 0;  /* no drive */
+    if (!_wait_drq(base)) return 0;
+
+    uint16_t id[256];
+    for (uint32_t i = 0; i < 256; i++)
+        id[i] = port_word_in(ATA_DATA(base));
+
+    /* Words 60-61: total addressable LBA28 sectors. */
+    return ((uint32_t)id[61] << 16) | id[60];
+}
+
+/* block layer → ATA PIO.  Chunks `count` into <=256-sector transfers
+   (ATA28 sector-count register is 8-bit; 0 would mean 256). */
+static os_status_t _ata_transfer(block_device_t* dev, uint32_t lba,
+                                 uint32_t count, void* buf, int write) {
+    (void)dev;
+    uint16_t* p = (uint16_t*)buf;
+    while (count > 0) {
+        uint32_t chunk = count > 255 ? 255 : count;
+        os_status_t s = write
+            ? ata_write(ATA_PRIMARY, ATA_MASTER, lba, (uint8_t)chunk, p)
+            : ata_read (ATA_PRIMARY, ATA_MASTER, lba, (uint8_t)chunk, p);
+        if (s != OS_OK) return s;
+        lba   += chunk;
+        count -= chunk;
+        p     += chunk * 256;   /* 256 words = 512 bytes per sector */
+    }
+    return OS_OK;
+}
+
+static block_device_t g_ata_blkdev = {
+    .name       = "ata0",
+    .sectors    = 0,
+    .transfer   = _ata_transfer,
+    .drvdata    = (void*)0,
+    .registered = 0,
+};
+
+int ata_register_block(void) {
+    g_ata_blkdev.sectors = _ata_identify_sectors();
+    return blk_register(&g_ata_blkdev);
 }

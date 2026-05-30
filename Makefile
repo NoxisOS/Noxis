@@ -31,6 +31,7 @@ KERNEL_C_OBJS = \
   build/mm/virt/heap.o              \
   build/drivers/pit.o               build/drivers/kbd.o           \
   build/drivers/ata.o               build/drivers/vga.o           \
+  build/drivers/block/block.o       \
   build/drivers/tty/tty.o           \
   build/proc/process.o              build/proc/scheduler.o        \
   build/proc/elf.o                  build/proc/exec.o             \
@@ -43,7 +44,8 @@ KERNEL_C_OBJS = \
   build/shell/commands/cmd_ls.o     build/shell/commands/cmd_cat.o    \
   build/shell/commands/cmd_exec.o   build/shell/commands/cmd_clear.o  \
   build/shell/commands/cmd_halt.o   build/shell/commands/cmd_sleep.o \
-  build/shell/commands/cmd_cd.o     build/shell/commands/cmd_mkdir.o
+  build/shell/commands/cmd_cd.o     build/shell/commands/cmd_mkdir.o \
+  build/shell/commands/cmd_blkstat.o
 
 # ── Kernel ASM objects ───────────────────────────────────────
 KERNEL_ASM_OBJS = \

@@ -46,4 +46,11 @@ os_status_t ata_read(uint8_t bus, uint8_t drive, uint32_t lba,
 os_status_t ata_write(uint8_t bus, uint8_t drive, uint32_t lba,
                       uint8_t count, const uint16_t* buf);
 
+/**
+ * @brief Registers the primary-master drive with the block device layer.
+ *        Call after blk_init() and ata_init().
+ * @return block device id (>= 0) on success, -1 on failure.
+ */
+int ata_register_block(void);
+
 #endif /* DRIVERS_ATA_H */
