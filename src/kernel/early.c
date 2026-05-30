@@ -1,6 +1,6 @@
 /**
  * @file    kernel/early.c
- * @brief   Early kernel initialization — user mode demo
+ * @brief   Early kernel initialization
  * @author  Noxis Team
  * @date    2026-05-30
  */
@@ -15,11 +15,11 @@
 #include <mm/heap.h>
 #include <mm/paging.h>
 #include <drivers/pit.h>
+#include <drivers/ata.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <proc/user.h>
 #include <syscall/syscall.h>
-#include <drivers/ata.h>
 
 #define VGA_WIDTH    80
 #define VGA_HEIGHT   25
@@ -27,7 +27,6 @@
 #define VGA_COLOR(fg, bg)  ((uint8_t)(((bg) << 4) | ((fg) & 0x0F)))
 #define VGA_BLACK         0x0
 #define VGA_LIGHT_GREY    0x7
-#define VGA_GREEN         0x2
 
 static uint32_t g_row, g_col;
 static uint8_t  g_color;
@@ -54,14 +53,11 @@ static void _vga_write(const uint8_t* s) {
     for(uint32_t i=0;s[i];i++)_vga_put_char(s[i]);
 }
 
-extern void _user_demo_start(void);
-extern void _user_demo_end(void);
-
 void kernel_main(void) {
     g_color = VGA_COLOR(VGA_LIGHT_GREY, VGA_BLACK);
     _vga_clear();
 
-    _vga_write((const uint8_t*)"\n   Noxis OS v0.5.0\n   ===============\n\n");
+    _vga_write((const uint8_t*)"\n   Noxis OS v0.6.0\n   ===============\n\n");
     _vga_write((const uint8_t*)"   [HAL] GDT... "); gdt_init(); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [HAL] IDT... "); idt_init(); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [HAL] PIC... "); pic_remap(); _vga_write((const uint8_t*)"OK\n");
@@ -70,47 +66,9 @@ void kernel_main(void) {
     _vga_write((const uint8_t*)"   [MM]  VMM... "); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [MM]  HEAP.. "); heap_init(); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [DRV] PIT... "); pit_init(1000); _vga_write((const uint8_t*)"OK\n");
-    _vga_write((const uint8_t*)"   [DRV] ATA... ");
-    if (ata_init(ATA_PRIMARY, ATA_MASTER) == OS_OK) {
-        _vga_write((const uint8_t*)"OK\n");
-        /* Read first sector and display */
-        uint16_t buf[256];
-        _vga_write((const uint8_t*)"\n   [ATA] LBA 0: ");
-        if (ata_read(ATA_PRIMARY, ATA_MASTER, 0, 1, buf) == OS_OK) {
-            for (uint32_t i = 0; i < 30 && ((uint8_t*)buf)[i]; i++) {
-                _vga_put_char(((uint8_t*)buf)[i]);
-            }
-        } else {
-            _vga_write((const uint8_t*)"read error");
-        }
-    } else {
-        _vga_write((const uint8_t*)"not found\n");
-    }
-    _vga_write((const uint8_t*)"\n");
+    _vga_write((const uint8_t*)"   [DRV] ATA... "); ata_init(ATA_PRIMARY, ATA_MASTER); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [PROC] SCHED.. "); scheduler_init(); _vga_write((const uint8_t*)"OK\n");
     _vga_write((const uint8_t*)"   [SYS] SYSCALL. "); syscall_init(); _vga_write((const uint8_t*)"OK\n");
-
-    cpu_sti();
-
-    /* Copy user demo code to user-accessible page */
-    uint32_t user_code_phys, user_stack_phys;
-    pmm_alloc_frame(&user_code_phys);
-    pmm_alloc_frame(&user_stack_phys);
-
-    /* Map user code at 0x400000 (ring 3 readable, kernel RW) */
-    vmm_map_page(0x400000, user_code_phys, PAGE_PRESENT | PAGE_RW | PAGE_USER);
-    vmm_map_page(0x500000, user_stack_phys, PAGE_PRESENT | PAGE_RW | PAGE_USER);
-
-    /* Copy user code to the page */
-    uint32_t code_size = (uint32_t)&_user_demo_end - (uint32_t)&_user_demo_start;
-    for (uint32_t i = 0; i < code_size; i++) {
-        ((volatile uint8_t*)0x400000)[i] = ((uint8_t*)&_user_demo_start)[i];
-    }
-
-    _vga_write((const uint8_t*)"\n   Entering user mode...\n");
-
-    /* Jump to ring 3 — TSS ESP0 must point at the TOP of a valid kernel
-       stack, since CPU pushes (SS,ESP,EFLAGS,CS,EIP) on every int 0x80. */
-    gdt_set_kernel_stack(scheduler_current()->kstack_top);
-    user_enter(0x400000, 0x500000 + 0x1000);    /* entry, stack top */
+    _vga_write((const uint8_t*)"\n   System halted.\n");
+    for (;;);
 }
