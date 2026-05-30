@@ -37,7 +37,7 @@ KERNEL_C_OBJS = \
   build/shell/cmd_help.o    build/shell/cmd_uptime.o \
   build/shell/cmd_ls.o      build/shell/cmd_cat.o    \
   build/shell/cmd_exec.o    build/shell/cmd_clear.o  \
-  build/shell/cmd_halt.o
+  build/shell/cmd_halt.o    build/shell/cmd_sleep.o
 
 # ── Kernel ASM objects (co-located with their C modules) ─────
 KERNEL_ASM_OBJS = \
@@ -67,7 +67,7 @@ all: $(DISK_IMG)
 
 # ── Userland ELFs ─────────────────────────────────────────────
 USER_LD   = src/userland/user.ld
-USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf
+USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf build/fread.elf
 
 build/hello.o: src/userland/hello.asm
 	@if not exist build mkdir build
@@ -90,6 +90,14 @@ build/prompt.o: src/userland/prompt.asm
 	@echo AS   $<
 	$(AS) $(ASFLAGS) $< -o $@
 build/prompt.elf: build/prompt.o $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
+
+build/fread.o: src/userland/fread.asm
+	@if not exist build mkdir build
+	@echo AS   $<
+	$(AS) $(ASFLAGS) $< -o $@
+build/fread.elf: build/fread.o $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
 

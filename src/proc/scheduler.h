@@ -41,4 +41,10 @@ os_status_t scheduler_spawn(const uint8_t* name, void (*entry)(void),
  */
 process_t* scheduler_current(void);
 
+/**
+ * @brief Blocks the current thread for at least `ms` milliseconds.
+ *        Yields the CPU so other threads can run (0% CPU).
+ */
+void thread_sleep(uint32_t ms);
+
 #endif /* PROC_SCHEDULER_H */

@@ -23,6 +23,7 @@
 #include <proc/process.h>
 #include <kernel/isr.h>
 #include <hal/ports.h>
+#include <drivers/pit.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
@@ -31,12 +32,18 @@ extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
 static process_t* g_current;
 static process_t* g_ready_head;
 static process_t* g_ready_tail;
+static process_t* g_blocked_head;
+
+/* ── forward declarations ──────────────────────────────────── */
+static void _scheduler_wake_expired(void);
+static void _scheduler_unblock(process_t* p);
 
 /* ── public functions ──────────────────────────────────────── */
 
 os_status_t scheduler_init(void) {
-    g_ready_head = (process_t*)0;
-    g_ready_tail = (process_t*)0;
+    g_ready_head   = (process_t*)0;
+    g_ready_tail   = (process_t*)0;
+    g_blocked_head = (process_t*)0;
 
     /* Register the currently-running kernel context as the "main" thread.
        We give it a dummy process_t; kctx_esp=0 is overwritten on first switch. */
@@ -75,11 +82,120 @@ void scheduler_add(process_t* proc) {
 
 process_t* scheduler_current(void) { return g_current; }
 
+/* ── blocked-thread helpers ────────────────────────────────── */
+
+static void _scheduler_wake_expired(void) {
+    uint32_t now = pit_uptime_ms();
+    process_t** prevp = &g_blocked_head;
+    while (*prevp) {
+        process_t* b = *prevp;
+        if (b->wake_tick != 0 && b->wake_tick <= now) {
+            *prevp = b->next;
+            b->next    = (process_t*)0;
+            b->wake_tick = 0;
+
+            if (b == g_current) {
+                /* Thread is the one currently executing (spinning in a hlt
+                   loop inside thread_sleep).  Just mark it RUNNING so the
+                   loop condition fires and exits; do NOT enqueue it into
+                   g_ready_head or the scheduler will find it there on the
+                   next tick and do kthread_switch(x,x), leaving it in the
+                   ready queue for every subsequent sleep call. */
+                b->state = PROC_RUNNING;
+            } else {
+                b->state = PROC_READY;
+                if (!g_ready_head) {
+                    g_ready_head = b;
+                    g_ready_tail = b;
+                } else {
+                    g_ready_tail->next = b;
+                    g_ready_tail       = b;
+                }
+            }
+        } else {
+            prevp = &b->next;
+        }
+    }
+}
+
+static void _scheduler_unblock(process_t* p) {
+    process_t** prevp = &g_blocked_head;
+    while (*prevp) {
+        if (*prevp == p) {
+            *prevp = p->next;
+            p->next = NULL;
+            p->wake_tick = 0;
+            return;
+        }
+        prevp = &(*prevp)->next;
+    }
+}
+
+void thread_sleep(uint32_t ms) {
+    if (!g_current || ms == 0) return;
+
+    g_current->wake_tick = pit_uptime_ms() + ms;
+    g_current->state     = PROC_BLOCKED;
+
+    g_current->next  = g_blocked_head;
+    g_blocked_head   = g_current;
+
+    if (g_ready_head) {
+        process_t* next = g_ready_head;
+        g_ready_head = next->next;
+        if (!g_ready_head) g_ready_tail = (process_t*)0;
+        next->next = (process_t*)0;
+
+        process_t* prev = g_current;
+        next->state = PROC_RUNNING;
+        g_current   = next;
+        kthread_switch(&prev->kctx_esp, &next->kctx_esp);
+        /* kthread_switch returns here with IF=0 (PIT ISR context).
+           Re-enable so the caller can interact with devices. */
+        __asm__ __volatile__("sti");
+    } else {
+        while (g_current->wake_tick > pit_uptime_ms()) {
+            __asm__ __volatile__("sti; hlt; cli");
+        }
+        _scheduler_unblock(g_current);
+        g_current->wake_tick = 0;
+        g_current->state     = PROC_RUNNING;
+        /* Loop ends with cli; re-enable interrupts. */
+        __asm__ __volatile__("sti");
+    }
+}
+
+/* ── scheduler_tick ────────────────────────────────────────── */
 void scheduler_tick(isr_frame_t* frame) {
     if (!g_current || !frame) return;
 
     /* Never preempt ring-3 user processes (CS RPL bits = 3). */
     if ((frame->cs & 3) != 0) return;
+
+    /* Wake any threads whose sleep timers have expired. */
+    _scheduler_wake_expired();
+
+    /* When the current thread is blocked (e.g. sleeping), skip the
+       normal round-robin and switch to the next ready thread. */
+    if (g_current->state == PROC_BLOCKED) {
+        if (g_ready_head) {
+            process_t* next = g_ready_head;
+            g_ready_head = next->next;
+            if (!g_ready_head) g_ready_tail = (process_t*)0;
+            next->next = (process_t*)0;
+
+            if (next == g_current) {
+                g_current->state = PROC_RUNNING;
+                g_current->quantum_remaining = PROC_QUANTUM;
+            } else {
+                process_t* prev = g_current;
+                next->state = PROC_RUNNING;
+                g_current   = next;
+                kthread_switch(&prev->kctx_esp, &next->kctx_esp);
+            }
+        }
+        return;
+    }
 
     /* Countdown quantum. */
     if (g_current->quantum_remaining > 0) {
@@ -109,9 +225,5 @@ void scheduler_tick(isr_frame_t* frame) {
     next->state = PROC_RUNNING;
     g_current   = next;
 
-    /* Stack swap — returns immediately on the new thread's stack.
-       When prev is eventually switched back to, kthread_switch returns
-       here and we unwind through scheduler_tick → _pit_isr → isr_common
-       → iret on prev's own saved frame. */
     kthread_switch(&prev->kctx_esp, &next->kctx_esp);
 }

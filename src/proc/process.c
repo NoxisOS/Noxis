@@ -53,16 +53,7 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
 
     /* kthread_switch context — pre-initialize kstack so the first switch
        into this thread goes through kthread_entry (re-enables IRQs) and
-       then jumps to the actual entry function.
-
-       Stack layout (high → low):
-         [entry fn ptr]   ← kthread_entry does ret → jumps here
-         [kthread_entry]  ← kthread_switch ret → jumps here (trampoline)
-         [0]              ← ebp
-         [0]              ← esi
-         [0]              ← edi
-         [0]              ← ebx  ← kctx_esp points here
-    */
+       then jumps to the actual entry function. */
     extern void kthread_entry(void);
     volatile uint32_t* sp = (volatile uint32_t*)proc->kstack_top;
     *--sp = (uint32_t)entry;         /* 2nd ret: actual thread fn   */
@@ -72,6 +63,13 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     *--sp = 0;                        /* edi                         */
     *--sp = 0;                        /* ebx                         */
     proc->kctx_esp = (uint32_t)sp;
+
+    proc->wake_tick = 0;
+    for (uint32_t i = 0; i < PROC_MAX_FD; i++) {
+        proc->fd_table[i].used = FALSE;
+        proc->fd_table[i].file = (void*)0;
+        proc->fd_table[i].pos  = 0;
+    }
 
     return proc;
 }

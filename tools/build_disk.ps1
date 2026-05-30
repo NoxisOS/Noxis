@@ -26,7 +26,8 @@ $files = @(
     @{ Name = 'readme';     Path = 'rootfs/readme'     },
     @{ Name = 'hello.elf';  Path = 'build/hello.elf'   },
     @{ Name = 'echo.elf';   Path = 'build/echo.elf'    },
-    @{ Name = 'prompt.elf'; Path = 'build/prompt.elf'  }
+    @{ Name = 'prompt.elf'; Path = 'build/prompt.elf'  },
+    @{ Name = 'fread.elf';  Path = 'build/fread.elf'   }
 )
 
 # ── build sector 0 ──────────────────────────────────────────

@@ -81,6 +81,11 @@ void vga_backspace(void) {
 uint32_t vga_row(void) { return g_row; }
 uint32_t vga_col(void) { return g_col; }
 
+void vga_prime_cursor(void) {
+    VGA_BUFFER[g_row * VGA_WIDTH + g_col] =
+        (uint16_t)' ' | ((uint16_t)g_color << 8);
+}
+
 void vga_update_cursor(void) {
     uint16_t pos = (uint16_t)(g_row * VGA_WIDTH + g_col);
     port_byte_out(0x3D4, 0x0F);

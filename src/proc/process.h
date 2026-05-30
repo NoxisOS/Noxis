@@ -9,11 +9,13 @@
 
 #include <common/types.h>
 #include <common/status.h>
+#include <fs/vfs.h>
 
 /* ── constants ─────────────────────────────────────────────── */
 #define PROC_NAME_MAX    32
 #define PROC_QUANTUM     10          /* ticks per time slice */
 #define PROC_KSTACK_PAGES 2          /* 8 KB kernel stack */
+#define PROC_MAX_FD      16          /* max open files per process */
 
 /* ── process states ────────────────────────────────────────── */
 typedef enum {
@@ -30,6 +32,13 @@ typedef struct __attribute__((packed)) {
     uint32_t esp, ss;
 } context_t;
 
+/* ── open file descriptor slot ─────────────────────────────── */
+typedef struct {
+    const vfs_file_t* file;
+    uint32_t           pos;
+    bool_t             used;
+} opened_file_t;
+
 /* ── process ───────────────────────────────────────────────── */
 typedef struct process {
     uint32_t         pid;
@@ -41,6 +50,8 @@ typedef struct process {
     uint32_t         priority;
     uint32_t         kstack_top;    /* virtual addr of kernel stack top */
     struct process*  next;          /* ready-queue linked list */
+    uint32_t         wake_tick;     /* g_ticks to wake at (0 = not sleeping) */
+    opened_file_t    fd_table[PROC_MAX_FD];
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

@@ -14,6 +14,8 @@
 #define SYS_EXIT     0
 #define SYS_WRITE    1   /* (fd=EBX implicit stdout, buf=EBX, len=ESI)  */
 #define SYS_READ     2   /* EBX=fd, ESI=buf, EDI=max_len → EAX=read    */
+#define SYS_OPEN     3   /* EBX=name → EAX=fd                           */
+#define SYS_CLOSE    4   /* EBX=fd  → EAX=0                             */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

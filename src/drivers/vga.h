@@ -55,4 +55,9 @@ uint32_t vga_col(void);
 /* Hardware cursor update (auto-called by put_char) */
 void     vga_update_cursor(void);
 
+/* Write a space with the current colour at the cursor position without
+   advancing it — primes the attribute so the blinking cursor appears in
+   the expected colour rather than a stale one left by a previous write. */
+void     vga_prime_cursor(void);
+
 #endif /* DRIVERS_VGA_H */

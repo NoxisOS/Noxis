@@ -29,6 +29,7 @@ extern const shell_cmd_t cmd_cat;
 extern const shell_cmd_t cmd_exec;
 extern const shell_cmd_t cmd_clear;
 extern const shell_cmd_t cmd_halt;
+extern const shell_cmd_t cmd_sleep;
 
 static const shell_cmd_t* g_cmds[] = {
     &cmd_help,
@@ -38,6 +39,7 @@ static const shell_cmd_t* g_cmds[] = {
     &cmd_exec,
     &cmd_clear,
     &cmd_halt,
+    &cmd_sleep,
 };
 
 #define G_CMDS_N (sizeof(g_cmds) / sizeof(g_cmds[0]))
@@ -104,6 +106,9 @@ static void _prompt(void) {
     vga_set_color(VGA_DARK_GREY, VGA_BLACK);
     vga_write((const uint8_t*)" > ");
     vga_set_color(VGA_WHITE, VGA_BLACK);
+    /* Prime the attribute at the cursor cell so the blinking hardware cursor
+       appears white, not a stale colour left by whatever was there before. */
+    vga_prime_cursor();
 }
 
 static void _dispatch(const uint8_t* line) {
