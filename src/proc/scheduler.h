@@ -10,6 +10,7 @@
 #include <common/types.h>
 #include <kernel/isr.h>
 #include <proc/process.h>
+#include <proc/exec.h>
 
 /**
  * @brief Initializes the scheduler (creates idle task)
@@ -46,5 +47,27 @@ process_t* scheduler_current(void);
  *        Yields the CPU so other threads can run (0% CPU).
  */
 void thread_sleep(uint32_t ms);
+
+/**
+ * @brief Marks the current process as ZOMBIE and switches to the next
+ *        ready thread.  Does not return.  Call after setting exit_code
+ *        and waking any waiter.
+ */
+void scheduler_exit(void) __attribute__((noreturn));
+
+/**
+ * @brief Returns the process with the given PID, searching all queues.
+ *        Returns NULL if not found.
+ */
+process_t* scheduler_find_proc(uint32_t pid);
+
+/**
+ * @brief Creates a fork child of the calling process.
+ *        Copies the parent's address space, sets up a kernel thread that
+ *        will resume the child in ring 3 at the fork call-site with EAX=0.
+ * @param frame  The sysenter frame captured at the sys_fork call.
+ * @return child PID on success, (uint32_t)-1 on OOM.
+ */
+uint32_t scheduler_fork_spawn(isr_frame_t* frame);
 
 #endif /* PROC_SCHEDULER_H */

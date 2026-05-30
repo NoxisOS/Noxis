@@ -15,6 +15,7 @@
 #include <drivers/kbd.h>
 #include <fs/vfs.h>
 #include <common/types.h>
+#include <mm/vmm.h>
 
 #define MSR_SYSENTER_CS   0x174
 #define MSR_SYSENTER_ESP  0x175
@@ -23,6 +24,13 @@
 extern void isr_stub_128(void);
 extern void sysenter_entry(void);
 extern void msr_write(uint32_t msr, uint32_t low, uint32_t high);
+extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
+extern void gdt_set_kernel_stack(uint32_t esp);
+
+/* Scheduler internals needed for inline waitpid blocking. */
+extern process_t* g_current;
+extern process_t* g_ready_head;
+extern process_t* g_ready_tail;
 
 static void _sys_write(isr_frame_t* frame) {
     const uint8_t* str = (const uint8_t*)frame->ebx;
@@ -40,7 +48,76 @@ static void _sys_write(isr_frame_t* frame) {
 }
 
 static void _sys_exit(isr_frame_t* frame) {
-    exec_return((int)frame->ebx);
+    process_t* me = scheduler_current();
+    int code = (int)frame->ebx;
+
+    if (me->is_fork_child) {
+        /* Fork child: mark ZOMBIE, wake waiting parent, then yield forever. */
+        me->exit_code = code;
+        me->state     = PROC_ZOMBIE;
+
+        if (me->waiter) {
+            scheduler_add(me->waiter);
+            me->waiter = (process_t*)0;
+        }
+        scheduler_exit(); /* does not return */
+    } else {
+        exec_return(code);
+    }
+}
+
+static void _sys_fork(isr_frame_t* frame) {
+    uint32_t child_pid = scheduler_fork_spawn(frame);
+    /* Parent: EAX = child PID.  Child: resumes via user_enter_fork with EAX=0. */
+    frame->eax = child_pid;
+}
+
+static void _sys_waitpid(isr_frame_t* frame) {
+    uint32_t pid = frame->ebx;
+    process_t* me = scheduler_current();
+
+    process_t* child = scheduler_find_proc(pid);
+
+    if (!child) {
+        /* Child already cleaned up or never existed. */
+        frame->eax = (uint32_t)-1;
+        return;
+    }
+
+    if (child->state == PROC_ZOMBIE) {
+        frame->eax = (uint32_t)child->exit_code;
+        return;
+    }
+
+    /* Child still running — block until it exits.
+       We do NOT add to g_blocked_head: that list is for timer sleeps.
+       The child's sys_exit calls scheduler_add(waiter) which adds us back
+       to g_ready_head directly.  scheduler_tick's PROC_BLOCKED branch will
+       switch away from us on the next tick if we don't kthread_switch here. */
+    child->waiter = me;
+    me->state     = PROC_BLOCKED;
+    me->wake_tick = 0;
+
+    /* Yield to next ready thread (child will eventually run and wake us). */
+    if (g_ready_head) {
+        process_t* next = g_ready_head;
+        g_ready_head = next->next;
+        if (!g_ready_head) g_ready_tail = (process_t*)0;
+        next->next = (process_t*)0;
+
+        process_t* prev = me;
+        next->state = PROC_RUNNING;
+        g_current   = next;
+
+        /* DO_SWITCH defined in scheduler.c — replicate inline here. */
+        gdt_set_kernel_stack(next->kstack_top);
+        msr_write(MSR_SYSENTER_ESP, next->kstack_top, 0);
+        kthread_switch(&prev->kctx_esp, &next->kctx_esp);
+        /* We resume here when the child wakes us. */
+        __asm__ __volatile__("sti");
+    }
+    /* Collect exit code. */
+    frame->eax = (uint32_t)child->exit_code;
 }
 
 static void _sys_open(isr_frame_t* frame) {
@@ -131,11 +208,13 @@ static void _sys_read(isr_frame_t* frame) {
 
 static void _syscall_dispatch(isr_frame_t* frame) {
     switch (frame->eax) {
-    case SYS_WRITE: _sys_write(frame); break;
-    case SYS_READ:  _sys_read(frame);  break;
-    case SYS_EXIT:  _sys_exit(frame);  break;
-    case SYS_OPEN:  _sys_open(frame);  break;
-    case SYS_CLOSE: _sys_close(frame); break;
+    case SYS_WRITE:   _sys_write(frame);   break;
+    case SYS_READ:    _sys_read(frame);    break;
+    case SYS_EXIT:    _sys_exit(frame);    break;
+    case SYS_OPEN:    _sys_open(frame);    break;
+    case SYS_CLOSE:   _sys_close(frame);   break;
+    case SYS_FORK:    _sys_fork(frame);    break;
+    case SYS_WAITPID: _sys_waitpid(frame); break;
     default: break;
     }
 }

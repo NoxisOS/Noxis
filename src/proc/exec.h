@@ -36,4 +36,10 @@ os_status_t exec_run(const uint8_t* elf, uint32_t size,
  */
 void exec_return(int code) __attribute__((noreturn));
 
+/**
+ * @brief Returns the physical address of the currently-active exec PD,
+ *        or 0 if no exec is in progress.  Used by sys_fork.
+ */
+uint32_t exec_current_pd(void);
+
 #endif /* PROC_EXEC_H */

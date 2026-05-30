@@ -67,7 +67,7 @@ all: $(DISK_IMG)
 
 # ── Userland ELFs ─────────────────────────────────────────────
 USER_LD   = src/userland/user.ld
-USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf build/fread.elf
+USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf build/fread.elf build/fork.elf
 
 build/hello.o: src/userland/hello.asm
 	@if not exist build mkdir build
@@ -98,6 +98,14 @@ build/fread.o: src/userland/fread.asm
 	@echo AS   $<
 	$(AS) $(ASFLAGS) $< -o $@
 build/fread.elf: build/fread.o $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
+
+build/fork.o: src/userland/fork.asm
+	@if not exist build mkdir build
+	@echo AS   $<
+	$(AS) $(ASFLAGS) $< -o $@
+build/fork.elf: build/fork.o $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
 

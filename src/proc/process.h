@@ -49,9 +49,21 @@ typedef struct process {
     uint32_t         quantum_remaining;
     uint32_t         priority;
     uint32_t         kstack_top;    /* virtual addr of kernel stack top */
-    struct process*  next;          /* ready-queue linked list */
+    struct process*  next;          /* ready/blocked-queue linked list */
     uint32_t         wake_tick;     /* g_ticks to wake at (0 = not sleeping) */
     opened_file_t    fd_table[PROC_MAX_FD];
+
+    /* ── address space ──────────────────────────────────────── */
+    uint32_t         page_dir_phys; /* physical addr of this process's PD
+                                       (0 = use kernel PD, set for exec/fork) */
+
+    /* ── fork / wait ────────────────────────────────────────── */
+    uint32_t         ppid;          /* parent PID (0 = no parent)             */
+    int32_t          exit_code;     /* stored when state → PROC_ZOMBIE        */
+    struct process*  waiter;        /* process blocked in waitpid on us       */
+    bool_t           is_fork_child; /* TRUE if created by sys_fork            */
+    uint32_t         fork_eip;      /* ring-3 EIP to resume at (fork child)   */
+    uint32_t         fork_esp;      /* ring-3 ESP to resume at (fork child)   */
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

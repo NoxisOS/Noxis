@@ -15,6 +15,7 @@ section .text
 [BITS 32]
 
 global user_enter
+global user_enter_fork      ; same as user_enter but sets EAX=0 (fork child)
 
 user_enter:
     ; Snapshot params before any push moves esp
@@ -39,3 +40,24 @@ user_enter:
     mov  gs, ax
 
     iret                          ; → ring 3
+
+; ── user_enter_fork ─────────────────────────────────────────
+; Identical to user_enter but zeroes EAX so the child sees fork() == 0.
+user_enter_fork:
+    mov  edx, [esp + 4]
+    mov  ecx, [esp + 8]
+    push dword 0x23
+    push ecx
+    pushfd
+    pop  eax
+    or   eax, 0x200
+    push eax
+    push dword 0x1B
+    push edx
+    mov  ax, 0x23
+    mov  ds, ax
+    mov  es, ax
+    mov  fs, ax
+    mov  gs, ax
+    xor  eax, eax               ; fork() returns 0 in the child
+    iret
