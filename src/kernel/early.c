@@ -1,8 +1,8 @@
 /**
  * @file    kernel/early.c
- * @brief   Boot banner, init sequence, interactive shell.
- *          All screen output goes through drivers/vga so user-mode sys_write
- *          and kernel printing stay in sync on the same cursor.
+ * @brief   Boot banner, init sequence, handoff to the shell.
+ *          Once VFS is up, this file does nothing — the shell owns the REPL
+ *          and each builtin lives in shell/cmd_*.c.
  * @author  Noxis Team
  * @date    2026-05-30
  */
@@ -15,38 +15,19 @@
 #include <mm/pmm.h>
 #include <mm/vmm.h>
 #include <mm/heap.h>
-#include <mm/paging.h>
 #include <drivers/pit.h>
 #include <drivers/ata.h>
 #include <drivers/kbd.h>
 #include <drivers/vga.h>
-#include <proc/process.h>
 #include <proc/scheduler.h>
-#include <proc/exec.h>
 #include <syscall/syscall.h>
 #include <fs/vfs.h>
+#include <shell/shell.h>
 
-/* ── small string helpers ───────────────────────────────────── */
+/* ── small string helper (used by banner centering) ─────────── */
 
 static uint32_t _strlen(const uint8_t* s) {
     uint32_t n = 0; while (s[n]) n++; return n;
-}
-
-static int _streq(const uint8_t* a, const uint8_t* b) {
-    uint32_t i = 0;
-    while (a[i] && b[i]) { if (a[i] != b[i]) return 0; i++; }
-    return a[i] == b[i];
-}
-
-/* If `line` starts with `prefix` followed by '\0' or spaces, return a pointer
-   to the trimmed argument (may be empty string). Otherwise NULL. */
-static const uint8_t* _match_prefix(const uint8_t* line, const uint8_t* prefix) {
-    uint32_t i = 0;
-    while (prefix[i]) { if (line[i] != prefix[i]) return (const uint8_t*)0; i++; }
-    if (line[i] == 0) return line + i;
-    if (line[i] != ' ') return (const uint8_t*)0;
-    while (line[i] == ' ') i++;
-    return line + i;
 }
 
 /* ── Banner (CP437 box-drawing) ─────────────────────────────── */
@@ -69,8 +50,7 @@ static void _banner_line(const uint8_t* content, uint8_t fg) {
     vga_pad_to(BANNER_INDENT, ' ');
     vga_put_char(0xBA);
     vga_set_color(fg, VGA_BLACK);
-    uint32_t len = _strlen(content);
-    uint32_t pad_l = (BANNER_INNER - len) / 2;
+    uint32_t pad_l = (BANNER_INNER - _strlen(content)) / 2;
     for (uint32_t i = 0; i < pad_l; i++) vga_put_char(' ');
     vga_write(content);
     vga_pad_to(BANNER_INDENT + 1 + BANNER_INNER, ' ');
@@ -152,172 +132,6 @@ static void _footer(void) {
     vga_put_char('\n');
 }
 
-/* ── shell prompt ───────────────────────────────────────────── */
-
-static void _prompt(void) {
-    vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"   noxis");
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)" > ");
-    vga_set_color(VGA_WHITE, VGA_BLACK);
-}
-
-/* ── commands ───────────────────────────────────────────────── */
-
-static void _cmd_help(void) {
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)"   commands: ");
-    vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK);
-    vga_write((const uint8_t*)"help  uptime  ls  cat <f>  exec <f>  clear  halt\n");
-}
-
-static void _cmd_uptime(void) {
-    uint32_t ms = pit_uptime_ms();
-    uint32_t s  = ms / 1000;
-    uint8_t buf[12]; uint32_t i = 11; buf[11] = 0;
-    if (s == 0) { buf[--i] = '0'; }
-    else { while (s) { buf[--i] = (uint8_t)('0' + (s % 10)); s /= 10; } }
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)"   ");
-    vga_set_color(VGA_YELLOW, VGA_BLACK);
-    vga_write(&buf[i]);
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)" seconds since boot\n");
-}
-
-static void _print_u32(uint32_t v, uint32_t width, uint8_t fg) {
-    uint8_t buf[12]; uint32_t i = 11; buf[11] = 0;
-    if (v == 0) { buf[--i] = '0'; }
-    else { while (v) { buf[--i] = (uint8_t)('0' + (v % 10)); v /= 10; } }
-    uint32_t len = 11 - i;
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    while (len < width) { vga_put_char(' '); len++; }
-    vga_set_color(fg, VGA_BLACK);
-    vga_write(&buf[i]);
-}
-
-static void _cmd_ls(void) {
-    uint32_t n = vfs_count();
-    for (uint32_t i = 0; i < n; i++) {
-        const vfs_file_t* f = vfs_entry(i);
-        vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-        vga_write((const uint8_t*)"   ");
-        _print_u32(f->size, 6, VGA_YELLOW);
-        vga_write((const uint8_t*)"  ");
-        vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK);
-        vga_write(f->name);
-        vga_put_char('\n');
-    }
-}
-
-static void _cmd_cat(const uint8_t* name) {
-    const vfs_file_t* f = vfs_lookup(name);
-    if (!f) {
-        vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
-        vga_write((const uint8_t*)"   no such file: ");
-        vga_set_color(VGA_WHITE, VGA_BLACK);
-        vga_write(name);
-        vga_put_char('\n');
-        return;
-    }
-    vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)"   ");
-    for (uint32_t i = 0; i < f->size; i++) {
-        uint8_t c = f->data[i];
-        vga_put_char(c);
-        if (c == '\n' && i + 1 < f->size) vga_write((const uint8_t*)"   ");
-    }
-    if (f->size == 0 || f->data[f->size - 1] != '\n') vga_put_char('\n');
-}
-
-static void _cmd_exec(const uint8_t* name) {
-    const vfs_file_t* f = vfs_lookup(name);
-    if (!f) {
-        vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
-        vga_write((const uint8_t*)"   no such file: ");
-        vga_set_color(VGA_WHITE, VGA_BLACK);
-        vga_write(name); vga_put_char('\n');
-        return;
-    }
-
-    vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"   exec ");
-    vga_set_color(VGA_WHITE, VGA_BLACK);
-    vga_write(name);
-    vga_put_char('\n');
-    vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-
-    int exit_code = 0;
-    os_status_t s = exec_run(f->data, f->size, &exit_code);
-    if (s != OS_OK) {
-        vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
-        vga_write((const uint8_t*)"   exec failed (not a valid ELF or OOM)\n");
-        return;
-    }
-
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)"   [exited ");
-    _print_u32((uint32_t)exit_code, 0, VGA_YELLOW);
-    vga_set_color(VGA_DARK_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)"]\n");
-}
-
-static void _cmd_unknown(const uint8_t* line) {
-    vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
-    vga_write((const uint8_t*)"   unknown: ");
-    vga_set_color(VGA_WHITE, VGA_BLACK);
-    vga_write(line);
-    vga_put_char('\n');
-}
-
-static void _run_command(const uint8_t* line) {
-    const uint8_t* arg;
-    if (line[0] == 0) return;
-    if      (_streq(line, (const uint8_t*)"help"))   _cmd_help();
-    else if (_streq(line, (const uint8_t*)"uptime")) _cmd_uptime();
-    else if (_streq(line, (const uint8_t*)"ls"))     _cmd_ls();
-    else if (_streq(line, (const uint8_t*)"clear"))  vga_clear();
-    else if (_streq(line, (const uint8_t*)"halt"))   { for (;;) cpu_hlt(); }
-    else if ((arg = _match_prefix(line, (const uint8_t*)"cat")) != 0) {
-        if (arg[0] == 0) {
-            vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
-            vga_write((const uint8_t*)"   usage: cat <file>\n");
-        } else _cmd_cat(arg);
-    }
-    else if ((arg = _match_prefix(line, (const uint8_t*)"exec")) != 0) {
-        if (arg[0] == 0) {
-            vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
-            vga_write((const uint8_t*)"   usage: exec <file>\n");
-        } else _cmd_exec(arg);
-    }
-    else _cmd_unknown(line);
-}
-
-static void _repl(void) {
-    uint8_t line[80];
-    uint32_t len = 0;
-
-    _prompt();
-    for (;;) {
-        uint8_t c = kbd_getchar();
-        if (c == '\n') {
-            vga_put_char('\n');
-            line[len] = 0;
-            _run_command(line);
-            len = 0;
-            _prompt();
-        } else if (c == '\b') {
-            if (len > 0) { len--; vga_backspace(); }
-        } else if (c >= ' ' && c < 0x7F) {
-            if (len < sizeof(line) - 1) {
-                line[len++] = c;
-                vga_set_color(VGA_WHITE, VGA_BLACK);
-                vga_put_char(c);
-            }
-        }
-    }
-}
-
 /* ── Entry ──────────────────────────────────────────────────── */
 
 void kernel_main(void) {
@@ -344,5 +158,5 @@ void kernel_main(void) {
 
     cpu_sti();
     vga_put_char('\n');
-    _repl();
+    shell_run();
 }

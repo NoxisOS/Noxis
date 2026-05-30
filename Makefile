@@ -30,7 +30,12 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
                   build/proc/process.o build/proc/scheduler.o \
                   build/syscall/syscall.o \
                   build/fs/vfs.o build/fs/ramfs.o build/fs/noxfs.o \
-                  build/proc/elf.o build/proc/exec.o
+                  build/proc/elf.o build/proc/exec.o \
+                  build/shell/shell.o \
+                  build/shell/cmd_help.o   build/shell/cmd_uptime.o \
+                  build/shell/cmd_ls.o     build/shell/cmd_cat.o \
+                  build/shell/cmd_exec.o   build/shell/cmd_clear.o \
+                  build/shell/cmd_halt.o
 
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/gdt_load.o build/asm/idt_load.o \
@@ -122,6 +127,11 @@ build/syscall/%.o: src/syscall/%.c
 
 build/fs/%.o: src/fs/%.c
 	@if not exist build\fs mkdir build\fs
+	@echo CC   $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/shell/%.o: src/shell/%.c
+	@if not exist build\shell mkdir build\shell
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 
