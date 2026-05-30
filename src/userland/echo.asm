@@ -22,8 +22,11 @@ global _start
 %define SYS_EXIT  0
 %define SYS_WRITE 1
 
-; ── Macro: call sys_write(EBX=buf, ESI=len) and return to .lbl ──
+; ── Macro: call sys_write(fd=1, buf=EBX, len=ESI) and return to .lbl ──
 %macro WRITE 1
+    mov  edi, esi            ; len → EDI
+    mov  esi, ebx            ; buf → ESI
+    mov  ebx, 1              ; fd = stdout
     mov  eax, SYS_WRITE
     lea  edx, [%1]
     mov  ecx, esp

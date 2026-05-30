@@ -20,10 +20,11 @@ _start:
 .here:
     pop  ebp                                  ; ebp = runtime &.here
 
-    ; sys_write(1, msg, msg_len)
-    lea  ebx, [ebp + msg - .here]
+    ; sys_write(1, msg, msg_len)   — EBX=fd, ESI=buf, EDI=len
+    mov  ebx, 1
+    lea  esi, [ebp + msg - .here]
+    mov  edi, msg_len
     mov  eax, 1
-    mov  esi, msg_len
     lea  edx, [ebp + .ret1 - .here]
     mov  ecx, esp
     sysenter

@@ -28,7 +28,8 @@ $files = @(
     @{ Name = 'echo.elf';   Path = 'build/echo.elf'    },
     @{ Name = 'prompt.elf'; Path = 'build/prompt.elf'  },
     @{ Name = 'fread.elf';  Path = 'build/fread.elf'   },
-    @{ Name = 'fork.elf';   Path = 'build/fork.elf'    }
+    @{ Name = 'fork.elf';   Path = 'build/fork.elf'    },
+    @{ Name = 'write.elf';  Path = 'build/write.elf'   }
 )
 
 # ── build sector 0 ──────────────────────────────────────────

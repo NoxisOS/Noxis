@@ -20,10 +20,11 @@ global _start
 
 ; ── sysenter wrappers ────────────────────────────────────────
 
-%macro SYSWRITE 3          ; SYSWRITE buf_label, len_expr, .ret
+%macro SYSWRITE 3          ; SYSWRITE buf_label, len_expr, .ret  (fd=stdout)
+    mov  ebx, 1
+    lea  esi, [%1]
+    mov  edi, %2
     mov  eax, SYS_WRITE
-    lea  ebx, [%1]
-    mov  esi, %2
     lea  edx, [%3]
     mov  ecx, esp
     sysenter
@@ -66,9 +67,11 @@ print_u32:
     mov  [edi + ecx], dl
     jmp  .digits
 .print:
-    lea  ebx, [edi + ecx]    ; pointer to first digit
-    mov  esi, 10
-    sub  esi, ecx            ; length
+    mov  ebx, 1               ; fd = stdout
+    lea  esi, [edi + ecx]     ; pointer to first digit
+    push esi
+    mov  edi, 10
+    sub  edi, ecx             ; length
     mov  eax, SYS_WRITE
     lea  edx, [.r]
     mov  ecx, esp

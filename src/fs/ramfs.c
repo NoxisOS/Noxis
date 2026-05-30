@@ -24,10 +24,10 @@ static const uint8_t _readme[] =
 
 /* ── file table ─────────────────────────────────────────────── */
 
-static const vfs_file_t _files[] = {
-    { (const uint8_t*)"motd",    _motd,    sizeof(_motd)    - 1 },
-    { (const uint8_t*)"version", _version, sizeof(_version) - 1 },
-    { (const uint8_t*)"readme",  _readme,  sizeof(_readme)  - 1 },
+static vfs_file_t _files[] = {
+    { (const uint8_t*)"motd",    (uint8_t*)_motd,    sizeof(_motd)    - 1, 0, 0 },
+    { (const uint8_t*)"version", (uint8_t*)_version, sizeof(_version) - 1, 0, 0 },
+    { (const uint8_t*)"readme",  (uint8_t*)_readme,  sizeof(_readme)  - 1, 0, 0 },
 };
 
 #define FILES_N (sizeof(_files) / sizeof(_files[0]))
@@ -50,13 +50,13 @@ uint32_t ramfs_count(void) {
     return FILES_N;
 }
 
-const vfs_file_t* ramfs_entry(uint32_t i) {
-    return i < FILES_N ? &_files[i] : (const vfs_file_t*)0;
+vfs_file_t* ramfs_entry(uint32_t i) {
+    return i < FILES_N ? &_files[i] : (vfs_file_t*)0;
 }
 
-const vfs_file_t* ramfs_lookup(const uint8_t* name) {
+vfs_file_t* ramfs_lookup(const uint8_t* name) {
     for (uint32_t i = 0; i < FILES_N; i++) {
         if (_streq(_files[i].name, name)) return &_files[i];
     }
-    return (const vfs_file_t*)0;
+    return (vfs_file_t*)0;
 }

@@ -12,12 +12,13 @@
 
 /* ── syscall numbers ───────────────────────────────────────── */
 #define SYS_EXIT     0
-#define SYS_WRITE    1   /* (fd=EBX implicit stdout, buf=EBX, len=ESI)  */
-#define SYS_READ     2   /* EBX=fd, ESI=buf, EDI=max_len → EAX=read    */
-#define SYS_OPEN     3   /* EBX=name → EAX=fd                           */
-#define SYS_CLOSE    4   /* EBX=fd  → EAX=0                             */
-#define SYS_FORK     5   /* → EAX=child_pid (parent) or 0 (child)       */
-#define SYS_WAITPID  6   /* EBX=pid → EAX=exit_code                     */
+#define SYS_WRITE    1   /* fd=EBX: 1=stdout→VGA, 3+=file; buf=ESI, len=EDI  */
+#define SYS_READ     2   /* EBX=fd, ESI=buf, EDI=max_len → EAX=read          */
+#define SYS_OPEN     3   /* EBX=name → EAX=fd                                 */
+#define SYS_CLOSE    4   /* EBX=fd  → EAX=0                                   */
+#define SYS_FORK     5   /* → EAX=child_pid (parent) or 0 (child)             */
+#define SYS_WAITPID  6   /* EBX=pid → EAX=exit_code                           */
+#define SYS_CREAT    7   /* EBX=name → EAX=fd                                 */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

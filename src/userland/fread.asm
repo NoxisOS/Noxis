@@ -18,9 +18,10 @@ global _start
 %define SYS_OPEN  3
 %define SYS_CLOSE 4
 
-%macro WRITE 2          ; buf_label, ret_label
-    lea  ebx, [%1]
-    mov  esi, %1 %+ _len
+%macro WRITE 2          ; buf_label, ret_label — prints to stdout
+    mov  ebx, 1
+    lea  esi, [%1]
+    mov  edi, %1 %+ _len
     mov  eax, SYS_WRITE
     lea  edx, [%2]
     mov  ecx, esp
@@ -69,8 +70,9 @@ _start:
     jz   .close
 
     ; sys_write(stdout, buf, bytes)
-    mov  esi, eax               ; bytes read → length
-    lea  ebx, [buf]
+    mov  edi, eax               ; bytes read → length
+    mov  ebx, 1                 ; fd = stdout
+    lea  esi, [buf]
     mov  eax, SYS_WRITE
     lea  edx, [.r_write]
     mov  ecx, esp

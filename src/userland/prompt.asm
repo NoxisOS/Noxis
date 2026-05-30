@@ -4,8 +4,7 @@
 ; Demonstrates: SYS_WRITE (output) + SYS_READ (line input).
 ;
 ; SYS_READ: EAX=2, EBX=fd(0=stdin), ESI=buf, EDI=maxlen → EAX=bytes read
-; SYS_WRITE: EAX=1, EBX=buf, ESI=len
-; ─────────────────────────────────────────────────────────────
+; SYS_WRITE: EAX=1, EBX=fd(1=stdout), ESI=buf, EDI=len
 
 section .text
 [BITS 32]
@@ -17,8 +16,9 @@ global _start
 %define STDIN     0
 
 %macro WRITE 2          ; buf_label, ret_label
-    lea  ebx, [%1]
-    mov  esi, %1 %+ _len
+    mov  ebx, 1
+    lea  esi, [%1]
+    mov  edi, %1 %+ _len
     mov  eax, SYS_WRITE
     lea  edx, [%2]
     mov  ecx, esp
@@ -57,8 +57,9 @@ _start:
     WRITE msg_hello, .r3
 
     ; print name
-    lea  ebx, [name_buf]
-    mov  esi, [name_len]
+    mov  ebx, 1
+    lea  esi, [name_buf]
+    mov  edi, [name_len]
     mov  eax, SYS_WRITE
     lea  edx, [.r4]
     mov  ecx, esp

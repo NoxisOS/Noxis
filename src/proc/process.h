@@ -34,9 +34,9 @@ typedef struct __attribute__((packed)) {
 
 /* ── open file descriptor slot ─────────────────────────────── */
 typedef struct {
-    const vfs_file_t* file;
-    uint32_t           pos;
-    bool_t             used;
+    vfs_file_t* file;
+    uint32_t    pos;
+    bool_t      used;
 } opened_file_t;
 
 /* ── process ───────────────────────────────────────────────── */

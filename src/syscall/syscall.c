@@ -33,18 +33,34 @@ extern process_t* g_ready_head;
 extern process_t* g_ready_tail;
 
 static void _sys_write(isr_frame_t* frame) {
-    const uint8_t* str = (const uint8_t*)frame->ebx;
-    uint32_t len = frame->esi;
-    if (len == 0) len = frame->ecx;
+    uint32_t fd  = frame->ebx;
+    const uint8_t* buf = (const uint8_t*)frame->esi;
+    uint32_t len = frame->edi;
+    if (len == 0) return;
 
-    /* Honor the user's length, but still stop at NUL — saves us from a runaway
-       loop when the user passed a string-style buffer. */
-    for (uint32_t i = 0; i < len; i++) {
-        uint8_t c = str[i];
-        if (c == 0) break;
-        vga_put_char(c);
+    if (fd == STDOUT_FD || fd == STDERR_FD || fd == 0) {
+        /* stdout / stderr → VGA */
+        for (uint32_t i = 0; i < len; i++) {
+            uint8_t c = buf[i];
+            if (c == 0) break;
+            vga_put_char(c);
+        }
+        frame->eax = len;
+        return;
     }
-    frame->eax = len;
+
+    /* File-backed fd. */
+    process_t* proc = scheduler_current();
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
+        vfs_file_t* f = proc->fd_table[fd].file;
+        int32_t n = vfs_write_file(f, proc->fd_table[fd].pos,
+                                   buf, len);
+        if (n > 0) proc->fd_table[fd].pos += (uint32_t)n;
+        frame->eax = n > 0 ? (uint32_t)n : (uint32_t)-1;
+        return;
+    }
+
+    frame->eax = (uint32_t)-1;
 }
 
 static void _sys_exit(isr_frame_t* frame) {
@@ -66,6 +82,7 @@ static void _sys_exit(isr_frame_t* frame) {
         }
         scheduler_exit(); /* does not return */
     } else {
+        vfs_sync();
         exec_return(code);
     }
 }
@@ -128,7 +145,27 @@ static void _sys_open(isr_frame_t* frame) {
     const uint8_t* name = (const uint8_t*)frame->ebx;
     if (!name) { frame->eax = (uint32_t)-1; return; }
 
-    const vfs_file_t* f = vfs_lookup(name);
+    vfs_file_t* f = vfs_lookup(name);
+    if (!f) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
+        if (!proc->fd_table[i].used) {
+            proc->fd_table[i].file = f;
+            proc->fd_table[i].pos  = 0;
+            proc->fd_table[i].used = TRUE;
+            frame->eax = i;
+            return;
+        }
+    }
+    frame->eax = (uint32_t)-1;
+}
+
+static void _sys_creat(isr_frame_t* frame) {
+    const uint8_t* name = (const uint8_t*)frame->ebx;
+    if (!name) { frame->eax = (uint32_t)-1; return; }
+
+    vfs_file_t* f = vfs_creat(name);
     if (!f) { frame->eax = (uint32_t)-1; return; }
 
     process_t* proc = scheduler_current();
@@ -170,7 +207,7 @@ static void _sys_read(isr_frame_t* frame) {
 
     /* File-backed fd: read from open file. */
     if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
-        const vfs_file_t* f = proc->fd_table[fd].file;
+        vfs_file_t* f = proc->fd_table[fd].file;
         uint32_t pos = proc->fd_table[fd].pos;
         uint32_t remaining = f->size - pos;
         uint32_t to_copy = remaining < maxlen ? remaining : maxlen;
@@ -219,6 +256,7 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_CLOSE:   _sys_close(frame);   break;
     case SYS_FORK:    _sys_fork(frame);    break;
     case SYS_WAITPID: _sys_waitpid(frame); break;
+    case SYS_CREAT:   _sys_creat(frame);   break;
     default: break;
     }
 }

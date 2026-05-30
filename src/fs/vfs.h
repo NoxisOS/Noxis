@@ -10,16 +10,28 @@
 #include <common/types.h>
 #include <common/status.h>
 
-/* A read-only file view. `data` is the live backing buffer (don't free). */
+/* A file view.  `data` is the live backing buffer owned by the backend. */
 typedef struct {
     const uint8_t* name;
-    const uint8_t* data;
+    uint8_t*       data;
     uint32_t       size;
+    uint32_t       lba;       /* starting LBA (set by noxfs, 0 for ramfs) */
+    uint32_t       capacity;  /* allocated size (rounded up to sectors) */
 } vfs_file_t;
 
-os_status_t        vfs_init(void);
-uint32_t           vfs_count(void);
-const vfs_file_t*  vfs_entry(uint32_t i);
-const vfs_file_t*  vfs_lookup(const uint8_t* name);
+os_status_t   vfs_init(void);
+uint32_t      vfs_count(void);
+vfs_file_t*   vfs_entry(uint32_t i);
+vfs_file_t*   vfs_lookup(const uint8_t* name);
+
+/* Write data to a file at offset.  Grows the file.  Returns bytes written. */
+int32_t       vfs_write_file(vfs_file_t* f, uint32_t offset,
+                             const uint8_t* data, uint32_t len);
+
+/* Create an empty file.  Returns the new file, or NULL. */
+vfs_file_t*   vfs_creat(const uint8_t* name);
+
+/* Flush all dirty metadata to disk. */
+void          vfs_sync(void);
 
 #endif /* FS_VFS_H */
