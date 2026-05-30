@@ -27,6 +27,7 @@
 #include <kernel/hal/gdt.h>
 #include <drivers/pit.h>
 #include <mm/virt/vmm.h>
+#include <kernel/hal/fpu.h>
 #include <fs/pipe/pipe.h>
 #include <fs/vfs/vfs.h>
 #include <common/types.h>
@@ -44,6 +45,7 @@ extern void msr_write(uint32_t msr, uint32_t lo, uint32_t hi);
 #define DO_SWITCH(prev, next) do {                              \
     gdt_set_kernel_stack((next)->kstack_top);                   \
     msr_write(MSR_SYSENTER_ESP, (next)->kstack_top, 0);         \
+    fpu_set_ts();   /* arm lazy FPU restore for the next thread */ \
     kthread_switch(&(prev)->kctx_esp, &(next)->kctx_esp);       \
 } while (0)
 
@@ -405,6 +407,9 @@ void proc_terminate(int code) {
 void scheduler_exit(void) {
     /* Current process must already be ZOMBIE + exit_code set by caller. */
     __asm__ __volatile__("cli");
+
+    /* Stop tracking us as the FPU owner — our process_t may be reaped. */
+    fpu_drop_owner(g_current);
 
     if (!g_ready_head) {
         /* Nothing else to run. Switch to kernel PD, destroy our PD, halt. */

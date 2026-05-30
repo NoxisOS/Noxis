@@ -12,6 +12,7 @@
 #include <kernel/hal/pic.h>
 #include <kernel/hal/ports.h>
 #include <kernel/isr/isr.h>
+#include <kernel/hal/fpu.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
 #include <mm/virt/heap.h>
@@ -163,6 +164,7 @@ void kernel_main(void) {
     STEP("HAL",  "IDT",     idt_init());
     STEP("HAL",  "PIC",     pic_remap());
     STEP("KRN",  "ISR",     isr_init());
+    STEP("KRN",  "FPU",     fpu_init());
     STEP("MM",   "PMM",     pmm_init(128*1024*1024));
     STEP("MM",   "VMM",     pagefault_init());
     STEP("MM",   "HEAP",    heap_init());

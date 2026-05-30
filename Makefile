@@ -26,7 +26,7 @@ KERNEL_C_OBJS = \
   build/kernel/core/early.o         build/kernel/isr/isr.o        \
   build/kernel/core/panic.o         \
   build/kernel/hal/gdt.o            build/kernel/hal/idt.o        \
-  build/kernel/hal/pic.o            \
+  build/kernel/hal/pic.o            build/kernel/hal/fpu.o        \
   build/mm/phys/pmm.o               build/mm/virt/vmm.o           \
   build/mm/virt/heap.o              build/mm/virt/pagefault.o     \
   build/drivers/pit.o               build/drivers/kbd.o           \
@@ -79,7 +79,7 @@ USER_ELFS = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/fread.elf  build/fork.elf   build/write.elf  \
             build/pipe.elf   build/signal.elf \
             build/ttytest.elf build/pftest.elf build/segv.elf \
-            build/init.elf   build/brktest.elf
+            build/init.elf   build/brktest.elf build/fputest.elf
 
 build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
@@ -94,6 +94,7 @@ build/pftest.o:  src/userland/pftest.asm  ; $(AS) $(ASFLAGS) $< -o $@
 build/segv.o:    src/userland/segv.asm    ; $(AS) $(ASFLAGS) $< -o $@
 build/init.o:    src/userland/init.asm    ; $(AS) $(ASFLAGS) $< -o $@
 build/brktest.o: src/userland/brktest.asm ; $(AS) $(ASFLAGS) $< -o $@
+build/fputest.o: src/userland/fputest.asm ; $(AS) $(ASFLAGS) $< -o $@
 
 build/%.elf: build/%.o $(USER_LD)
 	@echo LD   $@

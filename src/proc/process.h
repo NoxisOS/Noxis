@@ -85,6 +85,10 @@ typedef struct process {
     /* ── user heap (brk) ──────────────────────────────────────── */
     uint32_t         brk_start;     /* heap floor: end of loaded ELF image */
     uint32_t         brk;           /* current program break (grows up)    */
+
+    /* ── x87 FPU (lazy switching) ─────────────────────────────── */
+    uint8_t          fpu_state[108];/* FNSAVE/FRSTOR image                 */
+    bool_t           fpu_used;      /* TRUE once this process touched FPU  */
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

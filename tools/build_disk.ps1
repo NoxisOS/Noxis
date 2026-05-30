@@ -37,7 +37,8 @@ $files = @(
     @{Name='pftest.elf'; Path='build/pftest.elf'},
     @{Name='segv.elf';   Path='build/segv.elf'},
     @{Name='init.elf';   Path='build/init.elf'},
-    @{Name='brktest.elf';Path='build/brktest.elf'}
+    @{Name='brktest.elf';Path='build/brktest.elf'},
+    @{Name='fputest.elf';Path='build/fputest.elf'}
 )
 
 function W32($a, $o, $v) { [Array]::Copy([BitConverter]::GetBytes([uint32]$v),0,$a,$o,4) }
@@ -151,16 +152,28 @@ foreach ($f in $files) {
     $ino_id++
 }
 
-# ── write root dir entries ────────────────────────────────
-$dir_sz = $dirents.Count * $DT_SZ
-$root_dest = $root_data_blk * $BLKSZ
-for ($i = 0; $i -lt $dirents.Count; $i++) {
-    [Array]::Copy($dirents[$i], 0, $img, ($root_dest + ($i * $DT_SZ)), $DT_SZ)
-}
+# ── write root dir entries (may span several blocks) ──────
+# 32-byte dirents pack 16 to a 512-byte block with no straddling. Each
+# dirent must be written into the block its byte offset maps to AND that
+# block must be the one recorded in the inode's block pointers — writing
+# them contiguously from block 0 while pointing blocks[1] elsewhere would
+# silently drop the 17th+ entry.
+$dir_sz    = $dirents.Count * $DT_SZ
 $root_need = [Math]::Max(1, [int][Math]::Ceiling($dir_sz / $BLKSZ))
+
+$root_blocks = @($root_data_blk)          # block 0 (already allocated)
 for ($i = 1; $i -lt $root_need; $i++) {
     $eb = AllocBlock
     W32 $img ($r_ino_off + 10 + ($i * 4)) $eb
+    $root_blocks += $eb
+}
+
+for ($i = 0; $i -lt $dirents.Count; $i++) {
+    $boff   = $i * $DT_SZ
+    $bidx   = [int]($boff / $BLKSZ)
+    $within = $boff % $BLKSZ
+    $dest   = ($root_blocks[$bidx] * $BLKSZ) + $within
+    [Array]::Copy($dirents[$i], 0, $img, $dest, $DT_SZ)
 }
 W32 $img ($r_ino_off + 6) $dir_sz   # root inode size
 
