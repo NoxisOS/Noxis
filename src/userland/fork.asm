@@ -91,13 +91,13 @@ _start:
     jz   .child_path
 
     ; ── parent ───────────────────────────────────────────────
-    mov  esi, eax            ; save child_pid
+    mov  edi, eax            ; save child_pid in EDI (preserved across sysenter)
 
     SYSWRITE msg_parent_fork, msg_parent_fork_len, .w1
 
     ; sys_waitpid(child_pid)
     mov  eax, SYS_WAITPID
-    mov  ebx, esi
+    mov  ebx, edi
     lea  edx, [.after_wait]
     mov  ecx, esp
     sysenter

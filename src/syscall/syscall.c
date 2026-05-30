@@ -52,7 +52,11 @@ static void _sys_exit(isr_frame_t* frame) {
     int code = (int)frame->ebx;
 
     if (me->is_fork_child) {
-        /* Fork child: mark ZOMBIE, wake waiting parent, then yield forever. */
+        /* Block PIT ticks during the exit sequence: set exit_code + mark
+           ZOMBIE + wake parent must be atomic relative to the scheduler.
+           scheduler_exit() does its own cli, but the window between the
+           stub's sti and ours is large enough for a tick to fire. */
+        __asm__ __volatile__("cli");
         me->exit_code = code;
         me->state     = PROC_ZOMBIE;
 
@@ -90,10 +94,10 @@ static void _sys_waitpid(isr_frame_t* frame) {
     }
 
     /* Child still running — block until it exits.
-       We do NOT add to g_blocked_head: that list is for timer sleeps.
-       The child's sys_exit calls scheduler_add(waiter) which adds us back
-       to g_ready_head directly.  scheduler_tick's PROC_BLOCKED branch will
-       switch away from us on the next tick if we don't kthread_switch here. */
+       Critical section: setting waiter + state + yield must be atomic
+       wrt the scheduler tick, otherwise scheduler_tick may try to
+       kthread_switch us before we do it ourselves, corrupting kctx_esp. */
+    __asm__ __volatile__("cli");
     child->waiter = me;
     me->state     = PROC_BLOCKED;
     me->wake_tick = 0;
@@ -109,13 +113,13 @@ static void _sys_waitpid(isr_frame_t* frame) {
         next->state = PROC_RUNNING;
         g_current   = next;
 
-        /* DO_SWITCH defined in scheduler.c — replicate inline here. */
         gdt_set_kernel_stack(next->kstack_top);
         msr_write(MSR_SYSENTER_ESP, next->kstack_top, 0);
         kthread_switch(&prev->kctx_esp, &next->kctx_esp);
-        /* We resume here when the child wakes us. */
-        __asm__ __volatile__("sti");
     }
+    /* We resume here when the child wakes us.  Interrupts are still
+       disabled (scheduler_exit does cli before kthread_switch). */
+    __asm__ __volatile__("sti");
     /* Collect exit code. */
     frame->eax = (uint32_t)child->exit_code;
 }
