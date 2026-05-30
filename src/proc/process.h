@@ -35,11 +35,12 @@ typedef struct process {
     uint32_t         pid;
     uint8_t          name[PROC_NAME_MAX];
     proc_state_t     state;
-    context_t        ctx;
+    context_t        ctx;           /* legacy — kept for ring-3 user processes */
+    uint32_t         kctx_esp;      /* saved ESP for kthread_switch (ring-0)   */
     uint32_t         quantum_remaining;
     uint32_t         priority;
-    uint32_t         kstack_top;        /* virtual addr of kernel stack top */
-    struct process*  next;               /* linked list */
+    uint32_t         kstack_top;    /* virtual addr of kernel stack top */
+    struct process*  next;          /* ready-queue linked list */
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

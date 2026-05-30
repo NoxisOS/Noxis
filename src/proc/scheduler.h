@@ -28,6 +28,15 @@ void scheduler_tick(isr_frame_t* frame);
 void scheduler_add(process_t* proc);
 
 /**
+ * @brief Create a kernel thread and add it to the ready queue.
+ * @param name      human-readable label
+ * @param entry     entry function (must never return)
+ * @param priority  0 = highest
+ */
+os_status_t scheduler_spawn(const uint8_t* name, void (*entry)(void),
+                            uint32_t priority);
+
+/**
  * @brief Returns the currently running process
  */
 process_t* scheduler_current(void);

@@ -37,7 +37,7 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
         if (i == 0) proc->kstack_top = virt + PAGE_SIZE;
     }
 
-    /* Initial CPU context — restored into ISR frame on first switch */
+    /* Legacy ISR-frame context (used by ring-3 loader path). */
     proc->ctx.edi    = 0;
     proc->ctx.esi    = 0;
     proc->ctx.ebp    = 0;
@@ -50,6 +50,28 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     proc->ctx.eflags = 0x202;
     proc->ctx.esp    = proc->kstack_top;
     proc->ctx.ss     = 0x10;
+
+    /* kthread_switch context — pre-initialize kstack so the first switch
+       into this thread goes through kthread_entry (re-enables IRQs) and
+       then jumps to the actual entry function.
+
+       Stack layout (high → low):
+         [entry fn ptr]   ← kthread_entry does ret → jumps here
+         [kthread_entry]  ← kthread_switch ret → jumps here (trampoline)
+         [0]              ← ebp
+         [0]              ← esi
+         [0]              ← edi
+         [0]              ← ebx  ← kctx_esp points here
+    */
+    extern void kthread_entry(void);
+    volatile uint32_t* sp = (volatile uint32_t*)proc->kstack_top;
+    *--sp = (uint32_t)entry;         /* 2nd ret: actual thread fn   */
+    *--sp = (uint32_t)kthread_entry; /* 1st ret: sti trampoline     */
+    *--sp = 0;                        /* ebp                         */
+    *--sp = 0;                        /* esi                         */
+    *--sp = 0;                        /* edi                         */
+    *--sp = 0;                        /* ebx                         */
+    proc->kctx_esp = (uint32_t)sp;
 
     return proc;
 }

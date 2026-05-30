@@ -64,7 +64,7 @@ static void _banner(void) {
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK);
     _banner_edge(0xC9, 0xCD, 0xBB);
     _banner_line((const uint8_t*)"", VGA_WHITE);
-    _banner_line((const uint8_t*)"N O X I S   O S       v 0 . 7 . 0", VGA_WHITE);
+    _banner_line((const uint8_t*)"N O X I S   O S       v 0 . 8 . 0", VGA_WHITE);
     _banner_line((const uint8_t*)"a tiny x86 kernel", VGA_DARK_GREY);
     _banner_line((const uint8_t*)"", VGA_WHITE);
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK);
