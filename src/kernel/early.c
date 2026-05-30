@@ -20,6 +20,7 @@
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <syscall/syscall.h>
+#include <fs/vfs.h>
 
 #define VGA_WIDTH    80
 #define VGA_HEIGHT   25
@@ -217,7 +218,54 @@ static void _cmd_help(void) {
     _set_color(VGA_DARK_GREY, VGA_BLACK);
     _vga_write((const uint8_t*)"   commands: ");
     _set_color(VGA_LIGHT_CYAN, VGA_BLACK);
-    _vga_write((const uint8_t*)"help  uptime  clear  halt\n");
+    _vga_write((const uint8_t*)"help  uptime  ls  cat <file>  clear  halt\n");
+}
+
+/* Print a uint32 padded right to `width` columns, in `fg` color */
+static void _print_u32(uint32_t v, uint32_t width, uint8_t fg) {
+    uint8_t buf[12]; uint32_t i = 11; buf[11] = 0;
+    if (v == 0) { buf[--i] = '0'; }
+    else { while (v) { buf[--i] = (uint8_t)('0' + (v % 10)); v /= 10; } }
+    uint32_t len = 11 - i;
+    _set_color(VGA_DARK_GREY, VGA_BLACK);
+    while (len < width) { _vga_put_char(' '); len++; }
+    _set_color(fg, VGA_BLACK);
+    _vga_write(&buf[i]);
+}
+
+static void _cmd_ls(void) {
+    uint32_t n = vfs_count();
+    for (uint32_t i = 0; i < n; i++) {
+        const vfs_file_t* f = vfs_entry(i);
+        _set_color(VGA_DARK_GREY, VGA_BLACK);
+        _vga_write((const uint8_t*)"   ");
+        _print_u32(f->size, 6, VGA_YELLOW);
+        _vga_write((const uint8_t*)"  ");
+        _set_color(VGA_LIGHT_CYAN, VGA_BLACK);
+        _vga_write(f->name);
+        _vga_put_char('\n');
+    }
+}
+
+static void _cmd_cat(const uint8_t* name) {
+    const vfs_file_t* f = vfs_lookup(name);
+    if (!f) {
+        _set_color(VGA_LIGHT_RED, VGA_BLACK);
+        _vga_write((const uint8_t*)"   no such file: ");
+        _set_color(VGA_WHITE, VGA_BLACK);
+        _vga_write(name);
+        _vga_put_char('\n');
+        return;
+    }
+    _set_color(VGA_LIGHT_GREY, VGA_BLACK);
+    /* indent each line a bit to match the prompt */
+    _vga_write((const uint8_t*)"   ");
+    for (uint32_t i = 0; i < f->size; i++) {
+        uint8_t c = f->data[i];
+        _vga_put_char(c);
+        if (c == '\n' && i + 1 < f->size) _vga_write((const uint8_t*)"   ");
+    }
+    if (f->size == 0 || f->data[f->size - 1] != '\n') _vga_put_char('\n');
 }
 
 static void _cmd_uptime(void) {
@@ -243,12 +291,33 @@ static void _cmd_unknown(const uint8_t* line) {
     _vga_put_char('\n');
 }
 
+/* If `line` starts with `prefix` followed by '\0' or spaces, return a pointer
+   to the trimmed argument (may be empty string). Otherwise NULL. */
+static const uint8_t* _match_prefix(const uint8_t* line, const uint8_t* prefix) {
+    uint32_t i = 0;
+    while (prefix[i]) { if (line[i] != prefix[i]) return (const uint8_t*)0; i++; }
+    if (line[i] == 0) return line + i;
+    if (line[i] != ' ') return (const uint8_t*)0;
+    while (line[i] == ' ') i++;
+    return line + i;
+}
+
 static void _run_command(const uint8_t* line) {
+    const uint8_t* arg;
     if (line[0] == 0) return;
     if      (_streq(line, (const uint8_t*)"help"))   _cmd_help();
     else if (_streq(line, (const uint8_t*)"uptime")) _cmd_uptime();
+    else if (_streq(line, (const uint8_t*)"ls"))     _cmd_ls();
     else if (_streq(line, (const uint8_t*)"clear"))  { _vga_clear(); }
     else if (_streq(line, (const uint8_t*)"halt"))   { for (;;) cpu_hlt(); }
+    else if ((arg = _match_prefix(line, (const uint8_t*)"cat")) != 0) {
+        if (arg[0] == 0) {
+            _set_color(VGA_LIGHT_RED, VGA_BLACK);
+            _vga_write((const uint8_t*)"   usage: cat <file>\n");
+        } else {
+            _cmd_cat(arg);
+        }
+    }
     else                                              _cmd_unknown(line);
 }
 
@@ -297,6 +366,7 @@ void kernel_main(void) {
     STEP("DRV",  "ATA",     ata_init(ATA_PRIMARY, ATA_MASTER));
     STEP("PROC", "SCHED",   scheduler_init());
     STEP("SYS",  "SYSCALL", syscall_init());
+    STEP("FS",   "VFS",     vfs_init());
 
     _footer();
 

@@ -27,7 +27,8 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
                   build/drivers/kbd.o \
                   build/drivers/ata.o \
                   build/proc/process.o build/proc/scheduler.o \
-                  build/syscall/syscall.o
+                  build/syscall/syscall.o \
+                  build/fs/vfs.o build/fs/ramfs.o
 
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/gdt_load.o build/asm/idt_load.o \
@@ -101,6 +102,11 @@ build/proc/%.o: src/proc/%.c
 
 build/syscall/%.o: src/syscall/%.c
 	@if not exist build\syscall mkdir build\syscall
+	@echo CC   $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
+build/fs/%.o: src/fs/%.c
+	@if not exist build\fs mkdir build\fs
 	@echo CC   $<
 	$(CC) $(CFLAGS) -c $< -o $@
 
