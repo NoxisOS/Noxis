@@ -31,7 +31,7 @@ KERNEL_C_OBJS = \
   build/mm/virt/heap.o              build/mm/virt/pagefault.o     \
   build/drivers/pit.o               build/drivers/kbd.o           \
   build/drivers/ata.o               build/drivers/vga.o           \
-  build/drivers/block/block.o       \
+  build/drivers/block/block.o       build/drivers/serial.o        \
   build/drivers/tty/tty.o           \
   build/proc/process.o              build/proc/scheduler.o        \
   build/proc/elf.o                  build/proc/exec.o             \

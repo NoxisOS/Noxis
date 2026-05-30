@@ -18,6 +18,7 @@
 #include <drivers/pit.h>
 #include <drivers/ata.h>
 #include <drivers/block/block.h>
+#include <drivers/serial.h>
 #include <drivers/kbd.h>
 #include <drivers/vga.h>
 #include <drivers/tty/tty.h>
@@ -151,6 +152,7 @@ void kernel_main(void) {
     STEP("MM",   "PMM",     pmm_init(128*1024*1024));
     STEP("MM",   "VMM",     pagefault_init());
     STEP("MM",   "HEAP",    heap_init());
+    STEP("DRV",  "SER",     serial_init());
     STEP("DRV",  "PIT",     pit_init(1000));
     STEP("DRV",  "TTY",     tty_init());
     STEP("DRV",  "KBD",     kbd_init());
@@ -163,6 +165,10 @@ void kernel_main(void) {
     scheduler_current()->cwd_ino = noxfs_root_ino();
 
     _footer();
+
+    /* Mirror a boot summary to the serial console (visible on QEMU
+       -serial stdio) — a far more convenient debug channel than VGA. */
+    serial_write((const uint8_t*)"\r\n[noxis] boot complete, handing off to init\r\n");
 
     cpu_sti();
     vga_put_char('\n');
