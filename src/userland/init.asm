@@ -163,7 +163,8 @@ helpmsg:
     db "  clear  - clear the screen", 10
     db 10
     db "  run a program by name, e.g.:", 10
-    db "    hello.elf  fork.elf  pipe.elf  pftest.elf  segv.elf", 10, 0
+    db "    hello.elf  fork.elf  pipe.elf  pftest.elf", 10
+    db "    segv.elf   brktest.elf", 10, 0
 execfail:
     db "  no such program", 10, 0
 clrseq:

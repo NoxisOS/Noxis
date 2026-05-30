@@ -596,9 +596,13 @@ static void _sys_execve(isr_frame_t* frame) {
     }
 
     /* Load the new image into the now-empty user address space. */
-    uint32_t entry;
-    if (elf_load(f->data, f->size, &entry) != OS_OK)
+    uint32_t entry, prog_end;
+    if (elf_load(f->data, f->size, &entry, &prog_end) != OS_OK)
         proc_terminate(127);   /* old image gone — cannot recover */
+
+    /* Reset the heap to just past the new image. */
+    proc->brk_start = prog_end;
+    proc->brk       = prog_end;
 
     /* Fresh user stack: only the top page is mapped; the rest grows on
        demand through the page-fault handler. */
@@ -626,6 +630,31 @@ static void _sys_execve(isr_frame_t* frame) {
     user_enter(entry, sp);   /* does not return */
 }
 
+/* ── brk: set/query the program break (user heap top) ────────────
+   EBX = requested new break (0 = query only).  Returns the resulting
+   break in EAX.  Pages between brk_start and brk fault in on demand via
+   the page-fault handler, so this call only moves the boundary — it does
+   not map anything itself.  Growth is capped at USER_HEAP_MAX and must
+   not collide with the stack region. */
+static void _sys_brk(isr_frame_t* frame) {
+    process_t* me = scheduler_current();
+    uint32_t req = frame->ebx;
+
+    if (req == 0) { frame->eax = me->brk; return; }          /* query */
+
+    /* Reject anything below the heap floor or above the ceiling. */
+    if (req < me->brk_start || req > USER_HEAP_MAX) {
+        frame->eax = me->brk;                                /* unchanged */
+        return;
+    }
+
+    /* Grow or shrink the break.  Newly-exposed pages fault in on demand;
+       pages above a shrunk break stay mapped until the process exits
+       (vmm_destroy_pd frees them) — simple and leak-free across exec. */
+    me->brk = req;
+    frame->eax = me->brk;
+}
+
 static void _syscall_dispatch(isr_frame_t* frame) {
     switch (frame->eax) {
     case SYS_WRITE:     _sys_write(frame);    break;
@@ -648,6 +677,7 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_STAT:      _sys_stat(frame);     break;
     case SYS_LSEEK:     _sys_lseek(frame);    break;
     case SYS_EXECVE:    _sys_execve(frame);   break;
+    case SYS_BRK:       _sys_brk(frame);      break;
     default: break;
     }
 }

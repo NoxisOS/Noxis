@@ -17,8 +17,11 @@
  * @param elf       pointer to the ELF file in memory
  * @param size      file size in bytes
  * @param entry_out output: virtual entry address (e_entry)
+ * @param brk_out   output (may be NULL): page-aligned end of the highest
+ *                  loaded segment — the initial program break for the heap.
  * @return OS_OK on success
  */
-os_status_t elf_load(const uint8_t* elf, uint32_t size, uint32_t* entry_out);
+os_status_t elf_load(const uint8_t* elf, uint32_t size,
+                     uint32_t* entry_out, uint32_t* brk_out);
 
 #endif /* PROC_ELF_H */

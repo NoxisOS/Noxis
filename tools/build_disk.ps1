@@ -36,7 +36,8 @@ $files = @(
     @{Name='ttytest.elf';Path='build/ttytest.elf'},
     @{Name='pftest.elf'; Path='build/pftest.elf'},
     @{Name='segv.elf';   Path='build/segv.elf'},
-    @{Name='init.elf';   Path='build/init.elf'}
+    @{Name='init.elf';   Path='build/init.elf'},
+    @{Name='brktest.elf';Path='build/brktest.elf'}
 )
 
 function W32($a, $o, $v) { [Array]::Copy([BitConverter]::GetBytes([uint32]$v),0,$a,$o,4) }

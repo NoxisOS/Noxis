@@ -26,4 +26,8 @@
 #define USER_STACK_PAGES  64u
 #define USER_STACK_LIMIT  (USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE)
 
+/* Heap (brk) grows UP from the end of the ELF image; the break may not
+   pass this ceiling (well below the stack region). */
+#define USER_HEAP_MAX     0xA0000000u
+
 #endif /* MM_VIRT_UVM_H */

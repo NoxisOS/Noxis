@@ -85,6 +85,8 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     proc->sig_pending = 0;
     proc->sig_blocked = 0;
     proc->cwd_ino     = 0; /* set by FS after init */
+    proc->brk_start   = 0;
+    proc->brk         = 0;
     for (uint32_t i = 0; i < NSIG; i++) {
         proc->sigactions[i].handler = SIG_DFL;
         proc->sigactions[i].flags   = 0;

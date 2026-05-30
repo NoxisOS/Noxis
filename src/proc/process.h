@@ -81,6 +81,10 @@ typedef struct process {
 
     /* ── filesystem ───────────────────────────────────────────── */
     uint32_t         cwd_ino;       /* current working directory inode */
+
+    /* ── user heap (brk) ──────────────────────────────────────── */
+    uint32_t         brk_start;     /* heap floor: end of loaded ELF image */
+    uint32_t         brk;           /* current program break (grows up)    */
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

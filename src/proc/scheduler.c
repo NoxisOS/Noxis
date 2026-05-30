@@ -343,6 +343,8 @@ uint32_t scheduler_fork_spawn(isr_frame_t* frame) {
     child->ppid          = parent->pid;
     child->fork_eip      = frame->eip;      /* sysenter return addr (user EDX) */
     child->fork_esp      = frame->user_esp; /* user ESP (user ECX at sysenter)  */
+    child->brk_start     = parent->brk_start; /* inherit the heap layout        */
+    child->brk           = parent->brk;
 
     /* ── Inherit parent's open file descriptors ───────────────
        The fd_table lives in the kernel process_t (not in user memory),

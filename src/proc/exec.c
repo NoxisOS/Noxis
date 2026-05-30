@@ -76,8 +76,8 @@ os_status_t exec_run(const uint8_t* elf, uint32_t size,
     scheduler_current()->page_dir_phys = pd_phys;
 
     /* ── 2. Load ELF (maps pages into current = per-exec PD) ── */
-    uint32_t entry;
-    os_status_t s = elf_load(elf, size, &entry);
+    uint32_t entry, prog_end;
+    os_status_t s = elf_load(elf, size, &entry, &prog_end);
     if (s != OS_OK) {
         vmm_switch_pd(KERNEL_PD_PHYS);
         vmm_destroy_pd(pd_phys);
@@ -100,6 +100,11 @@ os_status_t exec_run(const uint8_t* elf, uint32_t size,
         scheduler_current()->page_dir_phys = 0;
         return OS_ERR_IO;
     }
+
+    /* Initialise the program break just past the loaded image — the heap
+       grows up from here on demand via brk()/the page-fault handler. */
+    scheduler_current()->brk_start = prog_end;
+    scheduler_current()->brk       = prog_end;
 
     /* ── 4. Build argv on user stack ───────────────────────── */
     uint32_t user_esp = _build_argv_frame(argc, argv);

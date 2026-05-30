@@ -63,11 +63,15 @@ static void _pagefault_handler(isr_frame_t* frame) {
     int present   = err & PF_PRESENT;
     int from_user = (frame->cs & 3) == 3;
 
-    /* ── Demand-paged stack growth ─────────────────────────────
-       A not-present access from ring 3 inside the stack region maps a
-       fresh zero-filled page and retries the faulting instruction. */
-    if (from_user && !present &&
-        cr2 >= USER_STACK_LIMIT && cr2 < USER_STACK_TOP) {
+    process_t* me = scheduler_current();
+
+    /* ── Demand paging ─────────────────────────────────────────
+       A not-present access from ring 3 inside either the stack region
+       (grows down) or the heap region [brk_start, brk) maps a fresh
+       zero-filled page and retries the faulting instruction. */
+    int in_stack = (cr2 >= USER_STACK_LIMIT && cr2 < USER_STACK_TOP);
+    int in_heap  = (me && me->brk_start && cr2 >= me->brk_start && cr2 < me->brk);
+    if (from_user && !present && (in_stack || in_heap)) {
         uint32_t va = PAGE_ALIGN_DOWN(cr2);
         uint32_t phys;
         if (pmm_alloc_frame(&phys) == OS_OK &&

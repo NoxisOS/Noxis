@@ -31,6 +31,7 @@
 #define SYS_STAT      17 /* EBX=path, ESI=statbuf → EAX=0/-1                      */
 #define SYS_LSEEK     18 /* EBX=fd, ESI=offset, EDI=whence → EAX=pos              */
 #define SYS_EXECVE    19 /* EBX=path → replaces image, does not return (or -1)    */
+#define SYS_BRK       20 /* EBX=new break (0=query) → EAX=current break           */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

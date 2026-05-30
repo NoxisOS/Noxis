@@ -57,8 +57,10 @@ typedef struct __attribute__((packed)) {
 
 /* ── public ─────────────────────────────────────────────────── */
 
-os_status_t elf_load(const uint8_t* elf, uint32_t size, uint32_t* entry_out) {
+os_status_t elf_load(const uint8_t* elf, uint32_t size,
+                     uint32_t* entry_out, uint32_t* brk_out) {
     if (!elf || !entry_out) return OS_ERR_NULL;
+    uint32_t prog_end = 0;
     if (size < sizeof(elf32_ehdr_t)) return OS_ERR_INVALID;
 
     const elf32_ehdr_t* eh = (const elf32_ehdr_t*)elf;
@@ -79,6 +81,7 @@ os_status_t elf_load(const uint8_t* elf, uint32_t size, uint32_t* entry_out) {
 
         uint32_t vstart = PAGE_ALIGN_DOWN(ph->p_vaddr);
         uint32_t vend   = PAGE_ALIGN_UP(ph->p_vaddr + ph->p_memsz);
+        if (vend > prog_end) prog_end = vend;
 
         /* Map every page in the segment, zero-fill, then copy file data. */
         for (uint32_t v = vstart; v < vend; v += PAGE_SIZE) {
@@ -98,5 +101,6 @@ os_status_t elf_load(const uint8_t* elf, uint32_t size, uint32_t* entry_out) {
     }
 
     *entry_out = eh->e_entry;
+    if (brk_out) *brk_out = prog_end;
     return OS_OK;
 }
