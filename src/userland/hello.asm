@@ -29,13 +29,14 @@ _start:
     sysenter
 .ret1:
 
-    ; sys_exit
-    mov  eax, 0
+    ; sys_exit(0)
+    mov  eax, 0                               ; SYS_EXIT
+    xor  ebx, ebx                             ; exit code
     lea  edx, [ebp + .ret2 - .here]
     mov  ecx, esp
     sysenter
 .ret2:
-    jmp  $
+    jmp  $                                    ; unreachable: kernel longjmps
 
 msg:    db "  hello from a real ELF on disk!", 10, 0
 msg_len equ $ - msg

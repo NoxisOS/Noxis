@@ -26,10 +26,11 @@ KERNEL_C_OBJS   = build/kernel/early.o build/kernel/isr.o build/kernel/panic.o \
                   build/drivers/pit.o \
                   build/drivers/kbd.o \
                   build/drivers/ata.o \
+                  build/drivers/vga.o \
                   build/proc/process.o build/proc/scheduler.o \
                   build/syscall/syscall.o \
                   build/fs/vfs.o build/fs/ramfs.o build/fs/noxfs.o \
-                  build/proc/elf.o
+                  build/proc/elf.o build/proc/exec.o
 
 KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/gdt_load.o build/asm/idt_load.o \
@@ -37,7 +38,8 @@ KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/tss_load.o \
                   build/asm/syscall_stub.o \
                   build/asm/msr.o build/asm/sysenter_stub.o \
-                  build/asm/user_enter.o
+                  build/asm/user_enter.o \
+                  build/asm/kjmp.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 

@@ -1,3 +1,4 @@
 noxis 0.7.0
 fs: NoxFS v1 on /dev/hda
+shared VGA + exec() returns to shell
 built 2026-05-30
