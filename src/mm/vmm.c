@@ -275,8 +275,11 @@ void vmm_switch_pd(uint32_t pd_phys) {
 }
 
 void vmm_destroy_pd(uint32_t pd_phys) {
-    /* Walk user PDEs (0..767), free page frames and PT frames. */
-    for (uint32_t pde_idx = 0; pde_idx < 768; pde_idx++) {
+    /* Walk user PDEs 1..767, free page frames and PT frames.
+       PDE 0 is the identity map (PT0 @ 0x401000) SHARED between every
+       address space — vmm_create_pd copies the PDE value, not the PT.
+       Freeing its frames would release kernel heap memory and corrupt PT0. */
+    for (uint32_t pde_idx = 1; pde_idx < 768; pde_idx++) {
         uint32_t* pd = _scratch(VMM_SCRATCH_0, pd_phys);
         if (!pd) return;
         uint32_t pde = pd[pde_idx];

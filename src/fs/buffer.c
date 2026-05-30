@@ -132,6 +132,7 @@ buf_t* bread(uint32_t dev, uint32_t blockno) {
     ata_read(ATA_PRIMARY, ATA_MASTER, blockno, 1, (uint16_t*)bp->data);
     bp->flags = B_VALID | B_BUSY;
 
+    _lru_remove(bp);       /* remove from current LRU position before reinserting */
     _hash_insert(bp);
     _lru_insert_head(bp);
     return bp;
@@ -174,6 +175,7 @@ buf_t* balloc(uint32_t dev, uint32_t blockno) {
     for (uint32_t i = 0; i < BUF_SIZE; i++)
         bp->data[i] = 0;
 
+    _lru_remove(bp);       /* remove from current LRU position before reinserting */
     _hash_insert(bp);
     _lru_insert_head(bp);
     return bp;
