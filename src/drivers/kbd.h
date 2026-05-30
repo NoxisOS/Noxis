@@ -22,7 +22,9 @@ os_status_t kbd_init(void);
 int32_t kbd_poll(void);
 
 /**
- * @brief Blocking read — halts the CPU between checks (woken by IRQs).
+ * @brief Blocking read — yields to the scheduler until a key arrives.
+ *        The keyboard ISR wakes the calling thread via scheduler_wake,
+ *        allowing other threads to run while waiting.  0% CPU.
  */
 uint8_t kbd_getchar(void);
 

@@ -182,6 +182,51 @@ void thread_sleep(uint32_t ms) {
     }
 }
 
+/* ── generic wait-channel primitives ──────────────────────── */
+
+void scheduler_wake(process_t** waiter) {
+    if (!*waiter) return;
+
+    if (*waiter == g_current) {
+        /* The waiter is the currently-executing thread (hlt-loop case
+           inside scheduler_block_on).  Just clear the pointer — the
+           loop will see it and break. */
+        *waiter = (process_t*)0;
+    } else {
+        scheduler_add(*waiter);
+        *waiter = (process_t*)0;
+    }
+}
+
+void scheduler_block_on(process_t** waiter) {
+    *waiter = g_current;
+    g_current->state     = PROC_BLOCKED;
+    g_current->wake_tick = 0;
+
+    if (g_ready_head) {
+        process_t* next = g_ready_head;
+        g_ready_head = next->next;
+        if (!g_ready_head) g_ready_tail = (process_t*)0;
+        next->next = (process_t*)0;
+
+        process_t* prev = g_current;
+        next->state = PROC_RUNNING;
+        g_current   = next;
+        DO_SWITCH(prev, next);
+        /* We resume here when scheduler_wake adds us back to the
+           ready queue.  IF=0 from DO_SWITCH's kthread_switch path. */
+        __asm__ __volatile__("sti");
+    } else {
+        /* Nothing else to run — spin with hlt until scheduler_wake
+           fires from an ISR and clears the waiter pointer. */
+        for (;;) {
+            __asm__ __volatile__("sti; hlt; cli");
+            if (*waiter == (process_t*)0) break;
+        }
+        __asm__ __volatile__("sti");
+    }
+}
+
 /* ── scheduler_tick ────────────────────────────────────────── */
 void scheduler_tick(isr_frame_t* frame) {
     if (!g_current || !frame) return;

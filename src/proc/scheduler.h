@@ -70,4 +70,20 @@ process_t* scheduler_find_proc(uint32_t pid);
  */
 uint32_t scheduler_fork_spawn(isr_frame_t* frame);
 
+/**
+ * @brief Wake a thread that is blocked via scheduler_block_on.
+ *        Safe to call from ISR context.
+ * @param waiter  Pointer to the waiter pointer (will be cleared).
+ */
+void scheduler_wake(process_t** waiter);
+
+/**
+ * @brief Block the current thread on a wait channel.
+ *        Sets *waiter = g_current, marks PROC_BLOCKED, yields to
+ *        the next ready thread (or hlt-loops if nothing is ready).
+ *        Returns when scheduler_wake is called on the same channel.
+ * @param waiter  Pointer to a process_t* that the waker will use.
+ */
+void scheduler_block_on(process_t** waiter);
+
 #endif /* PROC_SCHEDULER_H */

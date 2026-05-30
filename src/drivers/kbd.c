@@ -8,6 +8,7 @@
 #include <kernel/isr.h>
 #include <hal/ports.h>
 #include <hal/pic.h>
+#include <proc/scheduler.h>
 #include <common/types.h>
 
 /* ── PS/2 port constants ────────────────────────────────────── */
@@ -29,6 +30,7 @@ static volatile uint32_t g_head;
 static volatile uint32_t g_tail;
 static volatile uint8_t  g_shift;
 static volatile uint8_t  g_caps;
+static process_t*        g_kbd_waiter;
 
 /* ── scancode set 1 (XT) translation tables ─────────────────── */
 /* Indexed by make-code 0x00..0x7F. 0 = unmapped / non-printable. */
@@ -87,6 +89,10 @@ static void _kbd_isr(isr_frame_t* frame) {
     }
 
     _push(c);
+
+    /* Wake any thread blocked in kbd_getchar.  Safe to call from ISR;
+       scheduler_wake handles the hlt-loop case gracefully. */
+    scheduler_wake(&g_kbd_waiter);
 }
 
 /* ── public functions ──────────────────────────────────────── */
@@ -117,7 +123,10 @@ int32_t kbd_poll(void) {
 uint8_t kbd_getchar(void) {
     int32_t c;
     while ((c = kbd_poll()) < 0) {
-        cpu_hlt();   /* wait for next IRQ (PIT or kbd) */
+        /* No key yet — yield to scheduler.  The keyboard ISR will
+           call scheduler_wake(&g_kbd_waiter) when a scancode arrives,
+           at which point we resume and kbd_poll will succeed. */
+        scheduler_block_on(&g_kbd_waiter);
     }
     return (uint8_t)c;
 }
