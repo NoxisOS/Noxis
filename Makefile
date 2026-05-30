@@ -70,7 +70,7 @@ DISK_IMG   = build/noxis.img
 
 QEMU = "D:\Program Files\qemu\qemu-system-i386"
 
-.PHONY: all clean run run-debug
+.PHONY: all clean run run-headless run-debug
 all: $(DISK_IMG)
 
 # ── Userland ELFs ─────────────────────────────────────────────
@@ -140,10 +140,17 @@ build/%.o: src/%.asm
 	$(AS) $(ASFLAGS) $< -o $@
 
 # ── Run ──────────────────────────────────────────────────────
+# VGA window + serial console (COM1) mirrored to this terminal.
 run: $(DISK_IMG)
 	@echo RUN  QEMU
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
-	$(QEMU) -fda $(DISK_IMG) -drive file=build/disk.img,format=raw,if=ide,index=0 -no-reboot
+	$(QEMU) -fda $(DISK_IMG) -drive file=build/disk.img,format=raw,if=ide,index=0 -no-reboot -serial stdio
+
+# No VGA window — everything (boot log + init shell) on the serial console.
+run-headless: $(DISK_IMG)
+	@echo RUN  QEMU headless
+	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
+	$(QEMU) -fda $(DISK_IMG) -drive file=build/disk.img,format=raw,if=ide,index=0 -no-reboot -display none -serial stdio
 
 run-debug: $(DISK_IMG)
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.

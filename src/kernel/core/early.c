@@ -85,6 +85,13 @@ static void _banner(void) {
 #define COL_DOTS_END 65
 
 static void _step_begin(const uint8_t* cat, const uint8_t* name) {
+    /* Mirror the step to the serial console for headless boot logs. */
+    serial_write((const uint8_t*)"[noxis] ");
+    serial_write(cat);
+    serial_putc(' ');
+    serial_write(name);
+    serial_write((const uint8_t*)" ... ");
+
     vga_pad_to(COL_CAT, ' ');
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK);
     vga_write(cat);
@@ -101,6 +108,8 @@ static void _step_begin(const uint8_t* cat, const uint8_t* name) {
 }
 
 static void _step_ok(void) {
+    serial_write((const uint8_t*)"OK\r\n");
+
     vga_set_color(VGA_DARK_GREY, VGA_BLACK);
     vga_put_char('[');
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
@@ -143,6 +152,11 @@ void kernel_main(void) {
     vga_init();
     vga_clear();
 
+    /* Bring up the serial console first so every boot step is logged to
+       COM1 (visible on `make run` / QEMU -serial stdio). */
+    serial_init();
+    serial_write((const uint8_t*)"\r\n[noxis] kernel_main: serial up\r\n");
+
     _banner();
 
     STEP("HAL",  "GDT",     gdt_init());
@@ -152,7 +166,6 @@ void kernel_main(void) {
     STEP("MM",   "PMM",     pmm_init(128*1024*1024));
     STEP("MM",   "VMM",     pagefault_init());
     STEP("MM",   "HEAP",    heap_init());
-    STEP("DRV",  "SER",     serial_init());
     STEP("DRV",  "PIT",     pit_init(1000));
     STEP("DRV",  "TTY",     tty_init());
     STEP("DRV",  "KBD",     kbd_init());
