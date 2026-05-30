@@ -25,6 +25,10 @@ static void run(const uint8_t* args) {
         noxfs_dirent_t* d = (noxfs_dirent_t*)buf;
         if (d->inode == 0) continue;
 
+        /* Skip . and .. like standard Unix ls */
+        if (d->name_len == 1 && d->name[0] == '.') continue;
+        if (d->name_len == 2 && d->name[0] == '.' && d->name[1] == '.') continue;
+
         uint8_t type_char = (d->file_type == NOXFS_FT_DIR) ? 'd' :
                             (d->file_type == NOXFS_FT_FILE) ? '-' : '?';
 
