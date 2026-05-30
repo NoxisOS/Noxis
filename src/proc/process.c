@@ -83,6 +83,7 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     proc->fork_esp      = 0;
 
     for (uint32_t i = 0; i < PROC_MAX_FD; i++) {
+        proc->fd_table[i].type = FD_FILE;
         proc->fd_table[i].used = FALSE;
         proc->fd_table[i].file = (void*)0;
         proc->fd_table[i].pos  = 0;

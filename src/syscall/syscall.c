@@ -14,6 +14,7 @@
 #include <drivers/vga.h>
 #include <drivers/kbd.h>
 #include <fs/vfs.h>
+#include <fs/pipe.h>
 #include <common/types.h>
 #include <mm/vmm.h>
 
@@ -68,8 +69,16 @@ static void _sys_write(isr_frame_t* frame) {
         return;
     }
 
-    /* File-backed fd. */
+    /* Pipe-backed fd. */
     process_t* proc = scheduler_current();
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used &&
+        proc->fd_table[fd].type == FD_PIPE) {
+        int32_t n = pipe_write(proc->fd_table[fd].pipe, buf, len);
+        frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
+        return;
+    }
+
+    /* File-backed fd. */
     if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
         vfs_file_t* f = proc->fd_table[fd].file;
         int32_t n = vfs_write_file(f, proc->fd_table[fd].pos,
@@ -106,6 +115,9 @@ static void _sys_exit(isr_frame_t* frame) {
         process_t* proc = scheduler_current();
         for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
             if (proc->fd_table[i].used) {
+                if (proc->fd_table[i].type == FD_PIPE && proc->fd_table[i].pipe)
+                    pipe_close(proc->fd_table[i].pipe);
+                proc->fd_table[i].type = FD_FILE;
                 proc->fd_table[i].used = FALSE;
                 proc->fd_table[i].file = (vfs_file_t*)0;
                 proc->fd_table[i].pos  = 0;
@@ -210,6 +222,77 @@ static void _sys_creat(isr_frame_t* frame) {
     frame->eax = (uint32_t)-1;
 }
 
+static void _sys_pipe(isr_frame_t* frame) {
+    /* EBX = pointer to user-space int fd[2] */
+    if (!_user_range_ok(frame->ebx, 8)) { frame->eax = (uint32_t)-1; return; }
+
+    pipe_t* p = pipe_alloc();
+    if (!p) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    int32_t fd_read = -1, fd_write = -1;
+
+    /* Find two free fd slots. */
+    for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
+        if (!proc->fd_table[i].used) {
+            if (fd_read < 0) {
+                fd_read = (int32_t)i;
+                proc->fd_table[i].type = FD_PIPE;
+                proc->fd_table[i].pipe = p;
+                proc->fd_table[i].pos  = 0;
+                proc->fd_table[i].used = TRUE;
+            } else if (fd_write < 0) {
+                fd_write = (int32_t)i;
+                proc->fd_table[i].type = FD_PIPE;
+                proc->fd_table[i].pipe = p;
+                proc->fd_table[i].pos  = 0;
+                proc->fd_table[i].used = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (fd_write < 0) {
+        /* Not enough fd slots — unwind. */
+        if (fd_read >= 0) {
+            proc->fd_table[fd_read].used = FALSE;
+            proc->fd_table[fd_read].type = FD_FILE;
+            proc->fd_table[fd_read].file = (void*)0;
+        }
+        pipe_close(p);  /* frees the pipe */
+        frame->eax = (uint32_t)-1;
+        return;
+    }
+
+    /* Write fds to user space. */
+    uint32_t* user_fds = (uint32_t*)frame->ebx;
+    user_fds[0] = (uint32_t)fd_read;
+    user_fds[1] = (uint32_t)fd_write;
+    frame->eax = 0;
+}
+
+static void _sys_dup(isr_frame_t* frame) {
+    uint32_t oldfd = frame->ebx;
+    process_t* proc = scheduler_current();
+
+    if (oldfd >= PROC_MAX_FD || !proc->fd_table[oldfd].used) {
+        frame->eax = (uint32_t)-1;
+        return;
+    }
+
+    for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
+        if (!proc->fd_table[i].used) {
+            proc->fd_table[i].type = proc->fd_table[oldfd].type;
+            proc->fd_table[i].file = proc->fd_table[oldfd].file;
+            proc->fd_table[i].pos  = 0;
+            proc->fd_table[i].used = TRUE;
+            frame->eax = i;
+            return;
+        }
+    }
+    frame->eax = (uint32_t)-1;
+}
+
 static void _sys_close(isr_frame_t* frame) {
     uint32_t fd = frame->ebx;
     if (fd >= PROC_MAX_FD) { frame->eax = (uint32_t)-1; return; }
@@ -217,6 +300,11 @@ static void _sys_close(isr_frame_t* frame) {
     process_t* proc = scheduler_current();
     if (!proc->fd_table[fd].used) { frame->eax = (uint32_t)-1; return; }
 
+    if (proc->fd_table[fd].type == FD_PIPE && proc->fd_table[fd].pipe) {
+        pipe_close(proc->fd_table[fd].pipe);
+    }
+
+    proc->fd_table[fd].type = FD_FILE;
     proc->fd_table[fd].used = FALSE;
     proc->fd_table[fd].file = (void*)0;
     proc->fd_table[fd].pos  = 0;
@@ -234,6 +322,15 @@ static void _sys_read(isr_frame_t* frame) {
     if (!_user_range_ok(frame->esi, maxlen)) { frame->eax = (uint32_t)-1; return; }
 
     process_t* proc = scheduler_current();
+
+    /* Pipe-backed fd. */
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used &&
+        proc->fd_table[fd].type == FD_PIPE) {
+        int32_t n = pipe_read(proc->fd_table[fd].pipe,
+                              buf, maxlen);
+        frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
+        return;
+    }
 
     /* File-backed fd: read from open file. */
     if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
@@ -287,6 +384,8 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_FORK:    _sys_fork(frame);    break;
     case SYS_WAITPID: _sys_waitpid(frame); break;
     case SYS_CREAT:   _sys_creat(frame);   break;
+    case SYS_PIPE:    _sys_pipe(frame);    break;
+    case SYS_DUP:     _sys_dup(frame);     break;
     default: break;
     }
 }

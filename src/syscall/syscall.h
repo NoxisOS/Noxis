@@ -19,6 +19,8 @@
 #define SYS_FORK     5   /* → EAX=child_pid (parent) or 0 (child)             */
 #define SYS_WAITPID  6   /* EBX=pid → EAX=exit_code                           */
 #define SYS_CREAT    7   /* EBX=name → EAX=fd                                 */
+#define SYS_PIPE     8   /* EBX=fd[2] (user ptr to 2 ints) → EAX=0             */
+#define SYS_DUP      9   /* EBX=oldfd → EAX=newfd                              */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

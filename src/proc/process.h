@@ -33,10 +33,18 @@ typedef struct __attribute__((packed)) {
 } context_t;
 
 /* ── open file descriptor slot ─────────────────────────────── */
+#define FD_FILE  0
+#define FD_PIPE  1
+
+struct pipe;
 typedef struct {
-    vfs_file_t* file;
-    uint32_t    pos;
-    bool_t      used;
+    uint8_t      type;   /* FD_FILE or FD_PIPE */
+    union {
+        vfs_file_t* file;
+        struct pipe* pipe;
+    };
+    uint32_t     pos;
+    bool_t       used;
 } opened_file_t;
 
 /* ── process ───────────────────────────────────────────────── */

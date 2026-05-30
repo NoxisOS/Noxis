@@ -33,7 +33,7 @@ KERNEL_C_OBJS = \
   build/proc/elf.o       build/proc/exec.o      \
   build/syscall/syscall.o \
   build/fs/vfs.o         build/fs/ramfs.o       build/fs/noxfs.o \
-  build/fs/buffer.o \
+  build/fs/buffer.o      build/fs/pipe.o \
   build/shell/shell.o    \
   build/shell/cmd_help.o    build/shell/cmd_uptime.o \
   build/shell/cmd_ls.o      build/shell/cmd_cat.o    \
@@ -68,7 +68,7 @@ all: $(DISK_IMG)
 
 # ── Userland ELFs ─────────────────────────────────────────────
 USER_LD   = src/userland/user.ld
-USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf build/fread.elf build/fork.elf build/write.elf
+USER_ELFS = build/hello.elf build/echo.elf build/prompt.elf build/fread.elf build/fork.elf build/write.elf build/pipe.elf
 
 build/hello.o: src/userland/hello.asm
 	@if not exist build mkdir build
@@ -117,6 +117,14 @@ build/write.o: src/userland/write.asm
 build/write.elf: build/write.o $(USER_LD)
 
 build/write.elf: build/write.o $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
+
+build/pipe.o: src/userland/pipe.asm
+	@if not exist build mkdir build
+	@echo AS   $<
+	$(AS) $(ASFLAGS) $< -o $@
+build/pipe.elf: build/pipe.o $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
 
