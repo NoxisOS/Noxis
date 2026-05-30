@@ -28,7 +28,9 @@
 #include <drivers/pit.h>
 #include <mm/virt/vmm.h>
 #include <fs/pipe/pipe.h>
+#include <fs/vfs/vfs.h>
 #include <common/types.h>
+#include <common/signal.h>
 
 extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
 extern void user_enter_fork(uint32_t entry, uint32_t stack);
@@ -358,6 +360,44 @@ uint32_t scheduler_fork_spawn(isr_frame_t* frame) {
 
     scheduler_add(child);
     return child->pid;
+}
+
+void proc_terminate(int code) {
+    process_t* me = g_current;
+
+    if (me->is_fork_child) {
+        /* Fork children run on their own kernel stack (not exec_run's), so
+           they cannot longjmp back through exec_return — they zombie and
+           hand the CPU to the next ready thread instead. */
+        __asm__ __volatile__("cli");
+        me->exit_code = code;
+        me->state     = PROC_ZOMBIE;
+
+        if (me->ppid) {
+            process_t* parent = scheduler_find_proc(me->ppid);
+            if (parent) parent->sig_pending |= (1u << SIGCHLD);
+        }
+        if (me->waiter) {
+            scheduler_add(me->waiter);
+            me->waiter = (process_t*)0;
+        }
+        scheduler_exit(); /* does not return */
+    }
+
+    /* Main exec'd program: close inherited fds, flush, longjmp to the
+       shell via exec_run's escape hatch. */
+    for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
+        if (me->fd_table[i].used) {
+            if (me->fd_table[i].type == FD_PIPE && me->fd_table[i].pipe)
+                pipe_close(me->fd_table[i].pipe);
+            me->fd_table[i].type = FD_FILE;
+            me->fd_table[i].used = FALSE;
+            me->fd_table[i].file = (vfs_file_t*)0;
+            me->fd_table[i].pos  = 0;
+        }
+    }
+    vfs_sync();
+    exec_return(code); /* does not return */
 }
 
 void scheduler_exit(void) {

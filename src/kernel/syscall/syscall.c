@@ -95,47 +95,9 @@ static void _sys_write(isr_frame_t* frame) {
 }
 
 static void _sys_exit(isr_frame_t* frame) {
-    process_t* me = scheduler_current();
-    int code = (int)frame->ebx;
-
-    if (me->is_fork_child) {
-        /* Block PIT ticks during the exit sequence: set exit_code + mark
-           ZOMBIE + wake parent must be atomic relative to the scheduler.
-           scheduler_exit() does its own cli, but the window between the
-           stub's sti and ours is large enough for a tick to fire. */
-        __asm__ __volatile__("cli");
-        me->exit_code = code;
-        me->state     = PROC_ZOMBIE;
-
-        /* Generate SIGCHLD on the parent if it has not already been reaped. */
-        if (me->ppid) {
-            process_t* parent = scheduler_find_proc(me->ppid);
-            if (parent)
-                parent->sig_pending |= (1u << SIGCHLD);
-        }
-
-        if (me->waiter) {
-            scheduler_add(me->waiter);
-            me->waiter = (process_t*)0;
-        }
-        scheduler_exit(); /* does not return */
-    } else {
-        /* Close all file descriptors opened by this process before
-           returning to the shell, so fd slots don't leak across execs. */
-        process_t* proc = scheduler_current();
-        for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
-            if (proc->fd_table[i].used) {
-                if (proc->fd_table[i].type == FD_PIPE && proc->fd_table[i].pipe)
-                    pipe_close(proc->fd_table[i].pipe);
-                proc->fd_table[i].type = FD_FILE;
-                proc->fd_table[i].used = FALSE;
-                proc->fd_table[i].file = (vfs_file_t*)0;
-                proc->fd_table[i].pos  = 0;
-            }
-        }
-        vfs_sync();
-        exec_return(code);
-    }
+    /* All teardown (fork-child zombie vs. main-exec return, fd cleanup,
+       SIGCHLD) lives in proc_terminate — shared with the #PF handler. */
+    proc_terminate((int)frame->ebx);
 }
 
 static void _sys_fork(isr_frame_t* frame) {

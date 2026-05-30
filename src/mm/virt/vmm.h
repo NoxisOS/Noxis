@@ -73,6 +73,12 @@ os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out);
 void vmm_switch_pd(uint32_t pd_phys);
 
 /**
+ * @brief Registers the #PF (vector 14) handler enabling demand paging.
+ *        Call once during boot, after isr_init().
+ */
+void pagefault_init(void);
+
+/**
  * @brief Frees all user-space frames+tables inside pd_phys, then frees
  *        the PD frame itself.  Kernel PDEs are left untouched.
  */

@@ -148,7 +148,7 @@ void kernel_main(void) {
     STEP("HAL",  "PIC",     pic_remap());
     STEP("KRN",  "ISR",     isr_init());
     STEP("MM",   "PMM",     pmm_init(128*1024*1024));
-    STEP("MM",   "VMM",     (void)0);
+    STEP("MM",   "VMM",     pagefault_init());
     STEP("MM",   "HEAP",    heap_init());
     STEP("DRV",  "PIT",     pit_init(1000));
     STEP("DRV",  "TTY",     tty_init());

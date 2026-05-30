@@ -56,6 +56,14 @@ void thread_sleep(uint32_t ms);
 void scheduler_exit(void) __attribute__((noreturn));
 
 /**
+ * @brief Terminate the current user process with the given exit code.
+ *        Handles both fork children (zombie + wake parent) and the main
+ *        exec'd program (close fds, flush, return to shell).  Shared by
+ *        sys_exit and the page-fault handler.  Does not return.
+ */
+void proc_terminate(int code) __attribute__((noreturn));
+
+/**
  * @brief Returns the process with the given PID, searching all queues.
  *        Returns NULL if not found.
  */

@@ -28,7 +28,7 @@ KERNEL_C_OBJS = \
   build/kernel/hal/gdt.o            build/kernel/hal/idt.o        \
   build/kernel/hal/pic.o            \
   build/mm/phys/pmm.o               build/mm/virt/vmm.o           \
-  build/mm/virt/heap.o              \
+  build/mm/virt/heap.o              build/mm/virt/pagefault.o     \
   build/drivers/pit.o               build/drivers/kbd.o           \
   build/drivers/ata.o               build/drivers/vga.o           \
   build/drivers/block/block.o       \
@@ -78,7 +78,7 @@ USER_LD   = src/userland/user.ld
 USER_ELFS = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/fread.elf  build/fork.elf   build/write.elf  \
             build/pipe.elf   build/signal.elf \
-            build/ttytest.elf
+            build/ttytest.elf build/pftest.elf build/segv.elf
 
 build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
@@ -89,6 +89,8 @@ build/write.o:   src/userland/write.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/pipe.o:    src/userland/pipe.asm    ; $(AS) $(ASFLAGS) $< -o $@
 build/signal.o:  src/userland/signal.asm  ; $(AS) $(ASFLAGS) $< -o $@
 build/ttytest.o: src/userland/ttytest.asm ; $(AS) $(ASFLAGS) $< -o $@
+build/pftest.o:  src/userland/pftest.asm  ; $(AS) $(ASFLAGS) $< -o $@
+build/segv.o:    src/userland/segv.asm    ; $(AS) $(ASFLAGS) $< -o $@
 
 build/%.elf: build/%.o $(USER_LD)
 	@echo LD   $@

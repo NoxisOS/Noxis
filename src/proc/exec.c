@@ -16,6 +16,7 @@
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
 #include <mm/virt/paging.h>
+#include <mm/virt/uvm.h>
 #include <kernel/hal/gdt.h>
 #include <common/types.h>
 
@@ -27,8 +28,8 @@ extern void msr_write(uint32_t msr, uint32_t lo, uint32_t hi);
 #define MSR_SYSENTER_ESP  0x175u
 #define KERNEL_PD_PHYS    0x400000u
 
-#define USER_STACK_VIRT  0xB0000000u
-#define USER_STACK_TOP   (USER_STACK_VIRT + PAGE_SIZE)
+/* USER_STACK_TOP / USER_STACK_INIT come from <mm/virt/uvm.h>; only the
+   top page is mapped here, the rest grows on demand via the #PF handler. */
 #define JMPBUF_DWORDS    7
 #define MAX_ARGV         16
 
@@ -92,7 +93,7 @@ os_status_t exec_run(const uint8_t* elf, uint32_t size,
         scheduler_current()->page_dir_phys = 0;
         return OS_ERR_OOM;
     }
-    if (vmm_map_page(USER_STACK_VIRT, stack_phys,
+    if (vmm_map_page(USER_STACK_INIT, stack_phys,
                      PAGE_PRESENT | PAGE_RW | PAGE_USER) != OS_OK) {
         vmm_switch_pd(KERNEL_PD_PHYS);
         vmm_destroy_pd(pd_phys);
