@@ -14,7 +14,7 @@ CFLAGS    = -std=c11 -ffreestanding -nostdlib -nostdinc \
             -fno-asynchronous-unwind-tables \
             -mno-mmx -mno-sse -mgeneral-regs-only \
             -I src
-CFLAGS   += -O0 -g
+CFLAGS   += -O2
 
 LDFLAGS   = -T linker.ld -nostdlib -m elf_i386
 ASFLAGS   = -f elf32
@@ -31,7 +31,8 @@ KERNEL_ASM_OBJS = build/asm/kernel_entry.o build/asm/ports.o \
                   build/asm/gdt_load.o build/asm/idt_load.o \
                   build/asm/isr_stubs.o build/asm/paging.o \
                   build/asm/tss_load.o build/asm/user_enter.o \
-                  build/asm/syscall_stub.o build/asm/user_demo.o
+                  build/asm/syscall_stub.o build/asm/user_demo.o \
+                  build/asm/msr.o build/asm/sysenter_stub.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
