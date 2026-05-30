@@ -24,6 +24,7 @@
 #define SYS_SIGACTION 10 /* EBX=signum, ESI=act, EDI=oldact → EAX=0            */
 #define SYS_KILL      11 /* EBX=pid, ESI=sig → EAX=0                           */
 #define SYS_GETPID    12 /* → EAX=pid                                          */
+#define SYS_IOCTL     13 /* EBX=fd, ESI=req, EDI=arg → EAX=0/-1                 */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

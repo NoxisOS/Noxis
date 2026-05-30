@@ -13,7 +13,7 @@
 #include <proc/exec.h>
 #include <proc/signal.h>
 #include <drivers/vga.h>
-#include <drivers/kbd.h>
+#include <drivers/tty/tty.h>
 #include <fs/vfs/vfs.h>
 #include <fs/pipe/pipe.h>
 #include <common/types.h>
@@ -357,6 +357,19 @@ static void _sys_getpid(isr_frame_t* frame) {
     frame->eax = scheduler_current()->pid;
 }
 
+static void _sys_ioctl(isr_frame_t* frame) {
+    uint32_t fd  = frame->ebx;
+    uint32_t req = frame->esi;
+    void*    arg = (void*)frame->edi;
+
+    if (fd == STDIN_FD) {
+        if (arg && !_user_range_ok(frame->edi, sizeof(termios_t))) { frame->eax = (uint32_t)-1; return; }
+        frame->eax = (uint32_t)tty_ioctl(req, arg);
+        return;
+    }
+    frame->eax = (uint32_t)-1;
+}
+
 /* ── signal delivery ────────────────────────────────────────── */
 
 void signal_deliver(isr_frame_t* frame) {
@@ -462,27 +475,10 @@ static void _sys_read(isr_frame_t* frame) {
         return;
     }
 
-    /* stdin (keyboard) — keep original behaviour as fallback. */
+    /* stdin (keyboard) — routed through the TTY layer. */
     if (fd == STDIN_FD) {
-        uint32_t len = 0;
-        for (;;) {
-            uint8_t c = kbd_getchar();
-            if (c == '\b') {
-                if (len > 0) { len--; vga_backspace(); }
-                continue;
-            }
-            if (c == '\n' || c == '\r') {
-                vga_put_char('\n');
-                if (len < maxlen) buf[len++] = '\n';
-                break;
-            }
-            if (c < ' ' || c >= 0x7F) continue;
-            if (len + 1 >= maxlen) continue;
-            buf[len++] = c;
-            vga_put_char(c);
-        }
-        if (len < maxlen) buf[len] = 0;
-        frame->eax = len;
+        int32_t n = tty_read(buf, maxlen);
+        frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
         return;
     }
 
@@ -504,6 +500,7 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_SIGACTION: _sys_sigaction(frame); break;
     case SYS_KILL:      _sys_kill(frame);     break;
     case SYS_GETPID:    _sys_getpid(frame);   break;
+    case SYS_IOCTL:     _sys_ioctl(frame);    break;
     default: break;
     }
 }

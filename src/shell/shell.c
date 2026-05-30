@@ -14,7 +14,7 @@
  */
 #include <shell/shell.h>
 #include <drivers/vga.h>
-#include <drivers/kbd.h>
+#include <drivers/tty/tty.h>
 #include <common/types.h>
 
 #define LINE_MAX  128
@@ -143,25 +143,15 @@ static void _dispatch(const uint8_t* line) {
 
 void shell_run(void) {
     uint8_t line[LINE_MAX];
-    uint32_t len = 0;
 
     _prompt();
     for (;;) {
-        uint8_t c = kbd_getchar();
-        if (c == '\n') {
-            vga_put_char('\n');
-            line[len] = 0;
-            _dispatch(line);
-            len = 0;
-            _prompt();
-        } else if (c == '\b') {
-            if (len > 0) { len--; vga_backspace(); }
-        } else if (c >= ' ' && c < 0x7F) {
-            if (len < LINE_MAX - 1) {
-                line[len++] = c;
-                vga_set_color(VGA_WHITE, VGA_BLACK);
-                vga_put_char(c);
-            }
-        }
+        int32_t n = tty_read(line, LINE_MAX - 1);
+        if (n <= 0) { _prompt(); continue; }
+
+        line[n] = 0;
+        if (n > 0 && line[n - 1] == '\n') line[n - 1] = 0;
+        _dispatch(line);
+        _prompt();
     }
 }

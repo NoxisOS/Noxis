@@ -31,7 +31,8 @@ $files = @(
     @{ Name = 'fork.elf';   Path = 'build/fork.elf'    },
     @{ Name = 'write.elf';  Path = 'build/write.elf'   },
     @{ Name = 'pipe.elf';   Path = 'build/pipe.elf'   },
-    @{ Name = 'signal.elf'; Path = 'build/signal.elf' }
+    @{ Name = 'signal.elf'; Path = 'build/signal.elf' },
+    @{ Name = 'ttytest.elf'; Path = 'build/ttytest.elf' }
 )
 
 # ── build sector 0 ──────────────────────────────────────────

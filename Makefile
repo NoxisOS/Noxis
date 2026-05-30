@@ -31,6 +31,7 @@ KERNEL_C_OBJS = \
   build/mm/virt/heap.o              \
   build/drivers/pit.o               build/drivers/kbd.o           \
   build/drivers/ata.o               build/drivers/vga.o           \
+  build/drivers/tty/tty.o           \
   build/proc/process.o              build/proc/scheduler.o        \
   build/proc/elf.o                  build/proc/exec.o             \
   build/kernel/syscall/syscall.o    \
@@ -73,7 +74,8 @@ all: $(DISK_IMG)
 USER_LD   = src/userland/user.ld
 USER_ELFS = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/fread.elf  build/fork.elf   build/write.elf  \
-            build/pipe.elf   build/signal.elf
+            build/pipe.elf   build/signal.elf \
+            build/ttytest.elf
 
 build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
@@ -83,6 +85,7 @@ build/fork.o:    src/userland/fork.asm    ; $(AS) $(ASFLAGS) $< -o $@
 build/write.o:   src/userland/write.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/pipe.o:    src/userland/pipe.asm    ; $(AS) $(ASFLAGS) $< -o $@
 build/signal.o:  src/userland/signal.asm  ; $(AS) $(ASFLAGS) $< -o $@
+build/ttytest.o: src/userland/ttytest.asm ; $(AS) $(ASFLAGS) $< -o $@
 
 build/%.elf: build/%.o $(USER_LD)
 	@echo LD   $@

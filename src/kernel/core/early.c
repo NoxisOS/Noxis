@@ -19,6 +19,7 @@
 #include <drivers/ata.h>
 #include <drivers/kbd.h>
 #include <drivers/vga.h>
+#include <drivers/tty/tty.h>
 #include <proc/scheduler.h>
 #include <kernel/syscall/syscall.h>
 #include <fs/vfs/vfs.h>
@@ -148,6 +149,7 @@ void kernel_main(void) {
     STEP("MM",   "VMM",     (void)0);
     STEP("MM",   "HEAP",    heap_init());
     STEP("DRV",  "PIT",     pit_init(1000));
+    STEP("DRV",  "TTY",     tty_init());
     STEP("DRV",  "KBD",     kbd_init());
     STEP("DRV",  "ATA",     ata_init(ATA_PRIMARY, ATA_MASTER));
     STEP("PROC", "SCHED",   scheduler_init());
