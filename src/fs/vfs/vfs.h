@@ -12,11 +12,11 @@
 
 /* A file view.  `data` is the live backing buffer owned by the backend. */
 typedef struct {
-    const uint8_t* name;
+    uint8_t        name[32];
     uint8_t*       data;
     uint32_t       size;
-    uint32_t       lba;       /* starting LBA (set by noxfs, 0 for ramfs) */
-    uint32_t       capacity;  /* allocated size (rounded up to sectors) */
+    uint32_t       inode;      /* inode number (0 = ramfs) */
+    uint32_t       capacity;   /* allocated size (rounded up to sectors) */
 } vfs_file_t;
 
 os_status_t   vfs_init(void);

@@ -16,15 +16,17 @@
 #define KBD_STATUS      0x64
 #define KBD_OUTPUT_FULL 0x01
 
-/* ── scancodes for shift / caps lock ────────────────────────── */
+/* ── scancodes for shift / caps lock / ctrl ─────────────────── */
 #define SC_LSHIFT 0x2A
 #define SC_RSHIFT 0x36
 #define SC_CAPS   0x3A
+#define SC_LCTRL  0x1D
 #define SC_RELEASE 0x80
 
 /* ── file-scope state ──────────────────────────────────────── */
 static volatile uint8_t  g_shift;
 static volatile uint8_t  g_caps;
+static volatile uint8_t  g_ctrl;
 
 /* ── scancode set 1 (XT) translation tables ─────────────────── */
 
@@ -56,6 +58,11 @@ static void _kbd_isr(isr_frame_t* frame) {
         else         { g_shift++; }
         return;
     }
+    if (code == SC_LCTRL) {
+        if (release) { if (g_ctrl) g_ctrl--; }
+        else         { g_ctrl++; }
+        return;
+    }
     if (code == SC_CAPS) {
         if (!release) g_caps = !g_caps;
         return;
@@ -71,13 +78,18 @@ static void _kbd_isr(isr_frame_t* frame) {
         else if (c >= 'A' && c <= 'Z') c = (uint8_t)(c + 32);
     }
 
+    if (g_ctrl) {
+        if (c >= 'a' && c <= 'z') c = (uint8_t)(c & 0x1F);
+        else if (c >= 'A' && c <= 'Z') c = (uint8_t)(c & 0x1F);
+    }
+
     tty_input(c);
 }
 
 /* ── public functions ──────────────────────────────────────── */
 
 os_status_t kbd_init(void) {
-    g_shift = g_caps = 0;
+    g_shift = g_caps = g_ctrl = 0;
 
     while (port_byte_in(KBD_STATUS) & KBD_OUTPUT_FULL) {
         (void)port_byte_in(KBD_DATA);

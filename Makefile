@@ -136,7 +136,7 @@ build/%.o: src/%.asm
 run: $(DISK_IMG)
 	@echo RUN  QEMU
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
-	$(QEMU) -fda $(DISK_IMG) -hda build/disk.img -no-reboot
+	$(QEMU) -fda $(DISK_IMG) -drive file=build/disk.img,format=raw,if=ide,index=0 -no-reboot
 
 run-debug: $(DISK_IMG)
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.

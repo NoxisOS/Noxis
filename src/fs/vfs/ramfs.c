@@ -1,5 +1,5 @@
 /**
- * @file    fs/ramfs.c
+ * @file    fs/vfs/ramfs.c
  * @brief   In-memory filesystem backend — static, read-only.
  * @author  Noxis Team
  * @date    2026-05-30
@@ -25,9 +25,9 @@ static const uint8_t _readme[] =
 /* ── file table ─────────────────────────────────────────────── */
 
 static vfs_file_t _files[] = {
-    { (const uint8_t*)"motd",    (uint8_t*)_motd,    sizeof(_motd)    - 1, 0, 0 },
-    { (const uint8_t*)"version", (uint8_t*)_version, sizeof(_version) - 1, 0, 0 },
-    { (const uint8_t*)"readme",  (uint8_t*)_readme,  sizeof(_readme)  - 1, 0, 0 },
+    { "motd",    (uint8_t*)_motd,    sizeof(_motd)    - 1, 0, 0 },
+    { "version", (uint8_t*)_version, sizeof(_version) - 1, 0, 0 },
+    { "readme",  (uint8_t*)_readme,  sizeof(_readme)  - 1, 0, 0 },
 };
 
 #define FILES_N (sizeof(_files) / sizeof(_files[0]))
@@ -42,13 +42,8 @@ static int _streq(const uint8_t* a, const uint8_t* b) {
 
 /* ── ramfs API (consumed by vfs.c via extern) ───────────────── */
 
-os_status_t ramfs_init(void) {
-    return OS_OK;
-}
-
-uint32_t ramfs_count(void) {
-    return FILES_N;
-}
+os_status_t ramfs_init(void) { return OS_OK; }
+uint32_t    ramfs_count(void) { return FILES_N; }
 
 vfs_file_t* ramfs_entry(uint32_t i) {
     return i < FILES_N ? &_files[i] : (vfs_file_t*)0;
