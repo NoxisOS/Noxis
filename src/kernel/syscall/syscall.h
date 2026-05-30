@@ -25,6 +25,11 @@
 #define SYS_KILL      11 /* EBX=pid, ESI=sig → EAX=0                           */
 #define SYS_GETPID    12 /* → EAX=pid                                          */
 #define SYS_IOCTL     13 /* EBX=fd, ESI=req, EDI=arg → EAX=0/-1                 */
+#define SYS_MKDIR     14 /* EBX=path → EAX=0/-1                                   */
+#define SYS_CHDIR     15 /* EBX=path → EAX=0/-1                                   */
+#define SYS_GETDENTS  16 /* EBX=fd, ESI=buf, EDI=len, EDX=off → EAX=read          */
+#define SYS_STAT      17 /* EBX=path, ESI=statbuf → EAX=0/-1                      */
+#define SYS_LSEEK     18 /* EBX=fd, ESI=offset, EDI=whence → EAX=pos              */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

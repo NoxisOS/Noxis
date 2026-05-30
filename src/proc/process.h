@@ -76,8 +76,11 @@ typedef struct process {
 
     /* ── signals ──────────────────────────────────────────────── */
     sigaction_t      sigactions[NSIG];
-    uint32_t         sig_pending;   /* bitmap of pending signals              */
-    uint32_t         sig_blocked;   /* bitmap of blocked signals (mask)       */
+    uint32_t         sig_pending;
+    uint32_t         sig_blocked;
+
+    /* ── filesystem ───────────────────────────────────────────── */
+    uint32_t         cwd_ino;       /* current working directory inode */
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

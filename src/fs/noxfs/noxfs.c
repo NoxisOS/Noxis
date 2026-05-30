@@ -403,11 +403,42 @@ vfs_file_t* noxfs_entry(uint32_t i) {
 
 vfs_file_t* noxfs_lookup(const uint8_t* name) {
     if (!g_ready) return (vfs_file_t*)0;
+
+    /* First check the in-memory cache (flat list from _dir_scan). */
     for (uint32_t i = 0; i < g_count; i++) {
         if (_streq(g_files[i].name, name))
             return &g_files[i];
     }
-    return (vfs_file_t*)0;
+
+    /* Try resolving as a path (handles subdirectories). */
+    uint32_t ino = noxfs_resolve(g_sb.root_ino, name);
+    if (ino == (uint32_t)-1 || ino == g_sb.root_ino) return (vfs_file_t*)0;
+
+    noxfs_inode_t in;
+    if (_iread(ino, &in) != OS_OK) return (vfs_file_t*)0;
+    if (!(in.mode & NOXFS_INO_FILE)) return (vfs_file_t*)0;
+
+    if (g_count >= NOXFS_MAX_FILES) return (vfs_file_t*)0;
+    vfs_file_t* f = &g_files[g_count];
+
+    /* Extract basename from path */
+    const uint8_t* base = name;
+    for (const uint8_t* p = name; *p; p++)
+        if (*p == '/') base = p + 1;
+
+    uint32_t j;
+    for (j = 0; j < 31 && base[j]; j++) f->name[j] = base[j];
+    f->name[j] = 0;
+
+    f->data = _load_data(ino, &f->size);
+    if (!f->data) return (vfs_file_t*)0;
+
+    f->inode    = ino;
+    f->capacity = (f->size + NOXFS_BLKSZ - 1) & ~(NOXFS_BLKSZ - 1);
+    if (f->capacity == 0) f->capacity = NOXFS_BLKSZ;
+    g_count++;
+
+    return f;
 }
 
 static os_status_t _ensure_capacity(vfs_file_t* f, uint32_t needed) {
@@ -494,4 +525,178 @@ vfs_file_t* noxfs_creat(const uint8_t* name) {
 void noxfs_sync(void) {
     if (!g_ready) return;
     _sb_write();
+}
+
+/* ── Phase 2: directory operations ───────────────────────── */
+
+static uint32_t _dir_lookup_name(uint32_t dir_ino, const uint8_t* name) {
+    noxfs_inode_t dir;
+    if (_iread(dir_ino, &dir) != OS_OK) return (uint32_t)-1;
+    if (!(dir.mode & NOXFS_INO_DIR)) return (uint32_t)-1;
+
+    uint32_t dir_sz = dir.size;
+    uint8_t* dir_data = _load_data(dir_ino, &dir_sz);
+    if (!dir_data) return (uint32_t)-1;
+
+    noxfs_dirent_t* entries = (noxfs_dirent_t*)dir_data;
+    uint32_t count = dir_sz / sizeof(noxfs_dirent_t);
+    uint32_t result = (uint32_t)-1;
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (entries[i].inode == 0) continue;
+        uint32_t j = 0;
+        while (j < entries[i].name_len && name[j] &&
+               entries[i].name[j] == (char)name[j]) j++;
+        if (j == entries[i].name_len && name[j] == 0) {
+            result = entries[i].inode;
+            break;
+        }
+    }
+
+    kfree(dir_data);
+    return result;
+}
+
+uint32_t noxfs_resolve(uint32_t base_ino, const uint8_t* path) {
+    if (!g_ready || !path) return (uint32_t)-1;
+    if (path[0] == 0) return base_ino;
+
+    /* Absolute path: start from root */
+    uint32_t cur_ino = base_ino;
+    const uint8_t* p = path;
+
+    if (p[0] == '/') {
+        cur_ino = g_sb.root_ino;
+        p++;
+        if (p[0] == 0) return cur_ino;
+    }
+
+    while (*p) {
+        while (*p == '/') p++;
+        if (*p == 0) break;
+
+        /* Extract component name */
+        uint8_t comp[32];
+        uint32_t ci = 0;
+        while (*p && *p != '/' && ci < 31) comp[ci++] = *p++;
+        comp[ci] = 0;
+
+        if (ci == 0) continue;
+
+        if (comp[0] == '.' && comp[1] == 0) continue;
+        if (comp[0] == '.' && comp[1] == '.' && comp[2] == 0) {
+            cur_ino = g_sb.root_ino; /* simplified: parent = root */
+            continue;
+        }
+
+        cur_ino = _dir_lookup_name(cur_ino, comp);
+        if (cur_ino == (uint32_t)-1) return (uint32_t)-1;
+    }
+
+    return cur_ino;
+}
+
+uint32_t noxfs_mkdir(uint32_t parent_ino, const uint8_t* name) {
+    if (!g_ready || !name || name[0] == 0) return (uint32_t)-1;
+
+    if (_dir_lookup_name(parent_ino, name) != (uint32_t)-1)
+        return (uint32_t)-1; /* already exists */
+
+    uint32_t dir_ino = _ialloc(NOXFS_INO_DIR);
+    if (dir_ino == (uint32_t)-1) return (uint32_t)-1;
+
+    /* Allocate data block for "." and ".." entries */
+    uint32_t data_blk = _balloc();
+    if (data_blk == (uint32_t)-1) return (uint32_t)-1;
+
+    /* Write "." and ".." directory entries */
+    uint8_t dot_data[NOXFS_BLKSZ];
+    for (uint32_t i = 0; i < NOXFS_BLKSZ; i++) dot_data[i] = 0;
+
+    noxfs_dirent_t* dot = (noxfs_dirent_t*)dot_data;
+    dot->inode     = dir_ino;
+    dot->rec_len   = sizeof(noxfs_dirent_t);
+    dot->name_len  = 1;
+    dot->file_type = NOXFS_FT_DIR;
+    dot->name[0]   = '.';
+
+    noxfs_dirent_t* dotdot = (noxfs_dirent_t*)(dot_data + sizeof(noxfs_dirent_t));
+    dotdot->inode     = parent_ino;
+    dotdot->rec_len   = sizeof(noxfs_dirent_t);
+    dotdot->name_len  = 2;
+    dotdot->file_type = NOXFS_FT_DIR;
+    dotdot->name[0]   = '.';
+    dotdot->name[1]   = '.';
+
+    /* Write dot data to the allocated block */
+    buf_t* bp = bread(BUF_DEV_ATA, data_blk);
+    if (!bp) return (uint32_t)-1;
+    for (uint32_t i = 0; i < NOXFS_BLKSZ; i++) bp->data[i] = dot_data[i];
+    bp->flags |= B_DIRTY;
+    bwrite(bp);
+    brelse(bp);
+
+    /* Update new dir inode: blocks[0] = data_blk, size = 2 * 32 = 64 */
+    noxfs_inode_t dir_inode;
+    if (_iread(dir_ino, &dir_inode) != OS_OK) return (uint32_t)-1;
+    dir_inode.blocks[0] = data_blk;
+    dir_inode.size      = 2 * sizeof(noxfs_dirent_t);
+    if (_iwrite(dir_ino, &dir_inode) != OS_OK) return (uint32_t)-1;
+
+    /* Add entry in parent directory */
+    if (_dir_add_entry(parent_ino, name, dir_ino, NOXFS_FT_DIR) != OS_OK)
+        return (uint32_t)-1;
+
+    return dir_ino;
+}
+
+int32_t noxfs_getdents(uint32_t dir_ino, uint8_t* buf,
+                        uint32_t len, uint32_t* off) {
+    if (!g_ready || !buf || !off) return -1;
+    if (len < sizeof(noxfs_dirent_t)) return -1;
+
+    noxfs_inode_t dir;
+    if (_iread(dir_ino, &dir) != OS_OK) return -1;
+    if (!(dir.mode & NOXFS_INO_DIR)) return -1;
+
+    uint32_t dir_sz = dir.size;
+    uint8_t* dir_data = _load_data(dir_ino, &dir_sz);
+    if (!dir_data) return -1;
+
+    uint32_t entry_count = dir_sz / sizeof(noxfs_dirent_t);
+    uint32_t entry_idx = *off / sizeof(noxfs_dirent_t);
+
+    if (entry_idx >= entry_count) { kfree(dir_data); return 0; }
+
+    noxfs_dirent_t* entries = (noxfs_dirent_t*)dir_data;
+    noxfs_dirent_t* src = &entries[entry_idx];
+    uint32_t copy = sizeof(noxfs_dirent_t);
+    if (copy > len) copy = len;
+
+    for (uint32_t i = 0; i < copy; i++)
+        buf[i] = ((uint8_t*)src)[i];
+
+    *off += sizeof(noxfs_dirent_t);
+    kfree(dir_data);
+    return (int32_t)copy;
+}
+
+os_status_t noxfs_stat(uint32_t ino, vfs_file_t* out) {
+    if (!g_ready || !out) return OS_ERR_INVALID;
+
+    noxfs_inode_t in;
+    if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
+
+    out->name[0] = 0;
+    out->data    = (uint8_t*)0;
+    out->size    = in.size;
+    out->inode   = ino;
+    out->capacity = ((in.mode & NOXFS_INO_DIR) ? NOXFS_INO_DIR : 0)
+                  | ((in.mode & NOXFS_INO_FILE) ? NOXFS_INO_FILE : 0);
+
+    return OS_OK;
+}
+
+uint32_t noxfs_root_ino(void) {
+    return g_ready ? g_sb.root_ino : (uint32_t)-1;
 }

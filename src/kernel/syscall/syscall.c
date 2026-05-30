@@ -15,6 +15,7 @@
 #include <drivers/vga.h>
 #include <drivers/tty/tty.h>
 #include <fs/vfs/vfs.h>
+#include <fs/noxfs/noxfs.h>
 #include <fs/pipe/pipe.h>
 #include <common/types.h>
 #include <common/signal.h>
@@ -370,6 +371,105 @@ static void _sys_ioctl(isr_frame_t* frame) {
     frame->eax = (uint32_t)-1;
 }
 
+static void _sys_mkdir(isr_frame_t* frame) {
+    const uint8_t* path = (const uint8_t*)frame->ebx;
+    if (!path || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t base = (path[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    uint32_t ino  = noxfs_mkdir(base, path);
+    frame->eax = (ino != (uint32_t)-1) ? 0 : (uint32_t)-1;
+}
+
+static void _sys_chdir(isr_frame_t* frame) {
+    const uint8_t* path = (const uint8_t*)frame->ebx;
+    if (!path || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t base = (path[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    uint32_t ino  = noxfs_resolve(base, path);
+    if (ino == (uint32_t)-1) { frame->eax = (uint32_t)-1; return; }
+
+    proc->cwd_ino = ino;
+    frame->eax = 0;
+}
+
+static void _sys_getdents(isr_frame_t* frame) {
+    uint32_t fd     = frame->ebx;
+    uint8_t* buf    = (uint8_t*)frame->esi;
+    uint32_t len    = frame->edi;
+    uint32_t* off_p = (uint32_t*)frame->edx; /* user-space offset pointer */
+
+    if (!buf || len == 0 || !off_p) { frame->eax = (uint32_t)-1; return; }
+    if (!_user_range_ok(frame->esi, len)) { frame->eax = (uint32_t)-1; return; }
+    if (!_user_range_ok(frame->edx, 4)) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t dir_ino = proc->cwd_ino;
+
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
+        vfs_file_t* f = proc->fd_table[fd].file;
+        if (f && f->inode) dir_ino = f->inode;
+    }
+
+    uint32_t off = *off_p;
+    int32_t n = noxfs_getdents(dir_ino, buf, len, &off);
+    if (n > 0) *off_p = off;
+    frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
+}
+
+static void _sys_stat(isr_frame_t* frame) {
+    const uint8_t* path = (const uint8_t*)frame->ebx;
+    vfs_file_t*    sb   = (vfs_file_t*)frame->esi;
+    if (!path || !sb) { frame->eax = (uint32_t)-1; return; }
+    if (!_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
+    if (!_user_range_ok(frame->esi, sizeof(vfs_file_t))) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t base = (path[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    uint32_t ino  = noxfs_resolve(base, path);
+    if (ino == (uint32_t)-1) { frame->eax = (uint32_t)-1; return; }
+
+    vfs_file_t st;
+    if (noxfs_stat(ino, &st) != OS_OK) { frame->eax = (uint32_t)-1; return; }
+
+    sb->size     = st.size;
+    sb->inode    = st.inode;
+    sb->capacity = st.capacity;
+    frame->eax = 0;
+}
+
+static void _sys_lseek(isr_frame_t* frame) {
+    uint32_t fd     = frame->ebx;
+    int32_t  offset = (int32_t)frame->esi;
+    uint32_t whence = frame->edi;
+
+    process_t* proc = scheduler_current();
+    if (fd >= PROC_MAX_FD || !proc->fd_table[fd].used) { frame->eax = (uint32_t)-1; return; }
+
+    switch (whence) {
+    case 0: /* SEEK_SET */
+        if (offset < 0) { frame->eax = (uint32_t)-1; return; }
+        proc->fd_table[fd].pos = (uint32_t)offset;
+        break;
+    case 1: /* SEEK_CUR */
+        if (offset < 0 && (uint32_t)(-offset) > proc->fd_table[fd].pos)
+            { frame->eax = (uint32_t)-1; return; }
+        proc->fd_table[fd].pos = (uint32_t)((int32_t)proc->fd_table[fd].pos + offset);
+        break;
+    case 2: /* SEEK_END */ {
+        vfs_file_t* f = proc->fd_table[fd].file;
+        uint32_t end = f ? f->size : 0;
+        if (offset < 0 && (uint32_t)(-offset) > end) { frame->eax = (uint32_t)-1; return; }
+        proc->fd_table[fd].pos = (uint32_t)((int32_t)end + offset);
+        break;
+    }
+    default:
+        frame->eax = (uint32_t)-1; return;
+    }
+    frame->eax = proc->fd_table[fd].pos;
+}
+
 /* ── signal delivery ────────────────────────────────────────── */
 
 void signal_deliver(isr_frame_t* frame) {
@@ -501,6 +601,11 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_KILL:      _sys_kill(frame);     break;
     case SYS_GETPID:    _sys_getpid(frame);   break;
     case SYS_IOCTL:     _sys_ioctl(frame);    break;
+    case SYS_MKDIR:     _sys_mkdir(frame);    break;
+    case SYS_CHDIR:     _sys_chdir(frame);    break;
+    case SYS_GETDENTS:  _sys_getdents(frame); break;
+    case SYS_STAT:      _sys_stat(frame);     break;
+    case SYS_LSEEK:     _sys_lseek(frame);    break;
     default: break;
     }
 }

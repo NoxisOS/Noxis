@@ -23,6 +23,7 @@
 #include <proc/scheduler.h>
 #include <kernel/syscall/syscall.h>
 #include <fs/vfs/vfs.h>
+#include <fs/noxfs/noxfs.h>
 #include <shell/shell.h>
 
 /* ── small string helper (used by banner centering) ─────────── */
@@ -155,6 +156,7 @@ void kernel_main(void) {
     STEP("PROC", "SCHED",   scheduler_init());
     STEP("SYS",  "SYSCALL", syscall_init());
     STEP("FS",   "VFS",     vfs_init());
+    scheduler_current()->cwd_ino = noxfs_root_ino();
 
     _footer();
 

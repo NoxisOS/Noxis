@@ -74,4 +74,37 @@ int32_t       noxfs_write(vfs_file_t* f, uint32_t off,
 vfs_file_t*   noxfs_creat(const uint8_t* name);
 void          noxfs_sync(void);
 
+/* ── Phase 2: directories ────────────────────────────────────── */
+
+/**
+ * @brief Resolve a path relative to a base inode.
+ *        Returns the target inode number, or (uint32_t)-1 on error.
+ */
+uint32_t      noxfs_resolve(uint32_t base_ino, const uint8_t* path);
+
+/**
+ * @brief Create a directory entry for `name` in the directory `parent_ino`,
+ *        pointing to a newly-allocated directory inode.
+ *        Returns the new directory inode, or (uint32_t)-1.
+ */
+uint32_t      noxfs_mkdir(uint32_t parent_ino, const uint8_t* name);
+
+/**
+ * @brief Read directory entries from `dir_ino` into `buf`.
+ *        `off` is updated to the next entry offset. Returns bytes read.
+ *        Returns 0 at end of directory.
+ */
+int32_t       noxfs_getdents(uint32_t dir_ino, uint8_t* buf,
+                             uint32_t len, uint32_t* off);
+
+/**
+ * @brief Fill a stat structure (vfs_file_t-style metadata) for an inode.
+ */
+os_status_t   noxfs_stat(uint32_t ino, vfs_file_t* out);
+
+/**
+ * @brief Returns the root directory inode number.
+ */
+uint32_t      noxfs_root_ino(void);
+
 #endif

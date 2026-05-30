@@ -30,6 +30,8 @@ extern const shell_cmd_t cmd_exec;
 extern const shell_cmd_t cmd_clear;
 extern const shell_cmd_t cmd_halt;
 extern const shell_cmd_t cmd_sleep;
+extern const shell_cmd_t cmd_cd;
+extern const shell_cmd_t cmd_mkdir;
 
 static const shell_cmd_t* g_cmds[] = {
     &cmd_help,
@@ -37,6 +39,8 @@ static const shell_cmd_t* g_cmds[] = {
     &cmd_ls,
     &cmd_cat,
     &cmd_exec,
+    &cmd_cd,
+    &cmd_mkdir,
     &cmd_clear,
     &cmd_halt,
     &cmd_sleep,
