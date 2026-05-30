@@ -9,6 +9,7 @@
 
 #include <common/types.h>
 #include <common/status.h>
+#include <common/signal.h>
 #include <fs/vfs.h>
 
 /* ── constants ─────────────────────────────────────────────── */
@@ -72,6 +73,11 @@ typedef struct process {
     bool_t           is_fork_child; /* TRUE if created by sys_fork            */
     uint32_t         fork_eip;      /* ring-3 EIP to resume at (fork child)   */
     uint32_t         fork_esp;      /* ring-3 ESP to resume at (fork child)   */
+
+    /* ── signals ──────────────────────────────────────────────── */
+    sigaction_t      sigactions[NSIG];
+    uint32_t         sig_pending;   /* bitmap of pending signals              */
+    uint32_t         sig_blocked;   /* bitmap of blocked signals (mask)       */
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */

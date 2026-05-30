@@ -21,6 +21,9 @@
 #define SYS_CREAT    7   /* EBX=name → EAX=fd                                 */
 #define SYS_PIPE     8   /* EBX=fd[2] (user ptr to 2 ints) → EAX=0             */
 #define SYS_DUP      9   /* EBX=oldfd → EAX=newfd                              */
+#define SYS_SIGACTION 10 /* EBX=signum, ESI=act, EDI=oldact → EAX=0            */
+#define SYS_KILL      11 /* EBX=pid, ESI=sig → EAX=0                           */
+#define SYS_GETPID    12 /* → EAX=pid                                          */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

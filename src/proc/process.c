@@ -82,6 +82,13 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     proc->fork_eip      = 0;
     proc->fork_esp      = 0;
 
+    proc->sig_pending = 0;
+    proc->sig_blocked = 0;
+    for (uint32_t i = 0; i < NSIG; i++) {
+        proc->sigactions[i].handler = SIG_DFL;
+        proc->sigactions[i].flags   = 0;
+    }
+
     for (uint32_t i = 0; i < PROC_MAX_FD; i++) {
         proc->fd_table[i].type = FD_FILE;
         proc->fd_table[i].used = FALSE;

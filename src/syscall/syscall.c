@@ -11,11 +11,13 @@
 #include <proc/scheduler.h>
 #include <proc/process.h>
 #include <proc/exec.h>
+#include <proc/signal.h>
 #include <drivers/vga.h>
 #include <drivers/kbd.h>
 #include <fs/vfs.h>
 #include <fs/pipe.h>
 #include <common/types.h>
+#include <common/signal.h>
 #include <mm/vmm.h>
 
 #define MSR_SYSENTER_CS   0x174
@@ -103,6 +105,13 @@ static void _sys_exit(isr_frame_t* frame) {
         __asm__ __volatile__("cli");
         me->exit_code = code;
         me->state     = PROC_ZOMBIE;
+
+        /* Generate SIGCHLD on the parent if it has not already been reaped. */
+        if (me->ppid) {
+            process_t* parent = scheduler_find_proc(me->ppid);
+            if (parent)
+                parent->sig_pending |= (1u << SIGCHLD);
+        }
 
         if (me->waiter) {
             scheduler_add(me->waiter);
@@ -311,6 +320,112 @@ static void _sys_close(isr_frame_t* frame) {
     frame->eax = 0;
 }
 
+static void _sys_sigaction(isr_frame_t* frame) {
+    uint32_t     signum = frame->ebx;
+    sigaction_t* act    = (sigaction_t*)frame->esi;
+
+    if (signum >= NSIG || signum == 0) { frame->eax = (uint32_t)-1; return; }
+    if (signum == SIGKILL || signum == SIGSTOP) { frame->eax = (uint32_t)-1; return; }
+
+    if (act) {
+        if (!_user_range_ok(frame->esi, sizeof(sigaction_t))) { frame->eax = (uint32_t)-1; return; }
+        process_t* proc = scheduler_current();
+        proc->sigactions[signum].handler = act->handler;
+        proc->sigactions[signum].flags   = act->flags;
+    }
+    frame->eax = 0;
+}
+
+static void _sys_kill(isr_frame_t* frame) {
+    uint32_t pid = frame->ebx;
+    uint32_t sig = frame->esi;
+
+    if (sig >= NSIG || sig == 0) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* target = scheduler_find_proc(pid);
+    if (!target) { frame->eax = (uint32_t)-1; return; }
+
+    if (sig == SIGKILL && target->sigactions[SIGKILL].handler != SIG_DFL) {
+        target->sigactions[SIGKILL].handler = SIG_DFL;
+    }
+
+    target->sig_pending |= (1u << sig);
+    frame->eax = 0;
+}
+
+static void _sys_getpid(isr_frame_t* frame) {
+    frame->eax = scheduler_current()->pid;
+}
+
+/* ── signal delivery ────────────────────────────────────────── */
+
+void signal_deliver(isr_frame_t* frame) {
+    process_t* cur = scheduler_current();
+    if (!cur || cur->page_dir_phys == 0) return;
+
+    uint32_t pending = cur->sig_pending & ~cur->sig_blocked;
+    if (!pending) return;
+
+    for (uint32_t sig = 1; sig < NSIG; sig++) {
+        if (!(pending & (1u << sig))) continue;
+        cur->sig_pending &= ~(1u << sig);
+
+        sighandler_t handler = cur->sigactions[sig].handler;
+
+        if (handler == SIG_DFL) {
+            switch (sig) {
+            case SIGKILL:
+            case SIGTERM:
+            case SIGINT:
+            case SIGQUIT:
+            case SIGSEGV:
+            case SIGILL:
+            case SIGFPE:
+            case SIGBUS:
+            case SIGABRT:
+                cur->exit_code = 128 + sig;
+
+                if (cur->is_fork_child) {
+                    __asm__ __volatile__("cli");
+                    cur->state = PROC_ZOMBIE;
+                    if (cur->ppid) {
+                        process_t* parent = scheduler_find_proc(cur->ppid);
+                        if (parent)
+                            parent->sig_pending |= (1u << SIGCHLD);
+                    }
+                    if (cur->waiter) {
+                        scheduler_add(cur->waiter);
+                        cur->waiter = (process_t*)0;
+                    }
+                    vfs_sync();
+                    scheduler_exit();
+                } else {
+                    vfs_sync();
+                    exec_return((int)cur->exit_code);
+                }
+                break;
+            default:
+                break;
+            }
+            return;
+        }
+
+        if (handler == SIG_IGN) continue;
+
+        uint32_t uesp = frame->user_esp;
+        if (uesp < 0x400008u || uesp > 0xC0000000u) return;
+
+        uesp -= 8;
+        uint32_t* ustack = (uint32_t*)uesp;
+        ustack[0] = frame->eip;    /* return addr (popped by ret) */
+        ustack[1] = sig;           /* argument to handler (at [esp+4]) */
+
+        frame->user_esp = uesp;
+        frame->eip       = (uint32_t)handler;
+        return;
+    }
+}
+
 /* Line-mode read. Routes through the fd table: fd=0 is keyboard (stdin),
    other fds are opened files. */
 static void _sys_read(isr_frame_t* frame) {
@@ -376,22 +491,26 @@ static void _sys_read(isr_frame_t* frame) {
 
 static void _syscall_dispatch(isr_frame_t* frame) {
     switch (frame->eax) {
-    case SYS_WRITE:   _sys_write(frame);   break;
-    case SYS_READ:    _sys_read(frame);    break;
-    case SYS_EXIT:    _sys_exit(frame);    break;
-    case SYS_OPEN:    _sys_open(frame);    break;
-    case SYS_CLOSE:   _sys_close(frame);   break;
-    case SYS_FORK:    _sys_fork(frame);    break;
-    case SYS_WAITPID: _sys_waitpid(frame); break;
-    case SYS_CREAT:   _sys_creat(frame);   break;
-    case SYS_PIPE:    _sys_pipe(frame);    break;
-    case SYS_DUP:     _sys_dup(frame);     break;
+    case SYS_WRITE:     _sys_write(frame);    break;
+    case SYS_READ:      _sys_read(frame);     break;
+    case SYS_EXIT:      _sys_exit(frame);     break;
+    case SYS_OPEN:      _sys_open(frame);     break;
+    case SYS_CLOSE:     _sys_close(frame);    break;
+    case SYS_FORK:      _sys_fork(frame);     break;
+    case SYS_WAITPID:   _sys_waitpid(frame);  break;
+    case SYS_CREAT:     _sys_creat(frame);    break;
+    case SYS_PIPE:      _sys_pipe(frame);     break;
+    case SYS_DUP:       _sys_dup(frame);      break;
+    case SYS_SIGACTION: _sys_sigaction(frame); break;
+    case SYS_KILL:      _sys_kill(frame);     break;
+    case SYS_GETPID:    _sys_getpid(frame);   break;
     default: break;
     }
 }
 
 void syscall_handler(isr_frame_t* frame) {
     _syscall_dispatch(frame);
+    signal_deliver(frame);
 }
 
 os_status_t syscall_init(void) {
