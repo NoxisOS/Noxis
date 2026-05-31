@@ -363,26 +363,32 @@ static void _sys_chdir(isr_frame_t* frame) {
 }
 
 static void _sys_getdents(isr_frame_t* frame) {
-    uint32_t fd     = frame->ebx;
-    uint8_t* buf    = (uint8_t*)frame->esi;
-    uint32_t len    = frame->edi;
-    uint32_t* off_p = (uint32_t*)frame->edx; /* user-space offset pointer */
+    uint32_t  fd  = frame->ebx;
+    uint8_t*  buf = (uint8_t*)frame->esi;
+    uint32_t  len = frame->edi;
 
-    if (!buf || len == 0 || !off_p) { frame->eax = (uint32_t)-1; return; }
+    if (!buf || len == 0) { frame->eax = (uint32_t)-1; return; }
     if (!_user_range_ok(frame->esi, len)) { frame->eax = (uint32_t)-1; return; }
-    if (!_user_range_ok(frame->edx, 4)) { frame->eax = (uint32_t)-1; return; }
 
-    process_t* proc = scheduler_current();
-    uint32_t dir_ino = proc->cwd_ino;
+    /* EDX is the return EIP in the sysenter path (always 0 in frame->edx),
+       so we can't use it as an offset pointer.  If a valid user pointer is
+       provided (int 0x80 path), honour it; otherwise start from offset 0. */
+    uint32_t  local_off = 0;
+    uint32_t *off_ptr;
+    if (frame->edx && _user_range_ok(frame->edx, 4))
+        off_ptr = (uint32_t*)frame->edx;
+    else
+        off_ptr = &local_off;
+
+    process_t* proc    = scheduler_current();
+    uint32_t   dir_ino = proc->cwd_ino;
 
     if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
         vfs_file_t* f = proc->fd_table[fd].file;
         if (f && f->inode) dir_ino = f->inode;
     }
 
-    uint32_t off = *off_p;
-    int32_t n = noxfs_getdents(dir_ino, buf, len, &off);
-    if (n > 0) *off_p = off;
+    int32_t n = noxfs_getdents(dir_ino, buf, len, off_ptr);
     frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
 }
 
@@ -554,37 +560,66 @@ static void _sys_read(isr_frame_t* frame) {
 }
 
 /* ── execve: replace the current process image ───────────────────
-   Tears down the calling process's user address space and loads a new
-   ELF in its place, then enters ring 3 at the new entry point.  Designed
-   to be called from a fork child (the classic fork+execve shell pattern):
-   the child has its own kernel stack + page directory, so freeing user
-   space and re-entering ring 3 is self-contained.
-
-   Failure model:
-     - Bad path / not found  → return -1 (old image still intact).
-     - Failure AFTER teardown → proc_terminate(127): the old image is gone,
-       so there is nothing to return to. */
+   ESI = user char** argv (may be NULL — falls back to {name}).
+   Copies path and argv into kernel buffers BEFORE tearing down the
+   address space, then rebuilds a proper argc/argv frame on the new
+   user stack so the loaded program sees real arguments. */
 static void _sys_execve(isr_frame_t* frame) {
     const uint8_t* upath = (const uint8_t*)frame->ebx;
+    char**         uargv = (char**)frame->esi;   /* may be NULL */
+
     if (!upath || !_user_range_ok(frame->ebx, 1)) {
         frame->eax = (uint32_t)-1; return;
     }
 
-    /* Copy the program name into a kernel buffer BEFORE tearing down user
-       space — upath points into memory we are about to free. */
-    uint8_t name[64];
+    /* ── Copy path into kernel buffer ─────────────────────────── */
+    uint8_t  name[64];
     uint32_t nlen = 0;
     for (; nlen < sizeof(name) - 1 && upath[nlen]; nlen++) name[nlen] = upath[nlen];
-    name[nlen] = 0;
+    name[nlen] = '\0';
 
+    /* ── Copy argv strings into a flat kernel buffer ───────────── */
+#define KA_MAX   16
+#define KBF_SZ   512
+    uint8_t  kbuf[KBF_SZ];
+    uint32_t kptrs[KA_MAX];   /* byte offsets into kbuf */
+    uint32_t kargc = 0;
+    uint32_t kpos  = 0;
+
+    if (uargv && _user_range_ok(frame->esi, 4)) {
+        for (kargc = 0; kargc < KA_MAX; kargc++) {
+            uint32_t paddr = frame->esi + kargc * 4;
+            if (!_user_range_ok(paddr, 4)) break;
+            const uint8_t *uarg = (const uint8_t*)uargv[kargc];
+            if (!uarg) break;
+            if (!_user_range_ok((uint32_t)uarg, 1)) break;
+
+            kptrs[kargc] = kpos;
+            while (kpos < KBF_SZ - 1 && *uarg)
+                kbuf[kpos++] = *uarg++;
+            kbuf[kpos++] = '\0';
+        }
+    }
+
+    /* No argv supplied → default to just the program name */
+    if (kargc == 0) {
+        kptrs[0] = 0;
+        for (uint32_t i = 0; i <= nlen; i++) kbuf[i] = name[i];
+        kpos  = nlen + 1;
+        kargc = 1;
+    }
+
+    /* Rebuild pointer array of kernel-side strings */
+    const uint8_t *kargv[KA_MAX];
+    for (uint32_t i = 0; i < kargc; i++) kargv[i] = kbuf + kptrs[i];
+
+    /* ── Locate the ELF (must succeed before teardown) ─────────── */
     vfs_file_t* f = vfs_lookup(name);
-    if (!f) { frame->eax = (uint32_t)-1; return; }   /* recoverable */
+    if (!f) { frame->eax = (uint32_t)-1; return; }
 
-    /* ── Point of no return: free PDEs 1..767 (pure user space).
-       The recursive slot (1023) and the kernel higher-half (768+, which
-       includes our own kernel stack) are left untouched. */
+    /* ── Point of no return: free PDEs 1..767 ──────────────────── */
     process_t* proc = scheduler_current();
-    uint32_t* pd = (uint32_t*)0xFFFFF000u;
+    uint32_t*  pd   = (uint32_t*)0xFFFFF000u;
     for (uint32_t pde = 1; pde < 768; pde++) {
         if (!(pd[pde] & PAGE_PRESENT)) continue;
         uint32_t* pt = (uint32_t*)(0xFFC00000u + pde * PAGE_SIZE);
@@ -596,39 +631,28 @@ static void _sys_execve(isr_frame_t* frame) {
         pmm_free_frame(pt_phys);
     }
 
-    /* Load the new image into the now-empty user address space. */
+    /* ── Load ELF ───────────────────────────────────────────────── */
     uint32_t entry, prog_end;
     if (elf_load(f->data, f->size, &entry, &prog_end) != OS_OK)
-        proc_terminate(127);   /* old image gone — cannot recover */
+        proc_terminate(127);
 
-    /* Reset the heap to just past the new image. */
     proc->brk_start = prog_end;
     proc->brk       = prog_end;
 
-    /* Fresh user stack: only the top page is mapped; the rest grows on
-       demand through the page-fault handler. */
+    /* ── Fresh user stack ───────────────────────────────────────── */
     uint32_t stack_phys;
     if (pmm_alloc_frame(&stack_phys) != OS_OK ||
         vmm_map_page(USER_STACK_INIT, stack_phys,
                      PAGE_PRESENT | PAGE_RW | PAGE_USER) != OS_OK)
         proc_terminate(127);
 
-    /* Build argv = { name, NULL } on the new stack.  The name string is
-       copied here (it survives the teardown).  Frame layout matches
-       exec_run: [esp]=argc, [esp+4]=argv[0], ... */
-    uint32_t sp = USER_STACK_TOP;
-    sp -= (nlen + 1);
-    for (uint32_t k = 0; k <= nlen; k++) ((uint8_t*)sp)[k] = name[k];
-    uint32_t arg0 = sp;
-    sp &= ~3u;
-    sp -= 4; *(uint32_t*)sp = 0;        /* argv[1] = NULL */
-    sp -= 4; *(uint32_t*)sp = arg0;     /* argv[0]        */
-    sp -= 4; *(uint32_t*)sp = 1;        /* argc           */
+    /* ── Build proper argc/argv frame on the new stack ─────────── */
+    uint32_t sp = _build_argv_frame(kargc, kargv);
 
-    /* Point sysenter at our kernel stack and drop to ring 3. */
+    /* ── Enter ring 3 ───────────────────────────────────────────── */
     gdt_set_kernel_stack(proc->kstack_top);
     msr_write(MSR_SYSENTER_ESP, proc->kstack_top, 0);
-    user_enter(entry, sp);   /* does not return */
+    user_enter(entry, sp);
 }
 
 /* ── brk: set/query the program break (user heap top) ────────────

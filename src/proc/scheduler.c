@@ -34,7 +34,9 @@
 #include <common/signal.h>
 
 extern void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
-extern void user_enter_fork(uint32_t entry, uint32_t stack);
+extern void user_enter_fork(uint32_t entry, uint32_t stack,
+                            uint32_t ebp, uint32_t ebx,
+                            uint32_t esi, uint32_t edi);
 extern void msr_write(uint32_t msr, uint32_t lo, uint32_t hi);
 
 #define MSR_SYSENTER_ESP  0x175u
@@ -314,8 +316,11 @@ static void _fork_child_entry(void) {
     if (me->page_dir_phys)
         vmm_switch_pd(me->page_dir_phys);
 
-    /* Jump to ring 3.  EAX is zeroed by user_enter_fork → fork() == 0. */
-    user_enter_fork(me->fork_eip, me->fork_esp);
+    /* Jump to ring 3 with parent's saved register state.
+       EAX is zeroed by user_enter_fork so fork() returns 0 in the child. */
+    user_enter_fork(me->fork_eip, me->fork_esp,
+                    me->fork_ebp, me->fork_ebx,
+                    me->fork_esi, me->fork_edi);
 
     /* Never reached. */
     for (;;) __asm__ __volatile__("hlt");
@@ -345,6 +350,10 @@ uint32_t scheduler_fork_spawn(isr_frame_t* frame) {
     child->ppid          = parent->pid;
     child->fork_eip      = frame->eip;      /* sysenter return addr (user EDX) */
     child->fork_esp      = frame->user_esp; /* user ESP (user ECX at sysenter)  */
+    child->fork_ebp      = frame->ebp;      /* user EBP at fork() call          */
+    child->fork_ebx      = frame->ebx;      /* user EBX at fork() call          */
+    child->fork_esi      = frame->esi;      /* user ESI at fork() call          */
+    child->fork_edi      = frame->edi;      /* user EDI at fork() call          */
     child->brk_start     = parent->brk_start; /* inherit the heap layout        */
     child->brk           = parent->brk;
 

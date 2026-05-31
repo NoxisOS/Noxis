@@ -73,6 +73,10 @@ typedef struct process {
     bool_t           is_fork_child; /* TRUE if created by sys_fork            */
     uint32_t         fork_eip;      /* ring-3 EIP to resume at (fork child)   */
     uint32_t         fork_esp;      /* ring-3 ESP to resume at (fork child)   */
+    uint32_t         fork_ebp;      /* ring-3 EBP to restore in fork child    */
+    uint32_t         fork_ebx;      /* ring-3 EBX to restore in fork child    */
+    uint32_t         fork_esi;      /* ring-3 ESI to restore in fork child    */
+    uint32_t         fork_edi;      /* ring-3 EDI to restore in fork child    */
 
     /* ── signals ──────────────────────────────────────────────── */
     sigaction_t      sigactions[NSIG];

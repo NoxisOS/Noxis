@@ -206,19 +206,27 @@ chdir:
     pop  ebx
     ret
 
-; int execv(const char *path, ...)  — kernel only uses path
-; int execve(const char *path, ...) — same
+; int execv(const char *path, char *const argv[])
+; int execve(const char *path, char *const argv[], char *const envp[])
+;   EBX = path, ESI = argv — kernel copies strings before teardown.
+;   envp is silently ignored (Noxis has no environment).
 global execv
 global execve
 execv:
 execve:
     push ebx
+    push esi
+    push edi
     mov  eax, SYS_EXECVE
-    mov  ebx, [esp+8]        ; path
+    mov  ebx, [esp+16]       ; path
+    mov  esi, [esp+20]       ; argv (char**) — may be NULL
+    xor  edi, edi
     lea  edx, [.ret]
     mov  ecx, esp
     sysenter
 .ret:
+    pop  edi
+    pop  esi
     pop  ebx
     ret                      ; only reached on error (EAX = -1)
 

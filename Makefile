@@ -125,7 +125,7 @@ ASM_ELFS  = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/systest.elf
 
 # C programs (crt0 + prog.o + noxlib.a)
-C_ELFS    = build/ctest.elf
+C_ELFS    = build/ctest.elf build/nsh.elf
 
 USER_ELFS = $(ASM_ELFS) $(C_ELFS)
 
@@ -156,11 +156,21 @@ build/ctest.o: src/userland/ctest.c
 	@echo CC   $<
 	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
 
+build/nsh.o: src/userland/nsh.c
+	@if not exist build mkdir build
+	@echo CC   $<
+	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
+
 # ── C ELF link: crt0 + prog.o + noxlib.a ─────────────────────
 build/ctest.elf: $(NOXLIB_CRT) build/ctest.o build/noxlib.a $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ \
 	    $(NOXLIB_CRT) build/ctest.o build/noxlib.a
+
+build/nsh.elf: $(NOXLIB_CRT) build/nsh.o build/noxlib.a $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ \
+	    $(NOXLIB_CRT) build/nsh.o build/noxlib.a
 
 # ── Disk image ───────────────────────────────────────────────
 ROOTFS_FILES = rootfs/motd rootfs/version rootfs/readme

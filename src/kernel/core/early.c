@@ -191,6 +191,21 @@ void kernel_main(void) {
     /* Hand off to the ring-3 init process if present; otherwise fall back
        to the in-kernel shell.  init runs as a normal user program (its own
        page directory) and uses fork+execve+waitpid to launch others. */
+    /* Prefer nsh.elf (C shell). Restart on crash (non-zero exit), but
+       stop on clean exit (code == 0) so `exit` actually shuts down. */
+    {
+        vfs_file_t* nsh = vfs_lookup((const uint8_t*)"nsh.elf");
+        if (nsh) {
+            int code;
+            const uint8_t* argv[] = { (const uint8_t*)"nsh.elf", (const uint8_t*)0 };
+            do {
+                exec_run(nsh->data, nsh->size, 1, argv, &code);
+                if (code < 128) break;         /* voluntary exit (0-127) — stop */
+                nsh = vfs_lookup((const uint8_t*)"nsh.elf");
+            } while (nsh);
+        }
+    }
+
     vfs_file_t* init_elf = vfs_lookup((const uint8_t*)"init.elf");
     if (init_elf) {
         int code;
@@ -198,7 +213,6 @@ void kernel_main(void) {
         exec_run(init_elf->data, init_elf->size, 1, argv, &code);
     }
 
-    /* init exited or was missing — fall back to the kernel shell so the
-       machine stays usable rather than halting. */
+    /* Last resort: kernel shell */
     shell_run();
 }

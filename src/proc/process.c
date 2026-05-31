@@ -43,7 +43,7 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
         if (vmm_get_pd_phys() != 0x400000u) {
             vmm_map_page_in(0x400000u, virt, phys, PAGE_PRESENT | PAGE_RW);
         }
-        if (i == 0) proc->kstack_top = virt + PAGE_SIZE;
+        if (i == PROC_KSTACK_PAGES - 1) proc->kstack_top = virt + PAGE_SIZE;
     }
 
     /* Legacy ISR-frame context (used by ring-3 loader path). */
@@ -81,6 +81,10 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     proc->is_fork_child = FALSE;
     proc->fork_eip      = 0;
     proc->fork_esp      = 0;
+    proc->fork_ebp      = 0;
+    proc->fork_ebx      = 0;
+    proc->fork_esi      = 0;
+    proc->fork_edi      = 0;
 
     proc->sig_pending = 0;
     proc->sig_blocked = 0;

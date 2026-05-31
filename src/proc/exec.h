@@ -42,4 +42,13 @@ void exec_return(int code) __attribute__((noreturn));
  */
 uint32_t exec_current_pd(void);
 
+/**
+ * @brief Build the argc/argv frame on the user stack at USER_STACK_TOP.
+ *        Used by exec_run and _sys_execve.
+ * @param argc  number of arguments
+ * @param argv  array of kernel-side pointers to null-terminated strings
+ * @return initial user ESP (points at argc on the stack)
+ */
+uint32_t _build_argv_frame(uint32_t argc, const uint8_t* const* argv);
+
 #endif /* PROC_EXEC_H */

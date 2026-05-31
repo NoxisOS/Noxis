@@ -42,7 +42,7 @@ static uint32_t _strlen(const uint8_t* s) {
     uint32_t n = 0; while (s[n]) n++; return n;
 }
 
-static uint32_t _build_argv_frame(uint32_t argc, const uint8_t* const* argv) {
+uint32_t _build_argv_frame(uint32_t argc, const uint8_t* const* argv) {
     uint32_t sp = USER_STACK_TOP;
 
     uint32_t ptrs[MAX_ARGV];

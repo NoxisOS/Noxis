@@ -54,6 +54,14 @@ static void _report_user_fault(uint32_t cr2, uint32_t err, isr_frame_t* frame) {
     vga_write((const uint8_t*)" eip=");     _puthex(frame->eip);
     vga_write((const uint8_t*)" err=");     _puthex(err);
     vga_put_char('\n');
+    vga_write((const uint8_t*)"    eax=");  _puthex(frame->eax);
+    vga_write((const uint8_t*)" ebx=");     _puthex(frame->ebx);
+    vga_write((const uint8_t*)" ecx=");     _puthex(frame->ecx);
+    vga_write((const uint8_t*)" edx=");     _puthex(frame->edx);
+    vga_put_char('\n');
+    vga_write((const uint8_t*)"    esp=");  _puthex(frame->user_esp);
+    vga_write((const uint8_t*)" ebp=");     _puthex(frame->ebp);
+    vga_put_char('\n');
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
 }
 
