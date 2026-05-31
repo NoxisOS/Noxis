@@ -6,9 +6,10 @@ SHELL     = cmd
 CC        = i686-elf-gcc
 LD        = i686-elf-ld
 AS        = nasm
+AR        = i686-elf-ar
 OBJCOPY   = i686-elf-objcopy
 
-# ── Compiler / linker / assembler flags ──────────────────────
+# ── Kernel flags (no FPU, no SSE, strict freestanding) ───────
 CFLAGS  = -std=c11 -ffreestanding -nostdlib -nostdinc \
           -Wall -Wextra -Werror -Wno-unused-parameter \
           -m32 -march=i686 -mtune=generic \
@@ -16,6 +17,20 @@ CFLAGS  = -std=c11 -ffreestanding -nostdlib -nostdinc \
           -fno-asynchronous-unwind-tables \
           -mno-mmx -mno-sse -mgeneral-regs-only \
           -I src -O2
+
+# ── Noxlib / userland C flags (x87 FPU allowed for ring-3) ───
+#
+# -fno-builtin  : prevent GCC from silently replacing printf/puts/memcpy etc.
+#                 with its own inline or library versions — we own every call.
+# -O1           : keep basic optimisations but avoid aggressive inlining that
+#                 can leave &local_param pointing at a register slot.
+NOXLIB_CFLAGS = -std=c11 -ffreestanding -nostdlib -nostdinc \
+                -Wall -Wextra -Werror -Wno-unused-parameter \
+                -m32 -march=i686 -mtune=generic \
+                -fno-stack-protector -fno-exceptions \
+                -fno-asynchronous-unwind-tables \
+                -fno-builtin \
+                -I src/noxlib/include -O1
 
 LDFLAGS   = -T linker.ld -nostdlib -m elf_i386
 ASFLAGS   = -f elf32
@@ -73,14 +88,46 @@ QEMU = "D:\Program Files\qemu\qemu-system-i386"
 .PHONY: all clean run run-headless run-debug
 all: $(DISK_IMG)
 
+# ── Noxlib ────────────────────────────────────────────────────
+NOXLIB_CRT  = build/noxlib/crt/crt0.o
+
+NOXLIB_OBJS = build/noxlib/sys/syscall.o     \
+              build/noxlib/string/string.o   \
+              build/noxlib/stdlib/malloc.o   \
+              build/noxlib/stdlib/stdlib.o   \
+              build/noxlib/stdio/stdio.o
+
+build/noxlib.a: $(NOXLIB_OBJS)
+	@echo AR   $@
+	$(AR) rcs $@ $(NOXLIB_OBJS)
+
+# Compile noxlib C files with NOXLIB_CFLAGS (not kernel CFLAGS)
+build/noxlib/%.o: src/noxlib/%.c
+	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
+	@echo CC   $<
+	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
+
+# Assemble noxlib ASM files
+build/noxlib/%.o: src/noxlib/%.asm
+	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
+	@echo AS   $<
+	$(AS) $(ASFLAGS) $< -o $@
+
 # ── Userland ELFs ─────────────────────────────────────────────
 USER_LD   = src/userland/user.ld
-USER_ELFS = build/hello.elf  build/echo.elf   build/prompt.elf \
+
+# ASM-only programs (single object, no noxlib)
+ASM_ELFS  = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/fread.elf  build/fork.elf   build/write.elf  \
             build/pipe.elf   build/signal.elf \
             build/ttytest.elf build/pftest.elf build/segv.elf \
             build/init.elf   build/brktest.elf build/fputest.elf \
             build/systest.elf
+
+# C programs (crt0 + prog.o + noxlib.a)
+C_ELFS    = build/ctest.elf
+
+USER_ELFS = $(ASM_ELFS) $(C_ELFS)
 
 build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
 build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
@@ -98,9 +145,22 @@ build/brktest.o: src/userland/brktest.asm ; $(AS) $(ASFLAGS) $< -o $@
 build/fputest.o: src/userland/fputest.asm ; $(AS) $(ASFLAGS) $< -o $@
 build/systest.o: src/userland/systest.asm ; $(AS) $(ASFLAGS) $< -o $@
 
-build/%.elf: build/%.o $(USER_LD)
+# Rule for ASM-only ELFs (single object, no noxlib)
+$(ASM_ELFS): build/%.elf: build/%.o $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
+
+# ── C userland compilation (NOXLIB_CFLAGS) ────────────────────
+build/ctest.o: src/userland/ctest.c
+	@if not exist build mkdir build
+	@echo CC   $<
+	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
+
+# ── C ELF link: crt0 + prog.o + noxlib.a ─────────────────────
+build/ctest.elf: $(NOXLIB_CRT) build/ctest.o build/noxlib.a $(USER_LD)
+	@echo LD   $@
+	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ \
+	    $(NOXLIB_CRT) build/ctest.o build/noxlib.a
 
 # ── Disk image ───────────────────────────────────────────────
 ROOTFS_FILES = rootfs/motd rootfs/version rootfs/readme

@@ -260,8 +260,10 @@ static uint8_t* _load_data(uint32_t ino, uint32_t* size_out) {
     if (!buf) return (uint8_t*)0;
 
     for (uint32_t s = 0; s * NOXFS_BLKSZ < in.size; s++) {
-        uint32_t blk = (s < NOXFS_DIRECT) ? in.blocks[s]
-                      : 0; /* indirect not used for Phase 1 file sizes */
+        /* Use _iget_block(allocate=0) so both direct AND indirect blocks
+           are resolved correctly.  ELF files like ctest.elf exceed 5120 bytes
+           (10 direct × 512) and land in the indirect block range. */
+        uint32_t blk = _iget_block(&in, s, 0);
 
         if (blk == 0) continue;
 
