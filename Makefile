@@ -51,6 +51,12 @@ KERNEL_C_OBJS = \
   build/proc/process.o              build/proc/scheduler.o        \
   build/proc/elf.o                  build/proc/exec.o             \
   build/kernel/syscall/syscall.o    \
+  build/kernel/syscall/sys_io.o     \
+  build/kernel/syscall/sys_fd.o     \
+  build/kernel/syscall/sys_fs.o     \
+  build/kernel/syscall/sys_proc.o   \
+  build/kernel/syscall/sys_signal.o \
+  build/kernel/syscall/sys_misc.o   \
   build/fs/vfs/vfs.o                build/fs/vfs/ramfs.o          \
   build/fs/noxfs/noxfs.o            build/fs/noxfs/buffer.o       \
   build/fs/pipe/pipe.o              \
