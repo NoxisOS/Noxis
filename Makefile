@@ -92,6 +92,7 @@ all: $(DISK_IMG)
 NOXLIB_CRT  = build/noxlib/crt/crt0.o
 
 NOXLIB_OBJS = build/noxlib/sys/syscall.o     \
+              build/noxlib/sys/signal.o      \
               build/noxlib/string/string.o   \
               build/noxlib/stdlib/malloc.o   \
               build/noxlib/stdlib/stdlib.o   \
@@ -105,7 +106,7 @@ build/noxlib.a: $(NOXLIB_OBJS)
 build/noxlib/%.o: src/noxlib/%.c
 	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
 	@echo CC   $<
-	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
+	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Assemble noxlib ASM files
 build/noxlib/%.o: src/noxlib/%.asm
@@ -122,7 +123,7 @@ ASM_ELFS  = build/hello.elf  build/echo.elf   build/prompt.elf \
             build/pipe.elf   build/signal.elf \
             build/ttytest.elf build/pftest.elf build/segv.elf \
             build/init.elf   build/brktest.elf build/fputest.elf \
-            build/systest.elf
+            build/systest.elf build/loop.elf
 
 # C programs (crt0 + prog.o + noxlib.a)
 C_ELFS    = build/ctest.elf build/nsh.elf
@@ -144,6 +145,7 @@ build/init.o:    src/userland/init.asm    ; $(AS) $(ASFLAGS) $< -o $@
 build/brktest.o: src/userland/brktest.asm ; $(AS) $(ASFLAGS) $< -o $@
 build/fputest.o: src/userland/fputest.asm ; $(AS) $(ASFLAGS) $< -o $@
 build/systest.o: src/userland/systest.asm ; $(AS) $(ASFLAGS) $< -o $@
+build/loop.o:    src/userland/loop.asm    ; $(AS) $(ASFLAGS) $< -o $@
 
 # Rule for ASM-only ELFs (single object, no noxlib)
 $(ASM_ELFS): build/%.elf: build/%.o $(USER_LD)
@@ -154,12 +156,12 @@ $(ASM_ELFS): build/%.elf: build/%.o $(USER_LD)
 build/ctest.o: src/userland/ctest.c
 	@if not exist build mkdir build
 	@echo CC   $<
-	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
+	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 build/nsh.o: src/userland/nsh.c
 	@if not exist build mkdir build
 	@echo CC   $<
-	$(CC) $(NOXLIB_CFLAGS) -c $< -o $@
+	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # ── C ELF link: crt0 + prog.o + noxlib.a ─────────────────────
 build/ctest.elf: $(NOXLIB_CRT) build/ctest.o build/noxlib.a $(USER_LD)
@@ -202,16 +204,26 @@ $(LOADER_BIN): src/boot/loader.asm src/boot/defines.asm
 	@echo AS   $@
 	$(AS) $(BOOTFLAGS) -isrc/boot/ $< -o $@
 
+# ── Automatic header dependency tracking ─────────────────────
+# -MMD  : write a .d file alongside each .o (lists header deps)
+# -MP   : add phony targets for headers (avoids errors on header deletion)
+# Both the kernel rule and the noxlib rule get DEPFLAGS so that changing
+# any included header (e.g. common/signal.h) triggers correct recompilation.
+DEPFLAGS = -MMD -MP
+
 # ── Generic compile rules (match any depth) ───────────────────
 build/%.o: src/%.c
 	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
 	@echo CC   $<
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 build/%.o: src/%.asm
 	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
 	@echo AS   $<
 	$(AS) $(ASFLAGS) $< -o $@
+
+# Include generated dependency files (silently skip if build/ doesn't exist yet)
+-include $(wildcard build/*.d build/**/*.d build/**/**/*.d build/**/**/**/*.d)
 
 # ── Run ──────────────────────────────────────────────────────
 # VGA window + serial console (COM1) mirrored to this terminal.

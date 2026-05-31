@@ -54,8 +54,10 @@ section .text
 %define SYS_GETPPID   21
 %define SYS_GETUID    22
 %define SYS_TIME      23
-%define SYS_DUP2      24
-%define SYS_SLEEP     25
+%define SYS_DUP2        24
+%define SYS_SLEEP       25
+%define SYS_SIGRETURN   26
+%define SYS_SIGPROCMASK 27
 
 ; ────────────────────────────────────────────────────────────
 ; 0-argument syscalls
@@ -464,6 +466,44 @@ getdents:
     mov  ebx, [esp+16]       ; fd
     mov  esi, [esp+20]       ; buf
     mov  edi, [esp+24]       ; len
+    lea  edx, [.ret]
+    mov  ecx, esp
+    sysenter
+.ret:
+    pop  edi
+    pop  esi
+    pop  ebx
+    ret
+
+; ── Signal support ───────────────────────────────────────────
+
+; __sig_restorer — default signal trampoline.
+;
+; The handler was called with:
+;   [esp+0] = __sig_restorer  (this address, as return addr)
+;   [esp+4] = sig number
+;   [esp+8] = sig_ucontext_t  (saved CPU state, 40 bytes)
+;
+; After the handler `ret`, ESP points at the sig number slot.
+; int $0x80 fires: frame->user_esp = current ESP = that slot.
+; sys_sigreturn finds uc at frame->user_esp + 4 and restores
+; the complete pre-signal CPU state via the iret path.
+global __sig_restorer
+__sig_restorer:
+    mov  eax, SYS_SIGRETURN
+    int  0x80
+    ; never reached — kernel restores EIP/ESP directly via iret
+
+; int sigprocmask(int how, const uint32_t* set, uint32_t* oldset)
+global sigprocmask
+sigprocmask:
+    push ebx
+    push esi
+    push edi
+    mov  eax, SYS_SIGPROCMASK
+    mov  ebx, [esp+16]       ; how
+    mov  esi, [esp+20]       ; new_set (may be NULL)
+    mov  edi, [esp+24]       ; old_set (may be NULL)
     lea  edx, [.ret]
     mov  ecx, esp
     sysenter

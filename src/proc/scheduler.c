@@ -178,6 +178,8 @@ void thread_sleep(uint32_t ms) {
         __asm__ __volatile__("sti");
     } else {
         while (g_current->wake_tick > pit_uptime_ms()) {
+            /* Wake immediately if a signal arrived while sleeping. */
+            if (g_current->sig_pending & ~g_current->sig_blocked) break;
             __asm__ __volatile__("sti; hlt; cli");
         }
         _scheduler_unblock(g_current);

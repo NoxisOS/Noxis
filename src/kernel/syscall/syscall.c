@@ -299,8 +299,9 @@ static void _sys_sigaction(isr_frame_t* frame) {
     if (act) {
         if (!_user_range_ok(frame->esi, sizeof(sigaction_t))) { frame->eax = (uint32_t)-1; return; }
         process_t* proc = scheduler_current();
-        proc->sigactions[signum].handler = act->handler;
-        proc->sigactions[signum].flags   = act->flags;
+        proc->sigactions[signum].handler  = act->handler;
+        proc->sigactions[signum].flags    = act->flags;
+        proc->sigactions[signum].restorer = act->restorer;
     }
     frame->eax = 0;
 }
@@ -444,7 +445,87 @@ static void _sys_lseek(isr_frame_t* frame) {
     frame->eax = proc->fd_table[fd].pos;
 }
 
+/* ── sigreturn: restore CPU state saved by signal_deliver ─────── */
+
+static void _sys_sigreturn(isr_frame_t* frame) {
+    /* Stack at int-0x80 entry (frame->user_esp):
+     *   [+0]  sig number  (consumed by handler's `ret`, now at esp+0)
+     *   [+4]  uc.eax   \
+     *   ...             > sig_ucontext_t  (10 * 4 = 40 bytes)
+     *   [+40] uc.esp   /
+     *
+     * Layout reason: handler(sig) was called with
+     *   [frame->user_esp+0] = restorer_addr
+     *   [frame->user_esp+4] = sig
+     *   [frame->user_esp+8] = sig_ucontext_t
+     * After handler `ret`, esp advanced by 4 (popped restorer_addr).
+     * After restorer `int $0x80`, frame->user_esp = original_esp + 4.
+     * So uc sits at frame->user_esp + 4.
+     */
+    uint32_t uc_addr = frame->user_esp + 4;
+    if (!_user_range_ok(uc_addr, sizeof(sig_ucontext_t))) return;
+
+    sig_ucontext_t* uc = (sig_ucontext_t*)uc_addr;
+
+    frame->eax      = uc->eax;
+    frame->ecx      = uc->ecx;
+    frame->edx      = uc->edx;
+    frame->ebx      = uc->ebx;
+    frame->esi      = uc->esi;
+    frame->edi      = uc->edi;
+    frame->ebp      = uc->ebp;
+    frame->eip      = uc->eip;
+    frame->eflags   = (uc->eflags & ~0x200u) | 0x200u; /* keep IF=1 */
+    frame->user_esp = uc->esp;
+}
+
+/* ── sigprocmask: block / unblock / set signal mask ─────────── */
+
+#define _SIG_BLOCK   0
+#define _SIG_UNBLOCK 1
+#define _SIG_SETMASK 2
+
+static void _sys_sigprocmask(isr_frame_t* frame) {
+    /* EBX = how, ESI = *new_set (may be 0), EDI = *old_set (may be 0) */
+    uint32_t  how  = frame->ebx;
+    uint32_t* nset = (uint32_t*)frame->esi;
+    uint32_t* oset = (uint32_t*)frame->edi;
+
+    process_t* proc = scheduler_current();
+
+    if (oset) {
+        if (!_user_range_ok(frame->edi, 4)) { frame->eax = (uint32_t)-1; return; }
+        *oset = proc->sig_blocked;
+    }
+
+    if (nset) {
+        if (!_user_range_ok(frame->esi, 4)) { frame->eax = (uint32_t)-1; return; }
+        /* SIGKILL and SIGSTOP cannot be blocked */
+        uint32_t mask = *nset & ~((1u << SIGKILL) | (1u << SIGSTOP));
+        switch (how) {
+        case _SIG_BLOCK:   proc->sig_blocked |=  mask; break;
+        case _SIG_UNBLOCK: proc->sig_blocked &= ~mask; break;
+        case _SIG_SETMASK: proc->sig_blocked  =  mask; break;
+        default: frame->eax = (uint32_t)-1; return;
+        }
+    }
+    frame->eax = 0;
+}
+
 /* ── signal delivery ────────────────────────────────────────── */
+
+/*
+ * Signal stack frame (48 bytes) pushed on the user stack:
+ *
+ *   new_esp + 0:   restorer_addr   ← handler's return address
+ *   new_esp + 4:   sig             ← handler's first argument
+ *   new_esp + 8:   sig_ucontext_t  ← 10 dwords (40 bytes) of saved CPU state
+ *
+ * After handler `ret`  → EIP = restorer_addr, ESP = new_esp + 4.
+ * Restorer calls int 0x80 (SYS_SIGRETURN) → sys_sigreturn reads uc
+ * from frame->user_esp + 4 and restores the full CPU state.
+ */
+#define SIG_FRAME_SIZE  48u   /* 4 (restorer) + 4 (sig) + 40 (ucontext) */
 
 void signal_deliver(isr_frame_t* frame) {
     process_t* cur = scheduler_current();
@@ -459,6 +540,7 @@ void signal_deliver(isr_frame_t* frame) {
 
         sighandler_t handler = cur->sigactions[sig].handler;
 
+        /* ── Default action ─────────────────────────────────── */
         if (handler == SIG_DFL) {
             switch (sig) {
             case SIGKILL:
@@ -470,7 +552,7 @@ void signal_deliver(isr_frame_t* frame) {
             case SIGFPE:
             case SIGBUS:
             case SIGABRT:
-                cur->exit_code = 128 + sig;
+                cur->exit_code = 128 + (int32_t)sig;
 
                 if (cur->is_fork_child) {
                     __asm__ __volatile__("cli");
@@ -497,18 +579,46 @@ void signal_deliver(isr_frame_t* frame) {
             return;
         }
 
+        /* ── Ignored ────────────────────────────────────────── */
         if (handler == SIG_IGN) continue;
 
+        /* ── Custom handler ─────────────────────────────────── */
+
+        /* Require a restorer (set automatically by noxlib signal()). */
+        if (!(cur->sigactions[sig].flags & SA_RESTORER) ||
+            !cur->sigactions[sig].restorer) {
+            /* No restorer configured — fall back to default action. */
+            cur->sigactions[sig].handler = SIG_DFL;
+            cur->sig_pending |= (1u << sig);   /* re-deliver as default */
+            continue;
+        }
+
         uint32_t uesp = frame->user_esp;
-        if (uesp < 0x400008u || uesp > 0xC0000000u) return;
+        if (uesp < USER_VIRT_BASE + SIG_FRAME_SIZE || uesp > USER_VIRT_TOP)
+            return;   /* user stack too small or invalid — drop signal */
 
-        uesp -= 8;
-        uint32_t* ustack = (uint32_t*)uesp;
-        ustack[0] = frame->eip;    /* return addr (popped by ret) */
-        ustack[1] = sig;           /* argument to handler (at [esp+4]) */
+        uesp -= SIG_FRAME_SIZE;
+        uint32_t* f = (uint32_t*)uesp;
 
+        /* [0] return address → restorer trampoline */
+        f[0] = (uint32_t)cur->sigactions[sig].restorer;
+        /* [1] sig number (handler argument) */
+        f[1] = sig;
+        /* [2..11] sig_ucontext_t: save full CPU state */
+        f[2]  = frame->eax;
+        f[3]  = frame->ecx;
+        f[4]  = frame->edx;
+        f[5]  = frame->ebx;
+        f[6]  = frame->esi;
+        f[7]  = frame->edi;
+        f[8]  = frame->ebp;
+        f[9]  = frame->eip;
+        f[10] = frame->eflags;
+        f[11] = frame->user_esp;   /* original ESP, restored by sigreturn */
+
+        /* Redirect execution to the handler */
         frame->user_esp = uesp;
-        frame->eip       = (uint32_t)handler;
+        frame->eip      = (uint32_t)handler;
         return;
     }
 }
@@ -754,8 +864,10 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_GETPPID:   _sys_getppid(frame);  break;
     case SYS_GETUID:    _sys_getuid(frame);   break;
     case SYS_TIME:      _sys_time(frame);     break;
-    case SYS_DUP2:      _sys_dup2(frame);     break;
-    case SYS_SLEEP:     _sys_sleep(frame);    break;
+    case SYS_DUP2:        _sys_dup2(frame);        break;
+    case SYS_SLEEP:       _sys_sleep(frame);       break;
+    case SYS_SIGRETURN:   _sys_sigreturn(frame);   break;
+    case SYS_SIGPROCMASK: _sys_sigprocmask(frame); break;
     default: break;
     }
 }

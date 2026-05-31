@@ -77,10 +77,13 @@ void tty_input(uint8_t c) {
 
     /* Ctrl+C → SIGINT */
     if ((g_termios.lflag & ISIG) && c == 0x03) {
-        process_t* fg = g_reader;
-        if (fg && fg->page_dir_phys) {
+        /* Send to the currently running user process (foreground child).
+           If no user process is running, fall back to the tty reader (shell). */
+        process_t* fg = scheduler_current();
+        if (!fg || !fg->page_dir_phys)
+            fg = g_reader;
+        if (fg && fg->page_dir_phys)
             fg->sig_pending |= (1u << SIGINT);
-        }
         g_line_len = 0;
         _echo('^'); _echo('C'); vga_put_char('\n');
         scheduler_wake(&g_reader);

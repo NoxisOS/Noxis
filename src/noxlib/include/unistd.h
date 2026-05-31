@@ -48,8 +48,9 @@ pid_t   getppid (void);
 uid_t   getuid  (void);
 
 /* ── Signals ────────────────────────────────────────────── */
-int     kill      (pid_t pid, int sig);
-int     sigaction (int sig, void *act, void *oldact);
+int     kill        (pid_t pid, int sig);
+int     sigaction   (int sig, void *act, void *oldact);
+int     sigprocmask (int how, const void *set, void *oldset);
 
 /* ── Filesystem ─────────────────────────────────────────── */
 int     mkdir (const char *path);

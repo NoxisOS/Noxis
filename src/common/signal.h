@@ -33,11 +33,30 @@
 #define SIG_DFL  ((void*)0)
 #define SIG_IGN  ((void*)1)
 
+/* sa_flags bit */
+#define SA_RESTORER  0x04000000u
+
 typedef void (*sighandler_t)(int);
 
+/**
+ * @brief Saved user CPU context pushed onto the signal stack frame.
+ *        Restored by sys_sigreturn after the handler returns.
+ */
 typedef struct {
-    sighandler_t handler;
-    uint32_t     flags;
+    uint32_t eax, ecx, edx, ebx, esi, edi, ebp;
+    uint32_t eip;      /* interrupted EIP to resume at          */
+    uint32_t eflags;   /* full EFLAGS (IF is forced back on)    */
+    uint32_t esp;      /* user ESP before signal delivery       */
+} sig_ucontext_t;
+
+/**
+ * @brief Per-signal action installed by sigaction().
+ *        restorer MUST be set (SA_RESTORER flag required for custom handlers).
+ */
+typedef struct {
+    sighandler_t  handler;
+    uint32_t      flags;
+    void        (*restorer)(void);   /* user-space trampoline → sys_sigreturn */
 } sigaction_t;
 
 #endif /* COMMON_SIGNAL_H */

@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 
 /* ── Limits ─────────────────────────────────────────────── */
 #define MAX_LINE    512
@@ -59,6 +60,14 @@ typedef struct {
 /* ── Shell state ─────────────────────────────────────────── */
 static char g_cwd[MAX_CWD] = "/";
 static int  g_last_status  = 0;
+static volatile int g_sigint_received = 0;
+
+/* SIGINT handler: just set a flag — the shell stays alive. */
+static void _sigint_handler(int sig)
+{
+    (void)sig;
+    g_sigint_received = 1;
+}
 
 /* ═══════════════════════════════════════════════════════════
  * Tokenizer
@@ -302,6 +311,9 @@ static void child_exec(stage_t *st, int pipes[][2], int idx, int nstages)
         close(fd);
     }
 
+    /* Restore SIGINT to default so the child can be killed by Ctrl+C. */
+    signal(SIGINT, SIG_DFL);
+
     /* Builtin in child (e.g. ls in a pipeline) */
     int r = exec_builtin(st);
     if (r >= 0) _exit(r);
@@ -394,6 +406,9 @@ int main(int argc, char **argv)
 {
     (void)argc; (void)argv;
 
+    /* nsh catches SIGINT so Ctrl+C kills children but not the shell. */
+    signal(SIGINT, _sigint_handler);
+
     char      line[MAX_LINE];
     char     *toks[MAX_TOKENS];
     pipeline_t pl;
@@ -401,10 +416,26 @@ int main(int argc, char **argv)
     printf("\nnsh -- Noxis Shell  (type 'help')\n\n");
 
     for (;;) {
+        /* If a previous Ctrl+C interrupted fgets, just print a new prompt. */
+        if (g_sigint_received) {
+            g_sigint_received = 0;
+            g_last_status = 130;   /* 128 + SIGINT */
+            putchar('\n');
+            continue;
+        }
+
         printf("nsh %s > ", g_cwd);
 
-        if (!fgets(line, sizeof(line), STDIN_FILENO))
-            break;
+        if (!fgets(line, sizeof(line), STDIN_FILENO)) {
+            /* fgets returned NULL: either EOF (Ctrl+D) or EINTR (signal). */
+            if (g_sigint_received) {
+                g_sigint_received = 0;
+                g_last_status = 130;
+                putchar('\n');
+                continue;   /* stay alive, show next prompt */
+            }
+            break;          /* real EOF → exit */
+        }
 
         /* Skip blank lines */
         char *p = line;

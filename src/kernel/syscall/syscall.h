@@ -35,8 +35,10 @@
 #define SYS_GETPPID   21 /* → EAX=parent pid                                      */
 #define SYS_GETUID    22 /* → EAX=0 (single-user)                                 */
 #define SYS_TIME      23 /* EBX=time_t* (opt) → EAX=seconds since boot            */
-#define SYS_DUP2      24 /* EBX=oldfd, ESI=newfd → EAX=newfd                       */
-#define SYS_SLEEP     25 /* EBX=ms → sleeps, EAX=0                                 */
+#define SYS_DUP2        24 /* EBX=oldfd, ESI=newfd → EAX=newfd                        */
+#define SYS_SLEEP       25 /* EBX=ms → sleeps, EAX=0                                  */
+#define SYS_SIGRETURN   26 /* restores CPU from signal frame; called by restorer tramp */
+#define SYS_SIGPROCMASK 27 /* EBX=how, ESI=*new_set, EDI=*old_set → EAX=0/-1          */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0
