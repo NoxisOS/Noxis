@@ -205,8 +205,16 @@ static int exec_builtin(stage_t *st)
 
     /* ── cd ── */
     if (strcmp(cmd, "cd") == 0) {
-        const char *dir = (st->argc > 1) ? st->argv[1] : "/";
-        if (chdir(dir) < 0) { printf("cd: %s: no such directory\n", dir); return 1; }
+        const char *raw = (st->argc > 1) ? st->argv[1] : "/";
+        if (chdir(raw) < 0) { printf("cd: %s: no such directory\n", raw); return 1; }
+
+        /* Normalise the target: strip any trailing '/' so the displayed
+           path never carries one (which would desync the ".." pop). */
+        char dir[MAX_CWD];
+        int  dl = 0;
+        while (raw[dl] && dl < MAX_CWD - 1) { dir[dl] = raw[dl]; dl++; }
+        while (dl > 1 && dir[dl-1] == '/') dl--;   /* drop trailing slashes */
+        dir[dl] = '\0';
 
         /* Keep g_cwd (the displayed path) tidy. */
         if (dir[0] == '/') {
@@ -216,7 +224,7 @@ static int exec_builtin(stage_t *st)
             /* Pop the last path component. */
             int l = (int)strlen(g_cwd);
             while (l > 1 && g_cwd[l-1] != '/') l--;
-            if (l > 1) l--;            /* drop the trailing '/' too */
+            if (l > 1) l--;            /* drop the separating '/' too */
             if (l == 0) l = 1;         /* never below root */
             g_cwd[l] = '\0';
         } else if (strcmp(dir, ".") != 0) {
