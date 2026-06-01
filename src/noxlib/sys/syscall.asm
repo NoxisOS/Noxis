@@ -272,16 +272,19 @@ pipe:
     ret
 
 ; pid_t waitpid(pid_t pid, int *status, int options)
-; kernel only uses pid (EBX); status/options ignored for now
+; EBX = pid, ESI = options (status pointer is currently unused by kernel)
 global waitpid
 waitpid:
     push ebx
+    push esi
     mov  eax, SYS_WAITPID
-    mov  ebx, [esp+8]        ; pid
+    mov  ebx, [esp+12]       ; pid   (1st arg, after 2 pushes)
+    mov  esi, [esp+20]       ; options (3rd arg)
     lea  edx, [.ret]
     mov  ecx, esp
     sysenter
 .ret:
+    pop  esi
     pop  ebx
     ret
 

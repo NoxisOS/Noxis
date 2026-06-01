@@ -121,7 +121,7 @@ static uint32_t _balloc(void) {
     return blk;
 }
 
-static void __attribute__((unused)) _bfree(uint32_t blk) {
+static void _bfree(uint32_t blk) {
     if (blk >= g_sb.block_count) return;
     _bmp_free(g_sb.blk_bmp, blk);
     g_sb.free_blocks++;
@@ -194,6 +194,15 @@ static os_status_t _iwrite(uint32_t ino, const noxfs_inode_t* in) {
     bwrite(bp);
     brelse(bp);
     return OS_OK;
+}
+
+/* ── inode free ────────────────────────────────────────────── */
+
+static void _ifree(uint32_t ino) {
+    if (ino >= g_sb.inode_count) return;
+    _bmp_free(g_sb.ino_bmp, ino);
+    g_sb.free_inodes++;
+    _sb_write();
 }
 
 /* ── block mapping ─────────────────────────────────────────── */
@@ -583,6 +592,129 @@ vfs_file_t* noxfs_creat_path(const uint8_t* path) {
         cur = child;
     }
     return (vfs_file_t*)0;
+}
+
+/* Remove a named entry from a directory, compacting the dirent array. */
+static os_status_t _dir_remove_entry(uint32_t dir_ino, const uint8_t* name) {
+    noxfs_inode_t dir;
+    if (_iread(dir_ino, &dir) != OS_OK) return OS_ERR_IO;
+    if (!(dir.mode & NOXFS_INO_DIR))    return OS_ERR_INVALID;
+
+    uint32_t dir_sz = dir.size;
+    uint8_t* dir_data = _load_data(dir_ino, &dir_sz);
+    if (!dir_data) return OS_ERR_OOM;
+
+    uint32_t count = dir_sz / sizeof(noxfs_dirent_t);
+    noxfs_dirent_t* entries = (noxfs_dirent_t*)dir_data;
+
+    /* Find the entry to remove. */
+    uint32_t found = (uint32_t)-1;
+    for (uint32_t i = 0; i < count; i++) {
+        if (entries[i].inode == 0) continue;
+        uint32_t j = 0;
+        while (j < entries[i].name_len && name[j] &&
+               entries[i].name[j] == (char)name[j]) j++;
+        if (j == entries[i].name_len && name[j] == 0) { found = i; break; }
+    }
+    if (found == (uint32_t)-1) { kfree(dir_data); return OS_ERR_NOT_FOUND; }
+
+    /* Compact: shift remaining entries left. */
+    uint32_t new_count = count - 1;
+    uint32_t new_sz = new_count * sizeof(noxfs_dirent_t);
+    uint8_t* new_data = (uint8_t*)kmalloc(new_sz > 0 ? new_sz : 1);
+    if (!new_data) { kfree(dir_data); return OS_ERR_OOM; }
+    uint32_t dst = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        if (i == found) continue;
+        for (uint32_t b = 0; b < sizeof(noxfs_dirent_t); b++)
+            new_data[dst * sizeof(noxfs_dirent_t) + b] =
+                dir_data[i * sizeof(noxfs_dirent_t) + b];
+        dst++;
+    }
+    kfree(dir_data);
+
+    os_status_t s = _store_data(dir_ino, new_data, new_sz);
+    kfree(new_data);
+    return s;
+}
+
+/* Unlink a file (or empty dir) from its parent. */
+os_status_t noxfs_unlink(uint32_t parent_ino, const uint8_t* name) {
+    if (!g_ready || !name) return OS_ERR_INVALID;
+
+    uint32_t ino = _dir_lookup_name(parent_ino, name);
+    if (ino == (uint32_t)-1) return OS_ERR_NOT_FOUND;
+
+    /* Refuse to unlink root. */
+    if (ino == g_sb.root_ino) return OS_ERR_INVALID;
+
+    noxfs_inode_t in;
+    if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
+
+    /* Remove directory entry from parent. */
+    os_status_t s = _dir_remove_entry(parent_ino, name);
+    if (s != OS_OK) return s;
+
+    /* Decrement link count; free if 0. */
+    if (in.links > 0) in.links--;
+    if (in.links == 0) {
+        /* Free data blocks. */
+        uint32_t blks = (in.size + NOXFS_BLKSZ - 1) / NOXFS_BLKSZ;
+        for (uint32_t i = 0; i < blks && i < NOXFS_DIRECT; i++)
+            if (in.blocks[i]) _bfree(in.blocks[i]);
+        /* Free indirect block pointers. */
+        if (in.indirect) {
+            buf_t* bp = bread(BUF_DEV_ATA, in.indirect);
+            if (bp) {
+                uint32_t* ptrs = (uint32_t*)bp->data;
+                uint32_t  n    = (blks > NOXFS_DIRECT) ? blks - NOXFS_DIRECT : 0;
+                for (uint32_t i = 0; i < n && i < NOXFS_INDIRECT; i++)
+                    if (ptrs[i]) _bfree(ptrs[i]);
+                brelse(bp);
+            }
+            _bfree(in.indirect);
+        }
+        _ifree(ino);
+        /* Remove from in-memory file cache if present. */
+        for (uint32_t i = 0; i < g_count; i++) {
+            if (g_files[i].inode == ino) {
+                if (g_files[i].data) kfree(g_files[i].data);
+                /* Compact the cache array. */
+                for (uint32_t j = i; j + 1 < g_count; j++)
+                    g_files[j] = g_files[j + 1];
+                g_count--;
+                break;
+            }
+        }
+    } else {
+        _iwrite(ino, &in);
+    }
+    return OS_OK;
+}
+
+/* Rename (move) a file/dir within the same or different parent. */
+os_status_t noxfs_rename(uint32_t src_parent, const uint8_t* src_name,
+                          uint32_t dst_parent, const uint8_t* dst_name) {
+    if (!g_ready || !src_name || !dst_name) return OS_ERR_INVALID;
+
+    uint32_t ino = _dir_lookup_name(src_parent, src_name);
+    if (ino == (uint32_t)-1) return OS_ERR_NOT_FOUND;
+
+    noxfs_inode_t in;
+    if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
+
+    /* Remove existing destination if present. */
+    uint32_t old_dst = _dir_lookup_name(dst_parent, dst_name);
+    if (old_dst != (uint32_t)-1)
+        noxfs_unlink(dst_parent, dst_name);
+
+    /* Add entry at destination. */
+    uint8_t ft = (in.mode & NOXFS_INO_DIR) ? NOXFS_FT_DIR : NOXFS_FT_FILE;
+    os_status_t s = _dir_add_entry(dst_parent, dst_name, ino, ft);
+    if (s != OS_OK) return s;
+
+    /* Remove source entry. */
+    return _dir_remove_entry(src_parent, src_name);
 }
 
 void noxfs_sync(void) {

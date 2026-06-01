@@ -52,10 +52,15 @@ int     kill        (pid_t pid, int sig);
 int     sigaction   (int sig, void *act, void *oldact);
 int     sigprocmask (int how, const void *set, void *oldset);
 
+/* ── waitpid options ────────────────────────────────────── */
+#define WNOHANG  1
+
 /* ── Filesystem ─────────────────────────────────────────── */
-int     mkdir (const char *path);
-int     chdir (const char *path);
-int     pipe  (int pipefd[2]);
+int     mkdir  (const char *path);
+int     chdir  (const char *path);
+int     pipe   (int pipefd[2]);
+int     unlink (const char *path);
+int     rename (const char *old, const char *newpath);
 
 /* ── Misc ───────────────────────────────────────────────── */
 int     sleep  (unsigned int ms);

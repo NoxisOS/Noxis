@@ -187,8 +187,10 @@ static int builtin_ls(void)
 
         if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
 
-        if (de->file_type == FT_DIR) printf("  %s/\n", name);
-        else                          printf("  %s\n",  name);
+        if (de->file_type == FT_DIR)
+            printf("  /%s/\n", (name[0] == '/') ? name + 1 : name);
+        else
+            printf("  %s\n", name);
     }
     return 0;
 }

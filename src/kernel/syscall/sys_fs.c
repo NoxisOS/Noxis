@@ -164,3 +164,70 @@ void sys_stat(isr_frame_t* frame) {
     sb->capacity = st.capacity;
     frame->eax   = 0;
 }
+
+/* ── Helpers: resolve path → (parent_ino, basename) ──── */
+static int _split_path(const uint8_t* path, uint32_t base,
+                        uint32_t* parent_out, uint8_t* name_out) {
+    /* Find last '/' separator. */
+    int len = 0;
+    while (path[len]) len++;
+    int last_slash = -1;
+    for (int i = len - 1; i >= 0; i--) {
+        if (path[i] == '/') { last_slash = i; break; }
+    }
+    if (last_slash < 0) {
+        /* No slash: parent = base (cwd or root), name = full path. */
+        *parent_out = base;
+        for (int i = 0; i < 31 && path[i]; i++) name_out[i] = path[i];
+        name_out[len < 31 ? len : 31] = 0;
+        return 1;
+    }
+    /* Resolve parent directory. */
+    uint8_t parent_path[256];
+    int plen = last_slash == 0 ? 1 : last_slash;
+    for (int i = 0; i < plen && i < 255; i++) parent_path[i] = path[i];
+    parent_path[plen < 255 ? plen : 255] = 0;
+    uint32_t par_base = (path[0] == '/') ? noxfs_root_ino() : base;
+    *parent_out = noxfs_resolve(par_base, parent_path);
+    if (*parent_out == (uint32_t)-1) return 0;
+    /* Copy basename. */
+    int bi = 0;
+    for (int i = last_slash + 1; i < len && bi < 31; i++)
+        name_out[bi++] = path[i];
+    name_out[bi] = 0;
+    return 1;
+}
+
+void sys_unlink(isr_frame_t* frame) {
+    const uint8_t* path = (const uint8_t*)frame->ebx;
+    if (!path || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t   base = (path[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    uint32_t   parent_ino;
+    uint8_t    name[32];
+    if (!_split_path(path, base, &parent_ino, name)) { frame->eax = (uint32_t)-1; return; }
+
+    os_status_t r = noxfs_unlink(parent_ino, name);
+    frame->eax = (r == OS_OK) ? 0 : (uint32_t)-1;
+}
+
+void sys_rename(isr_frame_t* frame) {
+    const uint8_t* oldpath = (const uint8_t*)frame->ebx;
+    const uint8_t* newpath = (const uint8_t*)frame->esi;
+    if (!oldpath || !newpath) { frame->eax = (uint32_t)-1; return; }
+    if (!_user_range_ok(frame->ebx, 1) || !_user_range_ok(frame->esi, 1))
+        { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t   base = (oldpath[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+
+    uint32_t src_parent; uint8_t src_name[32];
+    uint32_t dst_parent; uint8_t dst_name[32];
+    if (!_split_path(oldpath, base, &src_parent, src_name)) { frame->eax = (uint32_t)-1; return; }
+    uint32_t dbase = (newpath[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    if (!_split_path(newpath, dbase, &dst_parent, dst_name)) { frame->eax = (uint32_t)-1; return; }
+
+    os_status_t r = noxfs_rename(src_parent, src_name, dst_parent, dst_name);
+    frame->eax = (r == OS_OK) ? 0 : (uint32_t)-1;
+}

@@ -37,12 +37,21 @@ static void _reap_child(process_t *child) {
     proc_destroy(child);
 }
 
+#define WNOHANG  1
+
 void sys_waitpid(isr_frame_t* frame) {
-    uint32_t    pid   = frame->ebx;
-    process_t*  me    = scheduler_current();
-    process_t*  child = scheduler_find_proc(pid);
+    uint32_t    pid     = frame->ebx;
+    uint32_t    options = frame->esi;
+    process_t*  me      = scheduler_current();
+    process_t*  child   = scheduler_find_proc(pid);
 
     if (!child) { frame->eax = (uint32_t)-1; return; }
+
+    /* WNOHANG: return 0 immediately if child not yet done. */
+    if ((options & WNOHANG) && child->state != PROC_ZOMBIE) {
+        frame->eax = 0;
+        return;
+    }
 
     if (child->state == PROC_ZOMBIE) {
         int code = child->exit_code;

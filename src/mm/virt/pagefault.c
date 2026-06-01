@@ -25,6 +25,10 @@
 #include <drivers/vga.h>
 #include <common/types.h>
 
+/* Forward declaration — defined in sys_signal.c */
+struct isr_frame;
+void signal_deliver(isr_frame_t* frame);
+
 /* Page-fault error-code bits (pushed by the CPU). */
 #define PF_PRESENT  0x1   /* 0 = not-present page, 1 = protection violation */
 #define PF_WRITE    0x2   /* 0 = read, 1 = write                            */
@@ -101,10 +105,15 @@ static void _pagefault_handler(isr_frame_t* frame) {
         /* Out of memory — fall through and kill the process. */
     }
 
-    /* ── Fatal user fault: terminate the process (SIGSEGV-style) ── */
+    /* ── Fatal user fault: deliver SIGSEGV ──────────────────────── */
     if (from_user) {
         _report_user_fault(cr2, err, frame);
-        proc_terminate(0x8B);  /* 139 = 128 + SIGSEGV(11) — never returns */
+        if (me) {
+            me->sig_pending |= (1u << SIGSEGV);
+            signal_deliver(frame);   /* delivers immediately; kills if SIG_DFL */
+        }
+        /* If somehow we return (shouldn't happen), force kill. */
+        proc_terminate(0x8B);
     }
 
     /* ── Fatal kernel fault: unrecoverable ─────────────────────── */
