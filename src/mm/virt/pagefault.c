@@ -73,6 +73,15 @@ static void _pagefault_handler(isr_frame_t* frame) {
 
     process_t* me = scheduler_current();
 
+    /* ── Copy-on-write ─────────────────────────────────────────
+       A write to a present page that carries the PAGE_COW bit means
+       a fork-shared page is being modified.  vmm_handle_cow gives
+       this process a private, writable copy and we retry.          */
+    if (present && (err & PF_WRITE)) {
+        if (vmm_handle_cow(cr2))
+            return;   /* CPU re-executes the faulting write */
+    }
+
     /* ── Demand paging ─────────────────────────────────────────
        A not-present access from ring 3 inside either the stack region
        (grows down) or the heap region [brk_start, brk) maps a fresh

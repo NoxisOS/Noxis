@@ -22,12 +22,22 @@ typedef struct block_header {
     struct block_header* prev;
     struct block_header* next;
     uint8_t             is_free;
+    uint8_t             tag;        /* mem_tag_t owning this allocation */
 } block_header_t;
 
 /* ── file-scope state ──────────────────────────────────────── */
 static block_header_t* g_heap_start;
 static uint32_t        g_heap_size;
 static uint32_t        g_free_total;
+
+/* ── per-tag accounting ────────────────────────────────────── */
+static uint32_t g_tag_bytes [MEM_TAG__COUNT];
+static uint32_t g_tag_allocs[MEM_TAG__COUNT];
+
+static const char* g_tag_names[MEM_TAG__COUNT] = {
+    "untagged", "slab", "arena", "vfs",
+    "fs", "pipe", "proc", "driver",
+};
 
 /* ── private functions ─────────────────────────────────────── */
 
@@ -113,30 +123,39 @@ os_status_t heap_init(void) {
     return OS_OK;
 }
 
-void* kmalloc(uint32_t size) {
+void* kmalloc_tagged(uint32_t size, mem_tag_t tag) {
     if (size == 0) return (void*)0;
+    if ((uint32_t)tag >= MEM_TAG__COUNT) tag = MEM_TAG_UNTAGGED;
     uint32_t needed = _align(size);
 
-    /* Walk the heap for a free block */
     block_header_t* block = g_heap_start;
+    block_header_t* found = (block_header_t*)0;
+
+    /* First-fit search. */
     while (block) {
-        if (block->is_free && block->size >= needed) {
-            _heap_split(block, needed);
-            block->is_free = FALSE;
-            g_free_total -= block->size;
-            return (void*)((uint32_t)block + HEADER_SIZE);
-        }
+        if (block->is_free && block->size >= needed) { found = block; break; }
         block = block->next;
     }
+    /* No block found — expand heap. */
+    if (!found) {
+        found = _heap_expand(needed);
+        if (!found) return (void*)0;
+    }
 
-    /* No block found — expand heap */
-    block = _heap_expand(needed);
-    if (!block) return (void*)0;
+    _heap_split(found, needed);
+    found->is_free = FALSE;
+    found->tag     = (uint8_t)tag;
+    g_free_total  -= found->size;
 
-    _heap_split(block, needed);
-    block->is_free = FALSE;
-    g_free_total -= block->size;
-    return (void*)((uint32_t)block + HEADER_SIZE);
+    /* Per-tag accounting. */
+    g_tag_bytes[tag]  += found->size;
+    g_tag_allocs[tag] += 1;
+
+    return (void*)((uint32_t)found + HEADER_SIZE);
+}
+
+void* kmalloc(uint32_t size) {
+    return kmalloc_tagged(size, MEM_TAG_UNTAGGED);
 }
 
 void kfree(void* ptr) {
@@ -145,6 +164,13 @@ void kfree(void* ptr) {
     block_header_t* block = (block_header_t*)((uint32_t)ptr - HEADER_SIZE);
     if (block->magic != HEAP_MAGIC) return;
 
+    /* Reverse the per-tag accounting before coalescing changes size. */
+    mem_tag_t tag = (mem_tag_t)block->tag;
+    if ((uint32_t)tag < MEM_TAG__COUNT) {
+        if (g_tag_bytes[tag]  >= block->size) g_tag_bytes[tag]  -= block->size;
+        if (g_tag_allocs[tag] > 0)            g_tag_allocs[tag] -= 1;
+    }
+
     block->is_free = TRUE;
     g_free_total += block->size;
     _heap_coalesce(block);
@@ -152,4 +178,16 @@ void kfree(void* ptr) {
 
 uint32_t heap_get_free(void) {
     return g_free_total;
+}
+
+uint32_t heap_tag_bytes(mem_tag_t tag) {
+    return (uint32_t)tag < MEM_TAG__COUNT ? g_tag_bytes[tag] : 0;
+}
+
+uint32_t heap_tag_allocs(mem_tag_t tag) {
+    return (uint32_t)tag < MEM_TAG__COUNT ? g_tag_allocs[tag] : 0;
+}
+
+const char* heap_tag_name(mem_tag_t tag) {
+    return (uint32_t)tag < MEM_TAG__COUNT ? g_tag_names[tag] : "?";
 }

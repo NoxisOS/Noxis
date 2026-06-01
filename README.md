@@ -27,8 +27,65 @@ No external libraries, no GRUB, no shortcuts.
 - **Demand paging** — `#PF` handler grows user stack and heap on first access
 - **Kernel heap** — first-fit `kmalloc`/`kfree` with coalescing, at `0xC0400000`
 - **User heap** — `brk`/`sbrk` syscalls, pages faulted in on demand
-- Per-process isolated address spaces; `vmm_fork_pd` does full CoW-style copy
+- Per-process isolated address spaces
+- **Copy-on-write fork** — `vmm_fork_pd` shares pages read-only between
+  parent and child (PAGE_COW bit); the first write in either process
+  faults and triggers a private copy. Backed by per-frame reference
+  counts in the PMM, so a shared frame is freed only when its last owner
+  exits. Fork is near-instant instead of duplicating the whole address space.
 - `vmm_create_pd` / `vmm_destroy_pd` for exec/fork address spaces
+
+#### Lifetime-oriented allocation *(the interesting part)*
+
+Noxis deliberately avoids a single anonymous kernel heap where every
+object type gets mixed together. Instead, allocation is split by **type**
+and by **lifetime** — an approach mainstream kernels (Linux/BSD/Windows)
+don't take at this granularity.
+
+**Typed slab caches** (`mm/slab.c`) — one pool per kernel object type:
+
+| Cache | Object | Alloc / free |
+|---|---|---|
+| `g_process_slab` | `process_t` | **O(1)** intrusive free-list |
+| `g_pipe_slab` | `pipe_t` | **O(1)** intrusive free-list |
+
+- No per-object header — free objects link through themselves
+- Always returns zeroed memory
+- Frees poison the slot with `0xDEADC0DE` → use-after-free is obvious
+- **High-water mark** per cache (`n_alloc_peak`) tracks worst-case pressure
+- **Adaptive reclaim** — `slab_reap()` returns fully-idle backing blocks to
+  the kernel heap; `memstat reap` triggers it on demand. Hobby kernels
+  almost never implement shrink-on-pressure.
+- Leaks become *visible*: the `memstat` shell command shows live/free/peak
+  counts per cache, so a missing free shows up as a rising `live=` count
+
+**Tagged allocations** (`kmalloc_tagged`) — every kernel allocation is
+attributed to a subsystem (`slab`, `arena`, `vfs`, `fs`, `pipe`, …). The
+heap keeps per-tag live byte + alloc counts, and `memstat` prints a
+per-module breakdown — instant leak triage, finer-grained than FreeBSD's
+malloc zones.
+
+**Per-process arenas** (`mm/arena.c`) — region allocator tied to a lifetime:
+
+- All kernel allocations whose lifetime equals a process (e.g. the
+  `argv` copy in `execve`) come from that process's `proc->arena`
+- Allocation is a pointer bump — **O(1)**, zero fragmentation, no headers
+- `arena_destroy()` frees everything in one walk — **O(blocks)**, ≈O(1)
+  for a typical process (1–4 blocks)
+- This moved the old 512-byte `execve` argv buffer off the 4 KB kernel
+  stack and made it scale to arbitrarily many arguments
+
+**Fully closed process lifecycle** — `proc_destroy()` reclaims *everything*:
+
+| Resource | Allocated by | Freed by |
+|---|---|---|
+| `process_t` | `slab_alloc` | `proc_destroy` → `slab_free` |
+| kernel stack (8 KB) | `proc_spawn` (PMM) | `proc_destroy` → `vmm_unmap_page_in` |
+| per-process arena | `arena_create` | `proc_destroy` → `arena_destroy` |
+| user page directory | `vmm_fork_pd` | `scheduler_exit` → `vmm_destroy_pd` |
+
+Verified leak-free with `memstat` before/after `fork`+`exec`+`waitpid`
+cycles: `process_t live=` returns to baseline and the heap stops shrinking.
 
 ### Drivers
 - VGA 80×25 text mode — putchar, scrolling, 16 colors
@@ -104,7 +161,7 @@ No external libraries, no GRUB, no shortcuts.
 - Redirections: `>`, `>>`, `<`
 - Background jobs: `cmd &`
 - `$?` expansion
-- Builtins: `cd`, `pwd`, `ls`, `echo`, `clear`, `exit`, `help`
+- Builtins: `cd`, `pwd`, `ls`, `echo`, `clear`, `exit`, `help`, `memstat`
 - External programs via `fork` + `execv`
 - `.elf` suffix auto-appended if not found
 - **Ctrl+C** kills running child, shell continues

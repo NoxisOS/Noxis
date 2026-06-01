@@ -2,8 +2,22 @@
  * @file    kernel/syscall/sys_proc.c
  * @brief   Process syscalls: exit, fork, waitpid, execve, brk,
  *                            getpid, getppid, getuid
+ *
+ * Memory notes
+ * ────────────
+ * execve: argv strings are copied into the process's kernel arena
+ *   (proc->arena) instead of a fixed stack buffer.  This moves
+ *   ~512 bytes off the 4 KB kernel stack and into the heap.
+ *   The arena is reset after execve completes so the blocks can be
+ *   reused by future allocations in the new process image.
+ *
+ * waitpid: after collecting a zombie, the child's arena is destroyed
+ *   and the process_t is returned to the slab.  This was previously
+ *   a leak — process structs were never freed.
  */
 #include "syscall_internal.h"
+#include <mm/slab.h>
+#include <mm/arena.h>
 
 void sys_exit(isr_frame_t* frame) {
     proc_terminate((int)frame->ebx);
@@ -11,6 +25,16 @@ void sys_exit(isr_frame_t* frame) {
 
 void sys_fork(isr_frame_t* frame) {
     frame->eax = scheduler_fork_spawn(frame);
+}
+
+/* ── sys_waitpid ─────────────────────────────────────────── */
+
+static void _reap_child(process_t *child) {
+    /* proc_destroy frees: kernel-stack frames, the per-process arena,
+       and the process_t slab slot — a fully clean teardown.
+       (The arena may already be NULL if the child was a fork child
+       that destroyed it in proc_terminate; proc_destroy handles that.) */
+    proc_destroy(child);
 }
 
 void sys_waitpid(isr_frame_t* frame) {
@@ -21,7 +45,9 @@ void sys_waitpid(isr_frame_t* frame) {
     if (!child) { frame->eax = (uint32_t)-1; return; }
 
     if (child->state == PROC_ZOMBIE) {
-        frame->eax = (uint32_t)child->exit_code;
+        int code = child->exit_code;
+        _reap_child(child);
+        frame->eax = (uint32_t)code;
         return;
     }
 
@@ -46,8 +72,13 @@ void sys_waitpid(isr_frame_t* frame) {
         kthread_switch(&prev->kctx_esp, &next->kctx_esp);
     }
     __asm__ __volatile__("sti");
-    frame->eax = (uint32_t)child->exit_code;
+
+    int code = child->exit_code;
+    _reap_child(child);
+    frame->eax = (uint32_t)code;
 }
+
+/* ── sys_execve ──────────────────────────────────────────── */
 
 void sys_execve(isr_frame_t* frame) {
     const uint8_t* upath = (const uint8_t*)frame->ebx;
@@ -56,17 +87,31 @@ void sys_execve(isr_frame_t* frame) {
     if (!upath || !_user_range_ok(frame->ebx, 1))
         { frame->eax = (uint32_t)-1; return; }
 
-    /* ── Copy path ─────────────────────────────────────────── */
+    process_t* proc = scheduler_current();
+
+    /* ── Copy path into kernel stack (small, safe) ─────────── */
     uint8_t  name[64];
     uint32_t nlen = 0;
     for (; nlen < sizeof(name) - 1 && upath[nlen]; nlen++)
         name[nlen] = upath[nlen];
     name[nlen] = '\0';
 
-    /* ── Copy argv strings into flat kernel buffer ─────────── */
-#define KA_MAX  16
-#define KBF_SZ  512
-    uint8_t  kbuf[KBF_SZ];
+    /* ── Copy argv strings into the process's kernel arena ─────
+       This replaces the old kbuf[512] on the kernel stack.
+       The arena provides the same O(1) bump allocation but:
+         • doesn't eat 512+ bytes of the 4 KB kernel stack
+         • scales to arbitrarily many/large arguments
+         • is automatically freed when the process dies           */
+#define KA_MAX   16
+#define KBF_SZ   512
+
+    /* Use the process arena if available; fall back to stack buf. */
+    uint8_t  stack_buf[KBF_SZ];
+    uint8_t *kbuf  = proc->arena
+                   ? (uint8_t*)arena_alloc(proc->arena, KBF_SZ)
+                   : stack_buf;
+    if (!kbuf) kbuf = stack_buf;   /* OOM fallback */
+
     uint32_t kptrs[KA_MAX];
     uint32_t kargc = 0;
     uint32_t kpos  = 0;
@@ -100,8 +145,7 @@ void sys_execve(isr_frame_t* frame) {
     if (!f) { frame->eax = (uint32_t)-1; return; }
 
     /* ── Point of no return: free user PDEs 1..767 ─────────── */
-    process_t* proc = scheduler_current();
-    uint32_t*  pd   = (uint32_t*)0xFFFFF000u;
+    uint32_t* pd = (uint32_t*)0xFFFFF000u;
     for (uint32_t pde = 1; pde < 768; pde++) {
         if (!(pd[pde] & PAGE_PRESENT)) continue;
         uint32_t* pt = (uint32_t*)(0xFFC00000u + pde * PAGE_SIZE);
@@ -130,10 +174,18 @@ void sys_execve(isr_frame_t* frame) {
 
     uint32_t sp = _build_argv_frame(kargc, kargv);
 
+    /* ── Reset arena for the new image ─────────────────────── */
+    /* kbuf and kargv are no longer needed after _build_argv_frame.
+       Resetting reuses the existing arena blocks instead of
+       freeing+reallocating them on the next exec.              */
+    if (proc->arena) arena_reset(proc->arena);
+
     gdt_set_kernel_stack(proc->kstack_top);
     msr_write(MSR_SYSENTER_ESP, proc->kstack_top, 0);
     user_enter(entry, sp);
 }
+
+/* ── sys_brk ─────────────────────────────────────────────── */
 
 void sys_brk(isr_frame_t* frame) {
     process_t* me  = scheduler_current();
@@ -149,14 +201,6 @@ void sys_brk(isr_frame_t* frame) {
     frame->eax = me->brk;
 }
 
-void sys_getpid(isr_frame_t* frame) {
-    frame->eax = scheduler_current()->pid;
-}
-
-void sys_getppid(isr_frame_t* frame) {
-    frame->eax = scheduler_current()->ppid;
-}
-
-void sys_getuid(isr_frame_t* frame) {
-    frame->eax = 0;   /* single-user — everything is root */
-}
+void sys_getpid  (isr_frame_t* frame) { frame->eax = scheduler_current()->pid;  }
+void sys_getppid (isr_frame_t* frame) { frame->eax = scheduler_current()->ppid; }
+void sys_getuid  (isr_frame_t* frame) { frame->eax = 0; /* single-user */       }

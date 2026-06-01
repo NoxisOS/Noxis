@@ -62,6 +62,19 @@ os_status_t vmm_map_page_in(uint32_t pd_phys, uint32_t virt,
 uint32_t vmm_virt_to_phys_in(uint32_t pd_phys, uint32_t virt);
 
 /**
+ * @brief Unmaps virt in a specific PD and frees the backing frame.
+ * @return the freed physical frame (page-aligned), or 0 if not mapped.
+ */
+uint32_t vmm_unmap_page_in(uint32_t pd_phys, uint32_t virt);
+
+/**
+ * @brief Resolve a copy-on-write fault at fault_addr in the current PD.
+ * @return 1 if it was a CoW page and was resolved (retry the instruction),
+ *         0 otherwise (not CoW / OOM — treat as a real fault).
+ */
+int vmm_handle_cow(uint32_t fault_addr);
+
+/**
  * @brief Deep-copies all user-space pages (virt < 0xC0000000) from
  *        parent's PD into a freshly-created child PD.
  * @param parent_pd_phys  Parent's page directory physical address.

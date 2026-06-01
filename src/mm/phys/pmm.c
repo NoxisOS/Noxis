@@ -12,6 +12,19 @@ static uint8_t*  g_bitmap = (uint8_t*)PMM_BITMAP_START;
 static uint32_t  g_total_frames;
 static uint32_t  g_free_count;
 
+/* ── per-frame reference counts (for copy-on-write) ──────────
+   Sized for 128 MB of RAM (32768 frames = 32 KB).  Frames beyond
+   this range are never CoW-shared, so they need no refcount.
+   A refcount of 0 means "tracked but unreferenced" or "not yet
+   touched"; alloc sets it to 1, ref_inc bumps it, free decrements
+   and only releases the frame when it reaches 0.                 */
+#define PMM_REFCOUNT_FRAMES  (128u * 1024u * 1024u / PMM_FRAME_SIZE)
+static uint8_t g_refcount[PMM_REFCOUNT_FRAMES];
+
+static inline int _rc_tracked(uint32_t idx) {
+    return idx < PMM_REFCOUNT_FRAMES;
+}
+
 /* ── private functions ─────────────────────────────────────── */
 
 static void _bitmap_set(uint32_t frame) {
@@ -82,6 +95,7 @@ os_status_t pmm_alloc_frame(uint32_t* out) {
         if (!_bitmap_test(i)) {
             _bitmap_set(i);
             g_free_count--;
+            if (_rc_tracked(i)) g_refcount[i] = 1;   /* one owner */
             *out = i * PMM_FRAME_SIZE;
             return OS_OK;
         }
@@ -95,9 +109,29 @@ os_status_t pmm_free_frame(uint32_t frame) {
     if (idx >= g_total_frames) return OS_ERR_INVALID;
     if (!_bitmap_test(idx)) return OS_ERR_INVALID;
 
+    /* Reference-counted release: a CoW-shared frame stays mapped
+       until its last owner frees it.                              */
+    if (_rc_tracked(idx) && g_refcount[idx] > 1) {
+        g_refcount[idx]--;
+        return OS_OK;      /* still referenced — not actually freed */
+    }
+
+    if (_rc_tracked(idx)) g_refcount[idx] = 0;
     _bitmap_clear(idx);
     g_free_count++;
     return OS_OK;
+}
+
+/* ── Reference-count API (for copy-on-write) ─────────────────── */
+
+void pmm_ref_inc(uint32_t frame) {
+    uint32_t idx = frame / PMM_FRAME_SIZE;
+    if (_rc_tracked(idx) && g_refcount[idx] < 0xFF) g_refcount[idx]++;
+}
+
+uint32_t pmm_ref_count(uint32_t frame) {
+    uint32_t idx = frame / PMM_FRAME_SIZE;
+    return _rc_tracked(idx) ? g_refcount[idx] : 1;
 }
 
 uint32_t pmm_get_free_count(void) {

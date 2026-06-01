@@ -22,6 +22,7 @@
 #include <proc/scheduler.h>
 #include <proc/process.h>
 #include <proc/exec.h>
+#include <mm/arena.h>
 #include <kernel/isr/isr.h>
 #include <kernel/hal/ports.h>
 #include <kernel/hal/gdt.h>
@@ -383,8 +384,14 @@ void proc_terminate(int code) {
     if (me->is_fork_child) {
         /* Fork children run on their own kernel stack (not exec_run's), so
            they cannot longjmp back through exec_return — they zombie and
-           hand the CPU to the next ready thread instead. */
+           hand the CPU to the next ready thread instead.
+           The arena is destroyed now; the process_t slab slot is freed
+           when the parent calls waitpid and reaps the zombie.          */
         __asm__ __volatile__("cli");
+
+        /* Release the process's kernel arena immediately — no longer needed. */
+        if (me->arena) { arena_destroy(me->arena); me->arena = (arena_t*)0; }
+
         me->exit_code = code;
         me->state     = PROC_ZOMBIE;
 

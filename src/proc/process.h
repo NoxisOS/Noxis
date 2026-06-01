@@ -11,6 +11,7 @@
 #include <common/status.h>
 #include <common/signal.h>
 #include <fs/vfs/vfs.h>
+#include <mm/arena.h>
 
 /* ── constants ─────────────────────────────────────────────── */
 #define PROC_NAME_MAX    32
@@ -93,6 +94,12 @@ typedef struct process {
     /* ── x87 FPU (lazy switching) ─────────────────────────────── */
     uint8_t          fpu_state[108];/* FNSAVE/FRSTOR image                 */
     bool_t           fpu_used;      /* TRUE once this process touched FPU  */
+
+    /* ── per-process kernel arena ──────────────────────────────── */
+    /* All kernel-side allocations whose lifetime == this process   */
+    /* (e.g. argv copies in execve) come from here.                 */
+    /* arena_destroy() is called automatically in proc_terminate(). */
+    arena_t         *arena;
 } process_t;
 
 /* ── public functions ──────────────────────────────────────── */
@@ -110,5 +117,11 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
  * @brief Marks the current process as exited (never returns to it)
  */
 void proc_exit(void);
+
+/**
+ * @brief Releases a dead (ZOMBIE) process: kernel stack frames, arena,
+ *        and the process_t slab slot. Never call on the running process.
+ */
+void proc_destroy(process_t* proc);
 
 #endif /* PROC_PROCESS_H */

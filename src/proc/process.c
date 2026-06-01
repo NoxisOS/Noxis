@@ -1,10 +1,17 @@
 /**
  * @file    proc/process.c
- * @brief   Process creation and management
- * @author  Noxis Team
- * @date    2026-05-29
+ * @brief   Process creation and management.
+ *
+ * Memory strategy
+ * ───────────────
+ * process_t structs come from the slab allocator (g_process_slab).
+ * Each process owns a kernel-side arena (proc->arena) for short-lived
+ * kernel allocations that have the same lifetime as the process.
+ * Both are freed automatically in proc_terminate() → no leaks.
  */
 #include <proc/process.h>
+#include <mm/slab.h>
+#include <mm/arena.h>
 #include <mm/virt/heap.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
@@ -14,7 +21,10 @@
 static uint32_t g_next_pid = 1;
 
 process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority) {
-    process_t* proc = (process_t*)kmalloc(sizeof(process_t));
+
+    /* ── Allocate process struct from the typed slab ─────────
+       slab_alloc() returns a zeroed object in O(1).             */
+    process_t* proc = (process_t*)slab_alloc(g_process_slab);
     if (!proc) return (process_t*)0;
 
     for (uint32_t i = 0; i < PROC_NAME_MAX - 1 && name[i]; i++)
@@ -27,84 +37,87 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     proc->priority          = priority;
     proc->next              = (process_t*)0;
 
-    /* Allocate kernel stack.
-       Maps each page in the CURRENT PD (so the new thread can run immediately)
-       AND in the kernel PD (0x400000) so the thread remains accessible
-       regardless of which address space is active when it gets scheduled. */
+    /* ── Kernel stack ──────────────────────────────────────── */
     proc->kstack_top = 0;
     for (uint32_t i = 0; i < PROC_KSTACK_PAGES; i++) {
         uint32_t phys;
-        if (pmm_alloc_frame(&phys) != OS_OK) { kfree(proc); return (process_t*)0; }
-        uint32_t virt = 0xD0000000 + g_next_pid * 0x10000 + i * PAGE_SIZE;
-        if (vmm_map_page(virt, phys, PAGE_PRESENT | PAGE_RW) != OS_OK) { kfree(proc); return (process_t*)0; }
-        /* Also ensure the mapping exists in the kernel PD (physical 0x400000).
-           vmm_map_page modifies the current PD; if that is already the kernel PD
-           the call above is sufficient.  Otherwise, add it explicitly. */
-        if (vmm_get_pd_phys() != 0x400000u) {
-            vmm_map_page_in(0x400000u, virt, phys, PAGE_PRESENT | PAGE_RW);
+        if (pmm_alloc_frame(&phys) != OS_OK) {
+            slab_free(g_process_slab, proc);
+            return (process_t*)0;
         }
+        uint32_t virt = 0xD0000000 + g_next_pid * 0x10000 + i * PAGE_SIZE;
+        if (vmm_map_page(virt, phys, PAGE_PRESENT | PAGE_RW) != OS_OK) {
+            slab_free(g_process_slab, proc);
+            return (process_t*)0;
+        }
+        if (vmm_get_pd_phys() != 0x400000u)
+            vmm_map_page_in(0x400000u, virt, phys, PAGE_PRESENT | PAGE_RW);
+
         if (i == PROC_KSTACK_PAGES - 1) proc->kstack_top = virt + PAGE_SIZE;
     }
 
-    /* Legacy ISR-frame context (used by ring-3 loader path). */
-    proc->ctx.edi    = 0;
-    proc->ctx.esi    = 0;
-    proc->ctx.ebp    = 0;
-    proc->ctx.ebx    = 0;
-    proc->ctx.edx    = 0;
-    proc->ctx.ecx    = 0;
-    proc->ctx.eax    = 0;
+    /* ── Per-process kernel arena ──────────────────────────── */
+    proc->arena = arena_create();
+    /* Arena failure is not fatal — kernel falls back to kmalloc
+       for individual allocs if proc->arena is NULL.            */
+
+    /* ── CPU context ───────────────────────────────────────── */
     proc->ctx.eip    = (uint32_t)entry;
     proc->ctx.cs     = 0x08;
     proc->ctx.eflags = 0x202;
     proc->ctx.esp    = proc->kstack_top;
     proc->ctx.ss     = 0x10;
 
-    /* kthread_switch context — pre-initialize kstack so the first switch
-       into this thread goes through kthread_entry (re-enables IRQs) and
-       then jumps to the actual entry function. */
     extern void kthread_entry(void);
     volatile uint32_t* sp = (volatile uint32_t*)proc->kstack_top;
-    *--sp = (uint32_t)entry;         /* 2nd ret: actual thread fn   */
-    *--sp = (uint32_t)kthread_entry; /* 1st ret: sti trampoline     */
-    *--sp = 0;                        /* ebp                         */
-    *--sp = 0;                        /* esi                         */
-    *--sp = 0;                        /* edi                         */
-    *--sp = 0;                        /* ebx                         */
+    *--sp = (uint32_t)entry;
+    *--sp = (uint32_t)kthread_entry;
+    *--sp = 0;  /* ebp */
+    *--sp = 0;  /* esi */
+    *--sp = 0;  /* edi */
+    *--sp = 0;  /* ebx */
     proc->kctx_esp = (uint32_t)sp;
 
-    proc->wake_tick     = 0;
-    proc->page_dir_phys = 0;
-    proc->ppid          = 0;
-    proc->exit_code     = 0;
-    proc->waiter        = (process_t*)0;
-    proc->is_fork_child = FALSE;
-    proc->fork_eip      = 0;
-    proc->fork_esp      = 0;
-    proc->fork_ebp      = 0;
-    proc->fork_ebx      = 0;
-    proc->fork_esi      = 0;
-    proc->fork_edi      = 0;
-
-    proc->sig_pending = 0;
-    proc->sig_blocked = 0;
-    proc->cwd_ino     = 0; /* set by FS after init */
-    proc->brk_start   = 0;
-    proc->brk         = 0;
-    proc->fpu_used    = FALSE;
+    /* ── Signals: default disposition ─────────────────────── */
     for (uint32_t i = 0; i < NSIG; i++) {
         proc->sigactions[i].handler = SIG_DFL;
         proc->sigactions[i].flags   = 0;
     }
 
-    for (uint32_t i = 0; i < PROC_MAX_FD; i++) {
-        proc->fd_table[i].type = FD_FILE;
-        proc->fd_table[i].used = FALSE;
-        proc->fd_table[i].file = (void*)0;
-        proc->fd_table[i].pos  = 0;
-    }
+    /* fd_table is already zeroed by slab_alloc(). */
 
     return proc;
+}
+
+/* ── proc_destroy ─────────────────────────────────────────────
+   Release a dead process's resources:
+     • kernel-stack frames (mapped in the kernel PD at 0x400000)
+     • the per-process kernel arena
+     • the process_t slab slot
+   Must NOT be called on the currently-running process (it would
+   pull the kernel stack out from under itself).  Call it only to
+   reap a ZOMBIE from a different process's context.              */
+void proc_destroy(process_t* proc) {
+    if (!proc) return;
+
+    /* Free the kernel-stack pages.  They live at
+       [kstack_top - PROC_KSTACK_PAGES*PAGE_SIZE, kstack_top)
+       and were mapped into the kernel PD (physical 0x400000).    */
+    if (proc->kstack_top) {
+        uint32_t base = proc->kstack_top - PROC_KSTACK_PAGES * PAGE_SIZE;
+        for (uint32_t i = 0; i < PROC_KSTACK_PAGES; i++)
+            vmm_unmap_page_in(0x400000u, base + i * PAGE_SIZE);
+        proc->kstack_top = 0;
+    }
+
+    /* Release the per-process kernel arena (if still present). */
+    if (proc->arena) {
+        arena_destroy(proc->arena);
+        proc->arena = (arena_t*)0;
+    }
+
+    /* Return the struct to the slab. */
+    slab_free(g_process_slab, proc);
 }
 
 void proc_exit(void) {

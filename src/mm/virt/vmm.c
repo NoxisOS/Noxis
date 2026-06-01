@@ -205,6 +205,79 @@ uint32_t vmm_virt_to_phys_in(uint32_t pd_phys, uint32_t virt) {
     return (pte & ~0xFFFu) | PAGE_OFFSET(virt);
 }
 
+/* ── vmm_unmap_page_in ────────────────────────────────────────
+   Clear the PTE for `virt` in the target PD and free the backing
+   physical frame.  No-op if the page is not present.  Returns the
+   freed physical frame (page-aligned), or 0 if nothing was mapped. */
+uint32_t vmm_unmap_page_in(uint32_t pd_phys, uint32_t virt) {
+    uint32_t* pd = _scratch(VMM_SCRATCH_0, pd_phys);
+    if (!pd) return 0;
+    uint32_t pde = pd[PDE_INDEX(virt)];
+    vmm_invlpg(VMM_SCRATCH_0);
+    if (!(pde & PAGE_PRESENT)) return 0;
+
+    uint32_t* pt = _scratch(VMM_SCRATCH_1, pde & ~0xFFFu);
+    if (!pt) return 0;
+    uint32_t pte = pt[PTE_INDEX(virt)];
+    if (!(pte & PAGE_PRESENT)) { vmm_invlpg(VMM_SCRATCH_1); return 0; }
+
+    uint32_t frame = pte & ~0xFFFu;
+    pt[PTE_INDEX(virt)] = 0;            /* clear the mapping */
+    vmm_invlpg(VMM_SCRATCH_1);
+
+    pmm_free_frame(frame);             /* reclaim the physical page */
+    vmm_invlpg(virt);                  /* flush any stale TLB entry  */
+    return frame;
+}
+
+/* ── vmm_handle_cow ───────────────────────────────────────────
+   Resolve a copy-on-write fault at `fault_addr` in the CURRENT PD.
+   Returns 1 if the fault was a genuine CoW page and was resolved
+   (caller should retry the instruction), 0 otherwise (not a CoW
+   page, or out of memory → caller treats it as a real fault).     */
+int vmm_handle_cow(uint32_t fault_addr) {
+    uint32_t va    = PAGE_ALIGN_DOWN(fault_addr);
+    uint32_t pde_i = PDE_INDEX(va);
+    uint32_t pte_i = PTE_INDEX(va);
+
+    uint32_t* pd = (uint32_t*)RECURSIVE_VADDR;
+    if (!(pd[pde_i] & PAGE_PRESENT)) return 0;
+
+    uint32_t* pt  = (uint32_t*)(0xFFC00000u + pde_i * PAGE_SIZE);
+    uint32_t  pte = pt[pte_i];
+    if (!(pte & PAGE_PRESENT) || !(pte & PAGE_COW)) return 0;
+
+    uint32_t old_frame = pte & ~0xFFFu;
+    uint32_t flags     = ((pte & 0xFFFu) & ~PAGE_COW) | PAGE_RW;
+
+    /* Sole owner → no copy needed, just restore write permission. */
+    if (pmm_ref_count(old_frame) <= 1) {
+        pt[pte_i] = old_frame | flags;
+        vmm_invlpg(va);
+        return 1;
+    }
+
+    /* Shared → allocate a private copy. */
+    uint32_t new_frame;
+    if (pmm_alloc_frame(&new_frame) != OS_OK) return 0;
+
+    /* Copy old → new.  old_frame is still readable at `va`;
+       new_frame is mapped through the scratch window.            */
+    uint8_t* dst = (uint8_t*)_scratch(VMM_SCRATCH_1, new_frame);
+    if (!dst) { pmm_free_frame(new_frame); return 0; }
+    uint8_t* src = (uint8_t*)va;
+    for (uint32_t b = 0; b < PAGE_SIZE; b++) dst[b] = src[b];
+    vmm_invlpg(VMM_SCRATCH_1);
+
+    /* Point this process at its private, writable copy. */
+    pt[pte_i] = new_frame | flags;
+    vmm_invlpg(va);
+
+    /* Drop our reference to the formerly-shared frame. */
+    pmm_free_frame(old_frame);
+    return 1;
+}
+
 os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
     uint32_t child_phys;
     os_status_t s = vmm_create_pd(&child_phys);
@@ -238,27 +311,36 @@ os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
 
             uint32_t src_phys  = pte & ~0xFFFu;
             uint32_t pte_flags = pte &  0xFFFu;
+            uint32_t virt      = (pde_idx << 22) | (pte_idx << 12);
 
-            /* Allocate a new frame for the child's copy. */
-            uint32_t dst_phys;
-            if (pmm_alloc_frame(&dst_phys) != OS_OK) goto fail;
+            /* ── Copy-on-write share ───────────────────────────
+               Instead of duplicating the page, parent and child
+               share the SAME frame.  Writable pages are remapped
+               read-only with PAGE_COW set in BOTH page tables; the
+               first write in either process faults and triggers a
+               private copy (see pagefault.c).  Read-only pages are
+               shared as-is (a write to them is a genuine fault).  */
+            uint32_t child_flags = pte_flags;
 
-            /* Copy: map src→scratch0, dst→scratch1, memcpy 4KB. */
-            uint8_t* src = (uint8_t*)_scratch(VMM_SCRATCH_0, src_phys);
-            if (!src) goto fail;
+            if (pte_flags & PAGE_RW) {
+                /* Make this a CoW page: drop RW, mark COW. */
+                child_flags = (pte_flags & ~PAGE_RW) | PAGE_COW;
 
-            uint8_t* dst = (uint8_t*)_scratch(VMM_SCRATCH_1, dst_phys);
-            if (!dst) goto fail;
+                /* Rewrite the PARENT's PTE through the scratch window
+                   so the parent also faults on its next write.        */
+                uint32_t* ppt = _scratch(VMM_SCRATCH_0, parent_pt_phys);
+                if (!ppt) goto fail;
+                ppt[pte_idx] = src_phys | child_flags;
+                vmm_invlpg(VMM_SCRATCH_0);
+                vmm_invlpg(virt);   /* parent IS the current PD here */
+            }
 
-            src = (uint8_t*)_scratch(VMM_SCRATCH_0, src_phys);
-            for (uint32_t b = 0; b < PAGE_SIZE; b++) dst[b] = src[b];
-            vmm_invlpg(VMM_SCRATCH_0);
-            vmm_invlpg(VMM_SCRATCH_1);
+            /* The child now references the shared frame too. */
+            pmm_ref_inc(src_phys);
 
-            /* Map the child's copy at the same virtual address. */
-            uint32_t virt = (pde_idx << 22) | (pte_idx << 12);
-            s = vmm_map_page_in(child_phys, virt, dst_phys, pte_flags);
-            if (s != OS_OK) goto fail;
+            /* Map the child at the same virtual address, same frame. */
+            s = vmm_map_page_in(child_phys, virt, src_phys, child_flags);
+            if (s != OS_OK) { pmm_free_frame(src_phys); goto fail; }
         }
     }
 

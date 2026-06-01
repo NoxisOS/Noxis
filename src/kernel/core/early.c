@@ -16,6 +16,7 @@
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
 #include <mm/virt/heap.h>
+#include <mm/slab.h>
 #include <drivers/pit.h>
 #include <drivers/ata.h>
 #include <drivers/block/block.h>
@@ -168,6 +169,7 @@ void kernel_main(void) {
     STEP("MM",   "PMM",     pmm_init(128*1024*1024));
     STEP("MM",   "VMM",     pagefault_init());
     STEP("MM",   "HEAP",    heap_init());
+    STEP("MM",   "SLAB",    slab_init());
     STEP("DRV",  "PIT",     pit_init(1000));
     STEP("DRV",  "TTY",     tty_init());
     STEP("DRV",  "KBD",     kbd_init());

@@ -40,6 +40,16 @@ os_status_t pmm_alloc_frame(uint32_t* out);
 os_status_t pmm_free_frame(uint32_t frame);
 
 /**
+ * @brief Increments the reference count of a frame (copy-on-write share).
+ */
+void pmm_ref_inc(uint32_t frame);
+
+/**
+ * @brief Returns the current reference count of a frame (1 if untracked).
+ */
+uint32_t pmm_ref_count(uint32_t frame);
+
+/**
  * @brief Returns the number of free frames
  * @return Free frame count
  */

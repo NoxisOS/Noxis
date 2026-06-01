@@ -7,12 +7,13 @@
  */
 #include <fs/pipe/pipe.h>
 #include <proc/scheduler.h>
+#include <mm/slab.h>
 #include <mm/virt/heap.h>
 #include <kernel/hal/ports.h>
 #include <common/types.h>
 
 pipe_t* pipe_alloc(void) {
-    pipe_t* p = (pipe_t*)kmalloc(sizeof(pipe_t));
+    pipe_t* p = (pipe_t*)slab_alloc(g_pipe_slab);
     if (!p) return (pipe_t*)0;
 
     p->head   = 0;
@@ -112,5 +113,5 @@ void pipe_close(pipe_t* p) {
     __asm__ __volatile__("sti");
 
     if (p->refs == 0)
-        kfree(p);
+        slab_free(g_pipe_slab, p);
 }

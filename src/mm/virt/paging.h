@@ -23,6 +23,10 @@
 #define PAGE_SIZE_4MB        0x080
 #define PAGE_GLOBAL          0x100
 
+/* ── OS-defined bits (9–11, ignored by the CPU) ─────────────── */
+#define PAGE_COW             0x200      /* copy-on-write: shared read-only,
+                                           duplicated on write fault       */
+
 /* ── recursive paging (last PDE → PD itself) ──────────────── */
 #define RECURSIVE_INDEX      1023
 #define RECURSIVE_VADDR      0xFFFFF000
