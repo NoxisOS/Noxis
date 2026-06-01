@@ -208,12 +208,20 @@ static int exec_builtin(stage_t *st)
         const char *dir = (st->argc > 1) ? st->argv[1] : "/";
         if (chdir(dir) < 0) { printf("cd: %s: no such directory\n", dir); return 1; }
 
+        /* Keep g_cwd (the displayed path) tidy. */
         if (dir[0] == '/') {
             strncpy(g_cwd, dir, MAX_CWD - 1);
             g_cwd[MAX_CWD - 1] = '\0';
-        } else {
+        } else if (strcmp(dir, "..") == 0) {
+            /* Pop the last path component. */
             int l = (int)strlen(g_cwd);
-            if (l > 1 && g_cwd[l-1] != '/') strncat(g_cwd, "/",  MAX_CWD - l - 1);
+            while (l > 1 && g_cwd[l-1] != '/') l--;
+            if (l > 1) l--;            /* drop the trailing '/' too */
+            if (l == 0) l = 1;         /* never below root */
+            g_cwd[l] = '\0';
+        } else if (strcmp(dir, ".") != 0) {
+            int l = (int)strlen(g_cwd);
+            if (l > 1 && g_cwd[l-1] != '/') strncat(g_cwd, "/", MAX_CWD - l - 1);
             strncat(g_cwd, dir, MAX_CWD - (int)strlen(g_cwd) - 1);
         }
         return 0;
@@ -233,6 +241,16 @@ static int exec_builtin(stage_t *st)
             while ((n = (int)read(fd, buf, sizeof(buf))) > 0)
                 write(STDOUT_FILENO, buf, n);
             close(fd);
+        }
+        return 0;
+    }
+
+    /* ── mkdir ── */
+    if (strcmp(cmd, "mkdir") == 0) {
+        if (st->argc < 2) { printf("mkdir: missing name\n"); return 1; }
+        for (int i = 1; i < st->argc; i++) {
+            if (mkdir(st->argv[i]) < 0)
+                printf("mkdir: %s: failed\n", st->argv[i]);
         }
         return 0;
     }
@@ -270,6 +288,7 @@ static int exec_builtin(stage_t *st)
         printf("  cd [dir]      change directory\n");
         printf("  pwd           print working directory\n");
         printf("  cat <file>    print file (incl. /proc, /dev)\n");
+        printf("  mkdir <dir>   create a directory\n");
         printf("  ls            list current directory\n");
         printf("  echo [args]   print arguments  ($? = last exit code)\n");
         printf("  clear         clear screen\n");

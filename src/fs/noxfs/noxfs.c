@@ -666,21 +666,28 @@ int32_t noxfs_getdents(uint32_t dir_ino, uint8_t* buf,
     if (!dir_data) return -1;
 
     uint32_t entry_count = dir_sz / sizeof(noxfs_dirent_t);
-    uint32_t entry_idx = *off / sizeof(noxfs_dirent_t);
+    uint32_t entry_idx   = *off / sizeof(noxfs_dirent_t);
 
     if (entry_idx >= entry_count) { kfree(dir_data); return 0; }
 
+    /* Pack as many dirents as fit into buf — a single call returns the
+       whole directory (or as much as the buffer holds), like Linux
+       getdents.  This lets callers read the directory in one shot. */
     noxfs_dirent_t* entries = (noxfs_dirent_t*)dir_data;
-    noxfs_dirent_t* src = &entries[entry_idx];
-    uint32_t copy = sizeof(noxfs_dirent_t);
-    if (copy > len) copy = len;
+    uint32_t        written = 0;
 
-    for (uint32_t i = 0; i < copy; i++)
-        buf[i] = ((uint8_t*)src)[i];
+    while (entry_idx < entry_count &&
+           written + sizeof(noxfs_dirent_t) <= len) {
+        uint8_t* src = (uint8_t*)&entries[entry_idx];
+        for (uint32_t i = 0; i < sizeof(noxfs_dirent_t); i++)
+            buf[written + i] = src[i];
+        written += sizeof(noxfs_dirent_t);
+        entry_idx++;
+    }
 
-    *off += sizeof(noxfs_dirent_t);
+    *off = entry_idx * sizeof(noxfs_dirent_t);
     kfree(dir_data);
-    return (int32_t)copy;
+    return (int32_t)written;
 }
 
 os_status_t noxfs_stat(uint32_t ino, vfs_file_t* out) {
