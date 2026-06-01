@@ -107,6 +107,15 @@ the CoW machinery made visible.
 - **VFS** — unified fd interface, generic `open`/`read`/`write`/`close`/`lseek`/`stat`
 - **RamFS** — in-memory FS for early boot assets
 - **NoxFS v2** — inode-based, on-disk FS with `mkdir`, `readdir`, `stat`
+- **SynFS** — synthetic "everything is a file" backend (like procfs/devtmpfs).
+  Content is generated live on read, never stored:
+  - `/proc/meminfo` — physical + heap memory, per-subsystem breakdown
+  - `/proc/slab` — slab cache live/free/peak counts
+  - `/proc/sched` — process table (pid, state, name)
+  - `/proc/uptime` — seconds since boot
+  - `/proc/memmap` — physical memory heatmap as ANSI-coloured text
+  - `/dev/null`, `/dev/zero`, `/dev/random`
+  - Opened via the normal `open`/`read` path (fd type `FD_SYN`); `cat /proc/meminfo` just works.
 - Block buffer cache
 - **Pipes** — anonymous, bidirectional, blocking I/O; refcounted; inherited by `fork`
 
@@ -162,31 +171,31 @@ the CoW machinery made visible.
 - `signal.h` — `signal()`, `raise()`, `sigprocmask()`, `sigset_t` helpers
 - `unistd.h` — all 28 syscall wrappers
 
-### Shell — **nsh** (C, compiled against noxlib)
+### Shell — **nsh** (the only shell; ring-3 C program)
+There is no in-kernel shell. nsh is launched directly by the kernel as a
+ring-3 user process with its own address space, and is relaunched if it
+ever exits — it is PID 1 in spirit. All interaction happens here.
 - Pipelines: `cmd1 | cmd2 | cmd3`
 - Redirections: `>`, `>>`, `<`
 - Background jobs: `cmd &`
 - `$?` expansion
-- Builtins: `cd`, `pwd`, `ls`, `echo`, `clear`, `exit`, `help`, `memstat`
-- External programs via `fork` + `execv`
-- `.elf` suffix auto-appended if not found
+- Builtins: `cd`, `pwd`, `ls`, `cat`, `echo`, `clear`, `exit`, `help`
+- `cat` reads regular files **and** synthetic ones — `cat /proc/meminfo`,
+  `cat /proc/sched`, `cat /proc/slab`, `cat /proc/memmap` (colour heatmap)
+- External programs via `fork` + `execv`; `.elf` suffix auto-appended
 - **Ctrl+C** kills running child, shell continues
-- **Ctrl+D** exits nsh cleanly
+- **Ctrl+D** exits nsh (kernel relaunches it)
+
+### Terminal
+The VGA driver is a minimal **ANSI terminal**: SGR colour (`ESC[31m`…),
+`ESC[2J` clear, `ESC[H` cursor home. This is what lets a ring-3 program
+like nsh emit colour (and `/proc/memmap` render its heatmap) over the
+plain `write()` byte stream.
 
 ### Userland programs
 | Program | Description |
 |---|---|
-| `init.elf` | PID 1 fallback shell (ASM) |
-| `hello.elf` | Hello world |
-| `loop.elf` | Infinite loop — Ctrl+C test target |
-| `fork.elf` | fork/waitpid smoke test |
-| `pipe.elf` | Pipe I/O smoke test |
-| `signal.elf` | Signal delivery smoke test |
-| `pftest.elf` | Page fault / demand paging test |
-| `segv.elf` | Intentional SIGSEGV |
-| `brktest.elf` | `brk` / user heap test |
-| `fputest.elf` | x87 FPU lazy switching test |
-| `systest.elf` | Syscall regression suite |
+| `nsh.elf` | The shell (PID 1) |
 | `ctest.elf` | C runtime / noxlib test |
 
 ---

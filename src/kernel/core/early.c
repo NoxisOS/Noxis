@@ -29,7 +29,7 @@
 #include <kernel/syscall/syscall.h>
 #include <fs/vfs/vfs.h>
 #include <fs/noxfs/noxfs.h>
-#include <shell/shell.h>
+#include <fs/synfs/synfs.h>
 
 /* ── small string helper (used by banner centering) ─────────── */
 
@@ -179,6 +179,7 @@ void kernel_main(void) {
     STEP("PROC", "SCHED",   scheduler_init());
     STEP("SYS",  "SYSCALL", syscall_init());
     STEP("FS",   "VFS",     vfs_init());
+    STEP("FS",   "SYNFS",   synfs_init());
     scheduler_current()->cwd_ino = noxfs_root_ino();
 
     _footer();
@@ -190,31 +191,20 @@ void kernel_main(void) {
     cpu_sti();
     vga_put_char('\n');
 
-    /* Hand off to the ring-3 init process if present; otherwise fall back
-       to the in-kernel shell.  init runs as a normal user program (its own
-       page directory) and uses fork+execve+waitpid to launch others. */
-    /* Prefer nsh.elf (C shell). Restart on crash (non-zero exit), but
-       stop on clean exit (code == 0) so `exit` actually shuts down. */
-    {
+    /* nsh is the one and only shell: a ring-3 user program with its own
+       address space that launches others via fork+execve+waitpid.
+       It is PID 1 in spirit — if it ever exits (clean or crash) we just
+       relaunch it, so the machine always lands back at a prompt.        */
+    const uint8_t* argv[] = { (const uint8_t*)"nsh.elf", (const uint8_t*)0 };
+    for (;;) {
         vfs_file_t* nsh = vfs_lookup((const uint8_t*)"nsh.elf");
-        if (nsh) {
-            int code;
-            const uint8_t* argv[] = { (const uint8_t*)"nsh.elf", (const uint8_t*)0 };
-            do {
-                exec_run(nsh->data, nsh->size, 1, argv, &code);
-                if (code < 128) break;         /* voluntary exit (0-127) — stop */
-                nsh = vfs_lookup((const uint8_t*)"nsh.elf");
-            } while (nsh);
+        if (!nsh) {
+            vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
+            vga_write((const uint8_t*)"\n  FATAL: nsh.elf not found on disk.\n");
+            for (;;) __asm__ __volatile__("hlt");
         }
-    }
-
-    vfs_file_t* init_elf = vfs_lookup((const uint8_t*)"init.elf");
-    if (init_elf) {
         int code;
-        const uint8_t* argv[] = { (const uint8_t*)"init.elf", (const uint8_t*)0 };
-        exec_run(init_elf->data, init_elf->size, 1, argv, &code);
+        exec_run(nsh->data, nsh->size, 1, argv, &code);
+        /* nsh returned — relaunch it. */
     }
-
-    /* Last resort: kernel shell */
-    shell_run();
 }

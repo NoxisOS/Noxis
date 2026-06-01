@@ -60,16 +60,8 @@ KERNEL_C_OBJS = \
   build/kernel/syscall/sys_misc.o   \
   build/fs/vfs/vfs.o                build/fs/vfs/ramfs.o          \
   build/fs/noxfs/noxfs.o            build/fs/noxfs/buffer.o       \
-  build/fs/pipe/pipe.o              \
-  build/shell/shell.o               \
-  build/shell/commands/cmd_help.o   build/shell/commands/cmd_uptime.o \
-  build/shell/commands/cmd_ls.o     build/shell/commands/cmd_cat.o    \
-  build/shell/commands/cmd_exec.o   build/shell/commands/cmd_clear.o  \
-  build/shell/commands/cmd_halt.o   build/shell/commands/cmd_sleep.o \
-  build/shell/commands/cmd_cd.o     build/shell/commands/cmd_mkdir.o \
-  build/shell/commands/cmd_blkstat.o \
-  build/shell/commands/cmd_memstat.o \
-  build/shell/commands/cmd_memmap.o
+  build/fs/synfs/synfs.o            \
+  build/fs/pipe/pipe.o
 
 # ── Kernel ASM objects ───────────────────────────────────────
 KERNEL_ASM_OBJS = \
@@ -126,40 +118,10 @@ build/noxlib/%.o: src/noxlib/%.asm
 # ── Userland ELFs ─────────────────────────────────────────────
 USER_LD   = src/userland/user.ld
 
-# ASM-only programs (single object, no noxlib)
-ASM_ELFS  = build/hello.elf  build/echo.elf   build/prompt.elf \
-            build/fread.elf  build/fork.elf   build/write.elf  \
-            build/pipe.elf   build/signal.elf \
-            build/ttytest.elf build/pftest.elf build/segv.elf \
-            build/init.elf   build/brktest.elf build/fputest.elf \
-            build/systest.elf build/loop.elf
-
 # C programs (crt0 + prog.o + noxlib.a)
 C_ELFS    = build/ctest.elf build/nsh.elf
 
-USER_ELFS = $(ASM_ELFS) $(C_ELFS)
-
-build/hello.o:   src/userland/hello.asm   ; $(AS) $(ASFLAGS) $< -o $@
-build/echo.o:    src/userland/echo.asm    ; $(AS) $(ASFLAGS) $< -o $@
-build/prompt.o:  src/userland/prompt.asm  ; $(AS) $(ASFLAGS) $< -o $@
-build/fread.o:   src/userland/fread.asm   ; $(AS) $(ASFLAGS) $< -o $@
-build/fork.o:    src/userland/fork.asm    ; $(AS) $(ASFLAGS) $< -o $@
-build/write.o:   src/userland/write.asm   ; $(AS) $(ASFLAGS) $< -o $@
-build/pipe.o:    src/userland/pipe.asm    ; $(AS) $(ASFLAGS) $< -o $@
-build/signal.o:  src/userland/signal.asm  ; $(AS) $(ASFLAGS) $< -o $@
-build/ttytest.o: src/userland/ttytest.asm ; $(AS) $(ASFLAGS) $< -o $@
-build/pftest.o:  src/userland/pftest.asm  ; $(AS) $(ASFLAGS) $< -o $@
-build/segv.o:    src/userland/segv.asm    ; $(AS) $(ASFLAGS) $< -o $@
-build/init.o:    src/userland/init.asm    ; $(AS) $(ASFLAGS) $< -o $@
-build/brktest.o: src/userland/brktest.asm ; $(AS) $(ASFLAGS) $< -o $@
-build/fputest.o: src/userland/fputest.asm ; $(AS) $(ASFLAGS) $< -o $@
-build/systest.o: src/userland/systest.asm ; $(AS) $(ASFLAGS) $< -o $@
-build/loop.o:    src/userland/loop.asm    ; $(AS) $(ASFLAGS) $< -o $@
-
-# Rule for ASM-only ELFs (single object, no noxlib)
-$(ASM_ELFS): build/%.elf: build/%.o $(USER_LD)
-	@echo LD   $@
-	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ $<
+USER_ELFS = $(C_ELFS)
 
 # ── C userland compilation (NOXLIB_CFLAGS) ────────────────────
 build/ctest.o: src/userland/ctest.c
@@ -184,9 +146,7 @@ build/nsh.elf: $(NOXLIB_CRT) build/nsh.o build/noxlib.a $(USER_LD)
 	    $(NOXLIB_CRT) build/nsh.o build/noxlib.a
 
 # ── Disk image ───────────────────────────────────────────────
-ROOTFS_FILES = rootfs/motd rootfs/version rootfs/readme
-
-$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(ROOTFS_FILES) $(USER_ELFS) tools/build_disk.ps1
+$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(USER_ELFS) tools/build_disk.ps1
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo BUILD $(DISK_IMG)
 	powershell -NoProfile -Command "$$bytes=1474560; $$f=New-Object IO.FileStream('$(DISK_IMG)','Create'); $$f.SetLength($$bytes); $$f.Dispose(); $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs=New-Object IO.FileStream('$(DISK_IMG)','Open'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Dispose(); echo '  -> floppy'"

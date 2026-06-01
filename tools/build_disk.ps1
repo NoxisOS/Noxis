@@ -22,27 +22,8 @@ $ino_tbl_blk = 3
 $data_start  = $ino_tbl_blk + $ino_blks
 
 $files = @(
-    @{Name='motd';       Path='rootfs/motd'},
-    @{Name='version';    Path='rootfs/version'},
-    @{Name='readme';     Path='rootfs/readme'},
-    @{Name='hello.elf';  Path='build/hello.elf'},
-    @{Name='echo.elf';   Path='build/echo.elf'},
-    @{Name='prompt.elf'; Path='build/prompt.elf'},
-    @{Name='fread.elf';  Path='build/fread.elf'},
-    @{Name='fork.elf';   Path='build/fork.elf'},
-    @{Name='write.elf';  Path='build/write.elf'},
-    @{Name='pipe.elf';   Path='build/pipe.elf'},
-    @{Name='signal.elf'; Path='build/signal.elf'},
-    @{Name='ttytest.elf';Path='build/ttytest.elf'},
-    @{Name='pftest.elf'; Path='build/pftest.elf'},
-    @{Name='segv.elf';   Path='build/segv.elf'},
-    @{Name='init.elf';   Path='build/init.elf'},
-    @{Name='brktest.elf';Path='build/brktest.elf'},
-    @{Name='fputest.elf';Path='build/fputest.elf'},
-    @{Name='systest.elf';Path='build/systest.elf'},
     @{Name='ctest.elf';  Path='build/ctest.elf'},
-    @{Name='nsh.elf';    Path='build/nsh.elf'},
-    @{Name='loop.elf';   Path='build/loop.elf'}
+    @{Name='nsh.elf';    Path='build/nsh.elf'}
 )
 
 function W32($a, $o, $v) { [Array]::Copy([BitConverter]::GetBytes([uint32]$v),0,$a,$o,4) }

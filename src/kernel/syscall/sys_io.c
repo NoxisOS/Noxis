@@ -3,6 +3,7 @@
  * @brief   I/O syscalls: write, read, ioctl
  */
 #include "syscall_internal.h"
+#include <fs/synfs/synfs.h>
 
 void sys_write(isr_frame_t* frame) {
     uint32_t        fd  = frame->ebx;
@@ -29,6 +30,16 @@ void sys_write(isr_frame_t* frame) {
     if (fd < PROC_MAX_FD && proc->fd_table[fd].used &&
         proc->fd_table[fd].type == FD_PIPE) {
         int32_t n = pipe_write(proc->fd_table[fd].pipe, buf, len);
+        frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
+        return;
+    }
+
+    /* Synthetic file (/proc, /dev) */
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used &&
+        proc->fd_table[fd].type == FD_SYN) {
+        int32_t n = synfs_write(proc->fd_table[fd].syn,
+                                proc->fd_table[fd].pos, buf, len);
+        if (n > 0) proc->fd_table[fd].pos += (uint32_t)n;
         frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
         return;
     }
@@ -63,8 +74,19 @@ void sys_read(isr_frame_t* frame) {
         return;
     }
 
+    /* Synthetic file (/proc, /dev) */
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used &&
+        proc->fd_table[fd].type == FD_SYN) {
+        int32_t n = synfs_read(proc->fd_table[fd].syn,
+                               proc->fd_table[fd].pos, buf, maxlen);
+        if (n > 0) proc->fd_table[fd].pos += (uint32_t)n;
+        frame->eax = n >= 0 ? (uint32_t)n : (uint32_t)-1;
+        return;
+    }
+
     /* File-backed fd */
-    if (fd < PROC_MAX_FD && proc->fd_table[fd].used) {
+    if (fd < PROC_MAX_FD && proc->fd_table[fd].used &&
+        proc->fd_table[fd].type == FD_FILE) {
         vfs_file_t* f  = proc->fd_table[fd].file;
         uint32_t    pos = proc->fd_table[fd].pos;
         uint32_t    rem = f->size - pos;

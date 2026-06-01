@@ -12,6 +12,11 @@
 #include <proc/process.h>
 #include <proc/exec.h>
 
+/* Run-queue heads — exposed for introspection (synfs /proc/sched). */
+extern process_t* g_current;
+extern process_t* g_ready_head;
+extern process_t* g_blocked_head;
+
 /**
  * @brief Initializes the scheduler (creates idle task)
  * @return OS_OK on success

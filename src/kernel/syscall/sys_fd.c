@@ -3,17 +3,39 @@
  * @brief   File-descriptor syscalls: open, creat, close, dup, dup2, lseek, pipe
  */
 #include "syscall_internal.h"
+#include <fs/synfs/synfs.h>
 
 void sys_open(isr_frame_t* frame) {
     const uint8_t* name = (const uint8_t*)frame->ebx;
     if (!name || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
 
+    process_t* proc = scheduler_current();
+
+    /* ── Synthetic files (/proc, /dev) take priority ───────────── */
+    if (synfs_is_synthetic((const char*)name)) {
+        synfs_node_t* sn = synfs_lookup((const char*)name);
+        if (!sn) { frame->eax = (uint32_t)-1; return; }
+        for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
+            if (!proc->fd_table[i].used) {
+                proc->fd_table[i].type = FD_SYN;
+                proc->fd_table[i].syn  = sn;
+                proc->fd_table[i].pos  = 0;
+                proc->fd_table[i].used = TRUE;
+                frame->eax = i;
+                return;
+            }
+        }
+        frame->eax = (uint32_t)-1;
+        return;
+    }
+
+    /* ── Regular files (NoxFS / ramfs) ─────────────────────────── */
     vfs_file_t* f = vfs_lookup(name);
     if (!f) { frame->eax = (uint32_t)-1; return; }
 
-    process_t* proc = scheduler_current();
     for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
         if (!proc->fd_table[i].used) {
+            proc->fd_table[i].type = FD_FILE;
             proc->fd_table[i].file = f;
             proc->fd_table[i].pos  = 0;
             proc->fd_table[i].used = TRUE;
@@ -127,8 +149,13 @@ void sys_lseek(isr_frame_t* frame) {
             (uint32_t)((int32_t)proc->fd_table[fd].pos + offset);
         break;
     case 2: { /* SEEK_END */
-        vfs_file_t* f   = proc->fd_table[fd].file;
-        uint32_t    end = f ? f->size : 0;
+        uint32_t end;
+        if (proc->fd_table[fd].type == FD_SYN)
+            end = synfs_size(proc->fd_table[fd].syn);
+        else {
+            vfs_file_t* f = proc->fd_table[fd].file;
+            end = f ? f->size : 0;
+        }
         if (offset < 0 && (uint32_t)(-offset) > end)
             { frame->eax = (uint32_t)-1; return; }
         proc->fd_table[fd].pos = (uint32_t)((int32_t)end + offset);

@@ -222,6 +222,21 @@ static int exec_builtin(stage_t *st)
     /* ── pwd ── */
     if (strcmp(cmd, "pwd") == 0) { printf("%s\n", g_cwd); return 0; }
 
+    /* ── cat ── (works on regular files AND /proc, /dev synthetic files) */
+    if (strcmp(cmd, "cat") == 0) {
+        if (st->argc < 2) { printf("cat: missing file\n"); return 1; }
+        for (int i = 1; i < st->argc; i++) {
+            int fd = open(st->argv[i], O_RDONLY);
+            if (fd < 0) { printf("cat: %s: not found\n", st->argv[i]); return 1; }
+            char buf[256];
+            int n;
+            while ((n = (int)read(fd, buf, sizeof(buf))) > 0)
+                write(STDOUT_FILENO, buf, n);
+            close(fd);
+        }
+        return 0;
+    }
+
     /* ── ls ── */
     if (strcmp(cmd, "ls") == 0) return builtin_ls();
 
@@ -254,6 +269,7 @@ static int exec_builtin(stage_t *st)
         printf("Builtins:\n");
         printf("  cd [dir]      change directory\n");
         printf("  pwd           print working directory\n");
+        printf("  cat <file>    print file (incl. /proc, /dev)\n");
         printf("  ls            list current directory\n");
         printf("  echo [args]   print arguments  ($? = last exit code)\n");
         printf("  clear         clear screen\n");

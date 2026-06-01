@@ -37,13 +37,16 @@ typedef struct __attribute__((packed)) {
 /* ── open file descriptor slot ─────────────────────────────── */
 #define FD_FILE  0
 #define FD_PIPE  1
+#define FD_SYN   2   /* synthetic file (/proc, /dev) */
 
 struct pipe;
+struct synfs_node;
 typedef struct {
-    uint8_t      type;   /* FD_FILE or FD_PIPE */
+    uint8_t      type;   /* FD_FILE, FD_PIPE, or FD_SYN */
     union {
-        vfs_file_t* file;
-        struct pipe* pipe;
+        vfs_file_t*        file;
+        struct pipe*       pipe;
+        struct synfs_node* syn;
     };
     uint32_t     pos;
     bool_t       used;
