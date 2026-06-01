@@ -188,7 +188,7 @@ void kernel_main(void) {
        /dev/keymap).  Done here, after VFS is up — keymap_init ran earlier
        with only the built-in default available. */
     {
-        vfs_file_t* kc = vfs_lookup((const uint8_t*)"keymap.cfg");
+        vfs_file_t* kc = vfs_lookup((const uint8_t*)"/etc/keymap.cfg");
         if (kc && kc->data && kc->size) {
             char nm[KEYMAP_NAME_MAX];
             uint32_t n = 0;

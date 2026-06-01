@@ -524,6 +524,67 @@ vfs_file_t* noxfs_creat(const uint8_t* name) {
     return f;
 }
 
+vfs_file_t* noxfs_creat_at(uint32_t parent_ino, const uint8_t* name) {
+    if (!g_ready || !name || g_count >= NOXFS_MAX_FILES) return (vfs_file_t*)0;
+
+    uint32_t ino = _ialloc(NOXFS_INO_FILE);
+    if (ino == (uint32_t)-1) return (vfs_file_t*)0;
+
+    if (_dir_add_entry(parent_ino, name, ino, NOXFS_FT_FILE) != OS_OK)
+        return (vfs_file_t*)0;
+
+    vfs_file_t* f = &g_files[g_count];
+    for (uint32_t j = 0; j < 31 && name[j]; j++) f->name[j] = name[j];
+    f->name[31] = 0;
+    f->data     = (uint8_t*)kmalloc(NOXFS_BLKSZ);
+    if (!f->data) return (vfs_file_t*)0;
+    for (uint32_t i = 0; i < NOXFS_BLKSZ; i++) f->data[i] = 0;
+    f->size     = 0;
+    f->inode    = ino;
+    f->capacity = NOXFS_BLKSZ;
+    g_count++;
+    return f;
+}
+
+static uint32_t _dir_lookup_name(uint32_t dir_ino, const uint8_t* name);
+
+/* Create a file at an absolute path, making parent directories as needed. */
+vfs_file_t* noxfs_creat_path(const uint8_t* path) {
+    if (!g_ready || !path || path[0] != '/') return (vfs_file_t*)0;
+
+    /* Walk each component, creating dirs as needed, stop before the last. */
+    uint32_t cur = g_sb.root_ino;
+    const uint8_t* p = path + 1;  /* skip leading '/' */
+
+    while (*p) {
+        /* Extract next component into seg[]. */
+        const uint8_t* start = p;
+        while (*p && *p != '/') p++;
+        uint32_t seglen = (uint32_t)(p - start);
+        if (*p == '/') p++;  /* skip separator */
+
+        uint8_t seg[32];
+        if (seglen == 0 || seglen > 31) return (vfs_file_t*)0;
+        for (uint32_t i = 0; i < seglen; i++) seg[i] = start[i];
+        seg[seglen] = 0;
+
+        if (*p == 0) {
+            /* Last component: this is the file to create. */
+            vfs_file_t* existing = noxfs_lookup(path);
+            if (existing) return existing;
+            return noxfs_creat_at(cur, seg);
+        }
+
+        /* Intermediate component: resolve or mkdir. */
+        uint32_t child = _dir_lookup_name(cur, seg);
+        if (child == (uint32_t)-1)
+            child = noxfs_mkdir(cur, seg);
+        if (child == (uint32_t)-1) return (vfs_file_t*)0;
+        cur = child;
+    }
+    return (vfs_file_t*)0;
+}
+
 void noxfs_sync(void) {
     if (!g_ready) return;
     _sb_write();

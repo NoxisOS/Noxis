@@ -13,9 +13,10 @@
 #include <drivers/pit.h>
 #include <drivers/keymap.h>
 #include <fs/vfs/vfs.h>
+#include <fs/noxfs/noxfs.h>
 #include <common/types.h>
 
-#define KEYMAP_CFG  ((const uint8_t*)"keymap.cfg")
+#define KEYMAP_CFG_PATH ((const uint8_t*)"/etc/keymap.cfg")
 
 /* ── String builder ──────────────────────────────────────────── */
 
@@ -202,9 +203,9 @@ static int32_t _wr_keymap(const uint8_t *buf, uint32_t len) {
     name[k] = '\0';
     if (keymap_set(name)) {
         /* Persist the choice so it survives reboots (read back at boot
-           by keymap_restore()).  Stored as a plain file on NoxFS. */
-        vfs_file_t *f = vfs_lookup(KEYMAP_CFG);
-        if (!f) f = vfs_creat(KEYMAP_CFG);
+           by keymap_restore()).  Stored under /etc on NoxFS. */
+        vfs_file_t *f = vfs_lookup(KEYMAP_CFG_PATH);
+        if (!f) f = noxfs_creat_path(KEYMAP_CFG_PATH);
         if (f) {
             vfs_write_file(f, 0, (const uint8_t*)name, k);
             vfs_sync();

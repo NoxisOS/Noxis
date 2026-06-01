@@ -72,6 +72,8 @@ vfs_file_t*   noxfs_lookup(const uint8_t* name);
 int32_t       noxfs_write(vfs_file_t* f, uint32_t off,
                           const uint8_t* data, uint32_t len);
 vfs_file_t*   noxfs_creat(const uint8_t* name);
+vfs_file_t*   noxfs_creat_at(uint32_t parent_ino, const uint8_t* name);
+vfs_file_t*   noxfs_creat_path(const uint8_t* path);
 void          noxfs_sync(void);
 
 /* ── Phase 2: directories ────────────────────────────────────── */
