@@ -9,6 +9,7 @@
 #include <mm/slab.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
+#include <mm/virt/vmm.h>
 #include <drivers/pit.h>
 #include <drivers/keymap.h>
 #include <fs/vfs/vfs.h>
@@ -33,6 +34,11 @@ void sb_u32(sbuf_t *sb, uint32_t v) {
     if (v == 0) { sb_char(sb, '0'); return; }
     while (v) { tmp[i++] = '0' + (v % 10); v /= 10; }
     while (i--) sb_char(sb, tmp[i]);
+}
+
+static void sb_hex8(sbuf_t *sb, uint32_t v) {
+    static const char hx[] = "0123456789abcdef";
+    for (int i = 7; i >= 0; i--) sb_char(sb, hx[(v >> (i * 4)) & 0xF]);
 }
 
 void sb_pad(sbuf_t *sb, uint32_t to_col) {
@@ -207,6 +213,60 @@ static int32_t _wr_keymap(const uint8_t *buf, uint32_t len) {
     return (int32_t)len;
 }
 
+/* /proc/<pid>/maps — a process's virtual-memory regions, coalesced,
+   with copy-on-write pages flagged.  Prolongs the heatmap per process. */
+typedef struct {
+    sbuf_t  *sb;
+    int      have;
+    uint32_t start, end, flags;
+} maps_ctx_t;
+
+static void _maps_flush(maps_ctx_t *c) {
+    if (!c->have) return;
+    sb_str(c->sb, "  ");
+    sb_hex8(c->sb, c->start); sb_char(c->sb, '-'); sb_hex8(c->sb, c->end);
+    sb_str(c->sb, "  r");
+    /* w = writable, c = copy-on-write (shared read-only), - = read-only */
+    sb_char(c->sb, (c->flags & PAGE_RW)  ? 'w'
+                 : (c->flags & PAGE_COW) ? 'c' : '-');
+    sb_str(c->sb, "   ");
+    sb_u32(c->sb, (c->end - c->start) / PAGE_SIZE);
+    sb_str(c->sb, " pg\n");
+    c->have = 0;
+}
+
+static void _maps_cb(uint32_t vaddr, uint32_t flags, void *ctx) {
+    maps_ctx_t *c = (maps_ctx_t*)ctx;
+    uint32_t pf = flags & (PAGE_RW | PAGE_COW);   /* perms we display */
+    if (c->have && vaddr == c->end && pf == c->flags) {
+        c->end += PAGE_SIZE;                       /* extend region */
+        return;
+    }
+    _maps_flush(c);
+    c->have = 1; c->start = vaddr; c->end = vaddr + PAGE_SIZE; c->flags = pf;
+}
+
+static void _gen_maps(sbuf_t *sb, uint32_t pid) {
+    process_t *p = scheduler_find_proc(pid);
+    if (!p)               { sb_str(sb, "no such process\n"); return; }
+    if (!p->page_dir_phys){ sb_str(sb, "(no private address space)\n"); return; }
+
+    sb_str(sb, "  RANGE                PERM SIZE\n");
+    maps_ctx_t c = { sb, 0, 0, 0, 0 };
+    vmm_walk_user(p->page_dir_phys, _maps_cb, &c);
+    _maps_flush(&c);
+}
+
+static void _gen_status(sbuf_t *sb, uint32_t pid) {
+    process_t *p = scheduler_find_proc(pid);
+    if (!p) { sb_str(sb, "no such process\n"); return; }
+    sb_str(sb, "Name:  "); sb_str(sb, (const char*)p->name); sb_char(sb, '\n');
+    sb_str(sb, "Pid:   "); sb_u32(sb, p->pid);  sb_char(sb, '\n');
+    sb_str(sb, "PPid:  "); sb_u32(sb, p->ppid); sb_char(sb, '\n');
+    sb_str(sb, "State: "); sb_str(sb, _state_str(p->state)); sb_char(sb, '\n');
+    sb_str(sb, "Brk:   0x"); sb_hex8(sb, p->brk); sb_char(sb, '\n');
+}
+
 static void _gen_uptime(sbuf_t *sb, uint32_t arg) {
     (void)arg;
     uint32_t ms = pit_uptime_ms();
@@ -253,22 +313,61 @@ int synfs_is_synthetic(const char *path) {
     return _prefix(path, "/proc") || _prefix(path, "/dev");
 }
 
+static uint32_t _atou(const char *s, const char **end) {
+    uint32_t v = 0;
+    while (*s >= '0' && *s <= '9') { v = v * 10 + (uint32_t)(*s - '0'); s++; }
+    if (end) *end = s;
+    return v;
+}
+
 synfs_node_t *synfs_lookup(const char *path) {
     for (uint32_t i = 0; i < N_NODES; i++)
         if (_streq(path, g_nodes[i].path)) return &g_nodes[i];
+
+    /* Dynamic: /proc/<pid>/maps and /proc/<pid>/status. */
+    if (_prefix(path, "/proc/")) {
+        const char *p = path + 6, *e;
+        uint32_t    pid = _atou(p, &e);
+        if (e != p && *e == '/') {
+            const char *leaf = e + 1;
+            static synfs_node_t dyn;     /* one lookup served at a time */
+            dyn.path = path; dyn.kind = SYN_GEN; dyn.wr = (synfs_wr_fn)0; dyn.arg = pid;
+            if (_streq(leaf, "maps"))   { dyn.gen = _gen_maps;   return &dyn; }
+            if (_streq(leaf, "status")) { dyn.gen = _gen_status; return &dyn; }
+        }
+    }
     return (synfs_node_t*)0;
 }
 
+/* ── Process enumeration (for /proc pid directories) ─────────── */
+
+static process_t *_proc_at(uint32_t idx) {
+    uint32_t i = 0;
+    if (g_current) { if (i == idx) return g_current; i++; }
+    for (process_t *p = g_ready_head;   p; p = p->next) { if (i == idx) return p; i++; }
+    for (process_t *p = g_blocked_head; p; p = p->next) { if (i == idx) return p; i++; }
+    return (process_t*)0;
+}
 /* ── Directory namespace integration ─────────────────────────── */
 
 uint32_t synfs_dir_ino(const char *path) {
     if (_streq(path, "/proc") || _streq(path, "/proc/")) return SYNFS_INO_PROC;
     if (_streq(path, "/dev")  || _streq(path, "/dev/"))  return SYNFS_INO_DEV;
+
+    /* /proc/<pid> (with optional trailing slash). */
+    if (_prefix(path, "/proc/")) {
+        const char *p = path + 6, *e;
+        uint32_t    pid = _atou(p, &e);
+        if (e != p && (*e == '\0' || (*e == '/' && e[1] == '\0'))) {
+            if (scheduler_find_proc(pid)) return SYNFS_INO_PIDBASE + pid;
+        }
+    }
     return 0;
 }
 
 int synfs_is_dir_ino(uint32_t ino) {
-    return ino == SYNFS_INO_PROC || ino == SYNFS_INO_DEV;
+    return ino == SYNFS_INO_PROC || ino == SYNFS_INO_DEV ||
+           (ino >= SYNFS_INO_PIDBASE && ino < SYNFS_INO_PIDBASE + 0x10000u);
 }
 
 /* Copy the basename of a node path (after the last '/') into out. */
@@ -280,21 +379,50 @@ static void _basename(const char *path, char *out) {
     out[i] = '\0';
 }
 
+/* Write a decimal pid into name. */
+static void _u32_str(uint32_t v, char *out) {
+    char tmp[10]; int i = 0;
+    if (v == 0) { out[0] = '0'; out[1] = '\0'; return; }
+    while (v) { tmp[i++] = '0' + (v % 10); v /= 10; }
+    int k = 0;
+    while (i--) out[k++] = tmp[i];
+    out[k] = '\0';
+}
+
 int synfs_dir_entry(uint32_t dir_ino, uint32_t idx, char *name, int *is_dir) {
+    /* /proc/<pid> directory: maps + status. */
+    if (dir_ino >= SYNFS_INO_PIDBASE && dir_ino < SYNFS_INO_PIDBASE + 0x10000u) {
+        if (idx == 0) { name[0]='m';name[1]='a';name[2]='p';name[3]='s';name[4]=0; if(is_dir)*is_dir=0; return 1; }
+        if (idx == 1) { const char* s="status"; int j=0; while(s[j]){name[j]=s[j];j++;} name[j]=0; if(is_dir)*is_dir=0; return 1; }
+        return 0;
+    }
+
     const char *prefix = (dir_ino == SYNFS_INO_PROC) ? "/proc/"
                        : (dir_ino == SYNFS_INO_DEV)  ? "/dev/"
                        : (const char*)0;
     if (!prefix) return 0;
 
+    /* Static nodes under this prefix first. */
     uint32_t seen = 0;
     for (uint32_t i = 0; i < N_NODES; i++) {
         if (!_prefix(g_nodes[i].path, prefix)) continue;
         if (seen == idx) {
             _basename(g_nodes[i].path, name);
-            if (is_dir) *is_dir = 0;   /* all synthetic nodes are files */
+            if (is_dir) *is_dir = 0;
             return 1;
         }
         seen++;
+    }
+
+    /* Then, under /proc only, one <pid> directory per live process. */
+    if (dir_ino == SYNFS_INO_PROC) {
+        uint32_t pidx = idx - seen;
+        process_t *p = _proc_at(pidx);
+        if (p) {
+            _u32_str(p->pid, name);
+            if (is_dir) *is_dir = 1;
+            return 1;
+        }
     }
     return 0;
 }

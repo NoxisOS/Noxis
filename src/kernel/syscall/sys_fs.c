@@ -32,13 +32,28 @@ void sys_chdir(isr_frame_t* frame) {
     uint32_t sino = synfs_dir_ino(p);          /* absolute "/proc","/dev" */
     if (sino) { proc->cwd_ino = sino; frame->eax = 0; return; }
 
-    /* Leaving a synthetic dir: ".." or "/" goes back to the real root. */
+    /* Navigating out of a synthetic dir. */
     if (synfs_is_dir_ino(proc->cwd_ino)) {
-        if (_seq(p, "..") || _seq(p, "/") || _seq(p, "/..")) {
-            proc->cwd_ino = noxfs_root_ino();
+        if (_seq(p, "/")) { proc->cwd_ino = noxfs_root_ino(); frame->eax = 0; return; }
+        if (_seq(p, "..") || _seq(p, "/..")) {
+            /* From /proc/<pid> go up to /proc; from /proc or /dev go to root. */
+            if (proc->cwd_ino >= SYNFS_INO_PIDBASE)
+                proc->cwd_ino = SYNFS_INO_PROC;
+            else
+                proc->cwd_ino = noxfs_root_ino();
             frame->eax = 0; return;
         }
-        frame->eax = (uint32_t)-1; return;     /* flat: no deeper nav */
+        /* Descend from /proc into a <pid> directory: "cd 2". */
+        if (proc->cwd_ino == SYNFS_INO_PROC && p[0] != '/') {
+            char abs[24]; int i = 0;
+            const char* pre = "/proc/";
+            while (pre[i]) { abs[i] = pre[i]; i++; }
+            int j = 0; while (p[j] && i < 22) abs[i++] = p[j++];
+            abs[i] = '\0';
+            uint32_t s = synfs_dir_ino(abs);
+            if (s) { proc->cwd_ino = s; frame->eax = 0; return; }
+        }
+        frame->eax = (uint32_t)-1; return;
     }
 
     /* Relative descent from root into a synthetic dir: "cd proc". */

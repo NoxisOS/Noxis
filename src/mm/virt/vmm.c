@@ -278,6 +278,33 @@ int vmm_handle_cow(uint32_t fault_addr) {
     return 1;
 }
 
+/* ── vmm_walk_user ────────────────────────────────────────────
+   Iterate every present user-space page (PDEs 1..767) of the given
+   page directory and invoke `cb(vaddr, flags, ctx)` for each.  Reads
+   the target PD's page tables through the scratch window, so it works
+   for any PD including the currently-active one.  Used by /proc/<pid>/maps
+   to expose a process's memory layout (including CoW-shared pages).     */
+void vmm_walk_user(uint32_t pd_phys, vmm_walk_fn cb, void* ctx) {
+    if (!cb) return;
+    for (uint32_t pde_i = 1; pde_i < 768; pde_i++) {
+        uint32_t* pd = _scratch(VMM_SCRATCH_0, pd_phys);
+        if (!pd) return;
+        uint32_t pde = pd[pde_i];
+        vmm_invlpg(VMM_SCRATCH_0);
+        if (!(pde & PAGE_PRESENT)) continue;
+
+        uint32_t* pt = _scratch(VMM_SCRATCH_1, pde & ~0xFFFu);
+        if (!pt) continue;
+        for (uint32_t pte_i = 0; pte_i < 1024; pte_i++) {
+            uint32_t pte = pt[pte_i];
+            if (!(pte & PAGE_PRESENT)) continue;
+            uint32_t vaddr = (pde_i << 22) | (pte_i << 12);
+            cb(vaddr, pte & 0xFFFu, ctx);
+        }
+        vmm_invlpg(VMM_SCRATCH_1);
+    }
+}
+
 os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out) {
     uint32_t child_phys;
     os_status_t s = vmm_create_pd(&child_phys);

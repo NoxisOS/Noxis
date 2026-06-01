@@ -75,6 +75,19 @@ uint32_t vmm_unmap_page_in(uint32_t pd_phys, uint32_t virt);
 int vmm_handle_cow(uint32_t fault_addr);
 
 /**
+ * @brief Callback invoked for each present user page during vmm_walk_user.
+ * @param vaddr  page-aligned virtual address
+ * @param flags  the low 12 PTE flag bits (PAGE_RW, PAGE_USER, PAGE_COW, …)
+ * @param ctx    opaque caller context
+ */
+typedef void (*vmm_walk_fn)(uint32_t vaddr, uint32_t flags, void* ctx);
+
+/**
+ * @brief Walk every present user-space mapping of a page directory.
+ */
+void vmm_walk_user(uint32_t pd_phys, vmm_walk_fn cb, void* ctx);
+
+/**
  * @brief Deep-copies all user-space pages (virt < 0xC0000000) from
  *        parent's PD into a freshly-created child PD.
  * @param parent_pd_phys  Parent's page directory physical address.

@@ -17,9 +17,24 @@ void sys_open(isr_frame_t* frame) {
     char        synpath[64];
     const char* lookpath = (const char*)name;
     if (name[0] != '/' && synfs_is_dir_ino(proc->cwd_ino)) {
-        const char* pfx = (proc->cwd_ino == SYNFS_INO_PROC) ? "/proc/" : "/dev/";
         int k = 0;
-        while (pfx[k] && k < 62) { synpath[k] = pfx[k]; k++; }
+        if (proc->cwd_ino == SYNFS_INO_PROC) {
+            const char* pfx = "/proc/";
+            while (pfx[k]) { synpath[k] = pfx[k]; k++; }
+        } else if (proc->cwd_ino == SYNFS_INO_DEV) {
+            const char* pfx = "/dev/";
+            while (pfx[k]) { synpath[k] = pfx[k]; k++; }
+        } else { /* /proc/<pid> */
+            uint32_t pid = proc->cwd_ino - SYNFS_INO_PIDBASE;
+            const char* pre = "/proc/";
+            while (pre[k]) { synpath[k] = pre[k]; k++; }
+            /* append decimal pid */
+            char tmp[10]; int t = 0; uint32_t v = pid;
+            if (v == 0) tmp[t++] = '0';
+            while (v) { tmp[t++] = '0' + (v % 10); v /= 10; }
+            while (t--) synpath[k++] = tmp[t];
+            synpath[k++] = '/';
+        }
         int j = 0;
         while (name[j] && k < 63) { synpath[k++] = name[j++]; }
         synpath[k] = '\0';

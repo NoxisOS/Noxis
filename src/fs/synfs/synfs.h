@@ -61,8 +61,9 @@ typedef struct synfs_node {
    These sentinel "inode" values let the syscall layer track a cwd
    that lives in synfs rather than NoxFS.  They are far above any real
    NoxFS inode number so they never collide.                         */
-#define SYNFS_INO_PROC  0xF0000001u
-#define SYNFS_INO_DEV   0xF0000002u
+#define SYNFS_INO_PROC     0xF0000001u
+#define SYNFS_INO_DEV      0xF0000002u
+#define SYNFS_INO_PIDBASE  0xF0010000u   /* + pid → /proc/<pid> directory */
 
 /* ── API ─────────────────────────────────────────────────────── */
 
