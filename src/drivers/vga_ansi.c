@@ -64,10 +64,10 @@ void vga_ansi_write(const uint8_t* buf, uint32_t len) {
             int code = 0;
             for (int j = 0; j < pcount; j++) code = code*10 + (params[j]-'0');
             if (i < len) {
-                char cmd = buf[i++];
+                char cmd = buf[i];
                 if (cmd == 'm') _apply_sgr(code);
                 else if (cmd == 'J' && code == 2) vga_clear();
-                else if (cmd == 'H') { /* cursor home — not implemented */ }
+                /* cmd consumed, i points to next char — for loop will advance */
             }
         } else {
             vga_put_char(c);

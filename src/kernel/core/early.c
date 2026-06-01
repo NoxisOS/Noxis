@@ -155,6 +155,10 @@ void kernel_main(void) {
     vga_init();
     vga_clear();
 
+    /* Test ANSI parser */
+    vga_ansi_write((const uint8_t*)"\x1b[31m ANSI TEST \x1b[32m GREEN \x1b[0m\n", 42);
+    vga_ansi_write((const uint8_t*)"\x1b[36mCYAN\x1b[0m PLAIN\n", 19);
+
     /* Bring up the serial console first so every boot step is logged to
        COM1 (visible on `make run` / QEMU -serial stdio). */
     serial_init();
