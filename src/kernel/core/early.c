@@ -184,6 +184,23 @@ void kernel_main(void) {
     STEP("FS",   "SYNFS",   synfs_init());
     scheduler_current()->cwd_ino = noxfs_root_ino();
 
+    /* Restore the persisted keyboard layout (written to keymap.cfg by
+       /dev/keymap).  Done here, after VFS is up — keymap_init ran earlier
+       with only the built-in default available. */
+    {
+        vfs_file_t* kc = vfs_lookup((const uint8_t*)"keymap.cfg");
+        if (kc && kc->data && kc->size) {
+            char nm[KEYMAP_NAME_MAX];
+            uint32_t n = 0;
+            while (n < kc->size && n < KEYMAP_NAME_MAX - 1 &&
+                   kc->data[n] != '\n' && kc->data[n] != '\r' &&
+                   kc->data[n] != ' ')
+                nm[n] = (char)kc->data[n], n++;
+            nm[n] = '\0';
+            keymap_set(nm);
+        }
+    }
+
     _footer();
 
     /* Mirror a boot summary to the serial console (visible on QEMU
