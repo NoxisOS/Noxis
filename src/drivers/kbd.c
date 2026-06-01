@@ -6,6 +6,7 @@
  */
 #include <drivers/kbd.h>
 #include <drivers/tty/tty.h>
+#include <drivers/keymap.h>
 #include <kernel/isr/isr.h>
 #include <kernel/hal/ports.h>
 #include <kernel/hal/pic.h>
@@ -28,21 +29,8 @@ static volatile uint8_t  g_shift;
 static volatile uint8_t  g_caps;
 static volatile uint8_t  g_ctrl;
 
-/* ── scancode set 1 (XT) translation tables ─────────────────── */
-
-static const uint8_t _sc_low[128] = {
-    0,    27,  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', '\t',
-    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,   'a', 's',
-    'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'','`',  0,   '\\','z', 'x', 'c', 'v',
-    'b', 'n', 'm', ',', '.', '/',  0,  '*',  0,  ' ',  0,    0,   0,   0,   0,   0,
-};
-
-static const uint8_t _sc_high[128] = {
-    0,    27,  '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b', '\t',
-    'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,   'A', 'S',
-    'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',  0,   '|', 'Z', 'X', 'C', 'V',
-    'B', 'N', 'M', '<', '>', '?',  0,  '*',  0,  ' ',  0,    0,   0,   0,   0,   0,
-};
+/* Scancode→char translation now comes from the active keyboard layout
+   (drivers/keymap.c), switchable at runtime via /dev/keymap. */
 
 /* ── ISR ───────────────────────────────────────────────────── */
 
@@ -70,7 +58,8 @@ static void _kbd_isr(isr_frame_t* frame) {
 
     if (release) return;
 
-    uint8_t c = g_shift ? _sc_high[code] : _sc_low[code];
+    const keymap_t* km = keymap_active();
+    uint8_t c = g_shift ? km->high[code] : km->low[code];
     if (!c) return;
 
     if (g_caps) {

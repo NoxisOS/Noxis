@@ -263,6 +263,27 @@ static int exec_builtin(stage_t *st)
         return 0;
     }
 
+    /* ── keymap ── (show or switch keyboard layout) */
+    if (strcmp(cmd, "keymap") == 0) {
+        if (st->argc < 2) {
+            /* No arg: print /proc/keymap. */
+            int fd = open("/proc/keymap", O_RDONLY);
+            if (fd < 0) { printf("keymap: unavailable\n"); return 1; }
+            char buf[128]; int n;
+            while ((n = (int)read(fd, buf, sizeof(buf))) > 0)
+                write(STDOUT_FILENO, buf, n);
+            close(fd);
+            return 0;
+        }
+        /* Switch: write the name to /dev/keymap. */
+        int fd = open("/dev/keymap", O_RDONLY);   /* flags ignored by kernel */
+        if (fd < 0) { printf("keymap: cannot open control file\n"); return 1; }
+        write(fd, st->argv[1], (int)strlen(st->argv[1]));
+        close(fd);
+        printf("keymap: switched to %s\n", st->argv[1]);
+        return 0;
+    }
+
     /* ── ls ── */
     if (strcmp(cmd, "ls") == 0) return builtin_ls();
 
@@ -297,6 +318,7 @@ static int exec_builtin(stage_t *st)
         printf("  pwd           print working directory\n");
         printf("  cat <file>    print file (incl. /proc, /dev)\n");
         printf("  mkdir <dir>   create a directory\n");
+        printf("  keymap [name] show / switch keyboard layout (us, fr)\n");
         printf("  ls            list current directory\n");
         printf("  echo [args]   print arguments  ($? = last exit code)\n");
         printf("  clear         clear screen\n");

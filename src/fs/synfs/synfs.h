@@ -44,12 +44,16 @@ typedef enum {
 } synfs_kind_t;
 
 struct synfs_node;
-typedef void (*synfs_gen_fn)(sbuf_t *sb, uint32_t arg);
+typedef void    (*synfs_gen_fn)(sbuf_t *sb, uint32_t arg);
+/* Control-file write handler: receives the bytes written, returns the
+   number consumed (or -1 on error). Used by e.g. /dev/keymap. */
+typedef int32_t (*synfs_wr_fn)(const uint8_t *buf, uint32_t len);
 
 typedef struct synfs_node {
     const char   *path;    /* e.g. "/proc/meminfo" */
     synfs_kind_t  kind;
-    synfs_gen_fn  gen;      /* for SYN_GEN */
+    synfs_gen_fn  gen;      /* read content generator (SYN_GEN) */
+    synfs_wr_fn   wr;       /* optional write handler (control files) */
     uint32_t      arg;      /* generic (e.g. pid) */
 } synfs_node_t;
 

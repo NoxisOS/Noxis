@@ -10,6 +10,7 @@
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <drivers/pit.h>
+#include <drivers/keymap.h>
 #include <common/types.h>
 
 /* ── String builder ──────────────────────────────────────────── */
@@ -166,6 +167,34 @@ static void _gen_memmap(sbuf_t *sb, uint32_t arg) {
     sb_u32(sb, total * 4 / 1024); sb_str(sb, " MB)\n");
 }
 
+/* /proc/keymap and /dev/keymap — show / switch the keyboard layout. */
+static void _gen_keymap(sbuf_t *sb, uint32_t arg) {
+    (void)arg;
+    sb_str(sb, "active: ");
+    sb_str(sb, keymap_active_name());
+    sb_str(sb, "\navailable:");
+    for (uint32_t i = 0; i < keymap_count(); i++) {
+        sb_char(sb, ' ');
+        sb_str(sb, keymap_at(i)->name);
+    }
+    sb_char(sb, '\n');
+}
+
+/* Write handler: parse a layout name (trim surrounding whitespace) and
+   switch to it.  `echo fr > /dev/keymap` just works. */
+static int32_t _wr_keymap(const uint8_t *buf, uint32_t len) {
+    char name[KEYMAP_NAME_MAX];
+    uint32_t i = 0, k = 0;
+    while (i < len && (buf[i] == ' ' || buf[i] == '\t')) i++;   /* lstrip */
+    while (i < len && k < KEYMAP_NAME_MAX - 1 &&
+           buf[i] != '\n' && buf[i] != '\r' &&
+           buf[i] != ' '  && buf[i] != '\t')
+        name[k++] = (char)buf[i++];
+    name[k] = '\0';
+    keymap_set(name);            /* unknown name → no-op, bytes still consumed */
+    return (int32_t)len;
+}
+
 static void _gen_uptime(sbuf_t *sb, uint32_t arg) {
     (void)arg;
     uint32_t ms = pit_uptime_ms();
@@ -180,14 +209,16 @@ static void _gen_uptime(sbuf_t *sb, uint32_t arg) {
 /* ── Node registry ───────────────────────────────────────────── */
 
 static synfs_node_t g_nodes[] = {
-    { "/proc/meminfo", SYN_GEN,    _gen_meminfo, 0 },
-    { "/proc/slab",    SYN_GEN,    _gen_slab,    0 },
-    { "/proc/sched",   SYN_GEN,    _gen_sched,   0 },
-    { "/proc/memmap",  SYN_GEN,    _gen_memmap,  0 },
-    { "/proc/uptime",  SYN_GEN,    _gen_uptime,  0 },
-    { "/dev/null",     SYN_NULL,   (synfs_gen_fn)0, 0 },
-    { "/dev/zero",     SYN_ZERO,   (synfs_gen_fn)0, 0 },
-    { "/dev/random",   SYN_RANDOM, (synfs_gen_fn)0, 0 },
+    { "/proc/meminfo", SYN_GEN,    _gen_meminfo, (synfs_wr_fn)0, 0 },
+    { "/proc/slab",    SYN_GEN,    _gen_slab,    (synfs_wr_fn)0, 0 },
+    { "/proc/sched",   SYN_GEN,    _gen_sched,   (synfs_wr_fn)0, 0 },
+    { "/proc/memmap",  SYN_GEN,    _gen_memmap,  (synfs_wr_fn)0, 0 },
+    { "/proc/uptime",  SYN_GEN,    _gen_uptime,  (synfs_wr_fn)0, 0 },
+    { "/proc/keymap",  SYN_GEN,    _gen_keymap,  (synfs_wr_fn)0, 0 },
+    { "/dev/keymap",   SYN_GEN,    _gen_keymap,  _wr_keymap,     0 },
+    { "/dev/null",     SYN_NULL,   (synfs_gen_fn)0, (synfs_wr_fn)0, 0 },
+    { "/dev/zero",     SYN_ZERO,   (synfs_gen_fn)0, (synfs_wr_fn)0, 0 },
+    { "/dev/random",   SYN_RANDOM, (synfs_gen_fn)0, (synfs_wr_fn)0, 0 },
 };
 #define N_NODES (sizeof(g_nodes) / sizeof(g_nodes[0]))
 
@@ -304,9 +335,11 @@ int32_t synfs_read(synfs_node_t *n, uint32_t off, uint8_t *buf, uint32_t len) {
 }
 
 int32_t synfs_write(synfs_node_t *n, uint32_t off, const uint8_t *buf, uint32_t len) {
-    (void)off; (void)buf;
+    (void)off;
     if (!n) return -1;
-    /* /dev/null and /dev/zero accept and discard; proc files ignore writes. */
+    /* Control files (e.g. /dev/keymap) act on what's written. */
+    if (n->wr) return n->wr(buf, len);
+    /* Everything else accepts and discards. */
     return (int32_t)len;
 }
 
