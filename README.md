@@ -87,6 +87,12 @@ malloc zones.
 Verified leak-free with `memstat` before/after `fork`+`exec`+`waitpid`
 cycles: `process_t live=` returns to baseline and the heap stops shrinking.
 
+**Live memory heatmap** (`memmap` shell command) — renders the PMM frame
+bitmap as a 64×16 grid of colored blocks in VGA: dim grey = free, red =
+kernel/reserved, green = user-allocated, magenta = copy-on-write shared.
+Fork a process and re-run it to watch the shared pages light up magenta —
+the CoW machinery made visible.
+
 ### Drivers
 - VGA 80×25 text mode — putchar, scrolling, 16 colors
 - PS/2 keyboard — scancode → ASCII, buffered input

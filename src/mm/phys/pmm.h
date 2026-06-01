@@ -50,6 +50,12 @@ void pmm_ref_inc(uint32_t frame);
 uint32_t pmm_ref_count(uint32_t frame);
 
 /**
+ * @brief Tests whether a frame (by index) is currently allocated.
+ * @return 1 if used, 0 if free or out of range.
+ */
+uint32_t pmm_frame_used(uint32_t idx);
+
+/**
  * @brief Returns the number of free frames
  * @return Free frame count
  */

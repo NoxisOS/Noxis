@@ -34,6 +34,7 @@ extern const shell_cmd_t cmd_cd;
 extern const shell_cmd_t cmd_mkdir;
 extern const shell_cmd_t cmd_blkstat;
 extern const shell_cmd_t cmd_memstat;
+extern const shell_cmd_t cmd_memmap;
 
 static const shell_cmd_t* g_cmds[] = {
     &cmd_help,
@@ -45,6 +46,7 @@ static const shell_cmd_t* g_cmds[] = {
     &cmd_mkdir,
     &cmd_blkstat,
     &cmd_memstat,
+    &cmd_memmap,
     &cmd_clear,
     &cmd_halt,
     &cmd_sleep,

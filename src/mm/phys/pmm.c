@@ -75,12 +75,16 @@ os_status_t pmm_init(uint32_t total_memory) {
     uint32_t bitmap_frames      = PMM_BITMAP_SIZE / PMM_FRAME_SIZE;
     _mark_used(bitmap_start_frame, bitmap_frames);
 
-    /* Mark frames beyond total_memory as used */
+    /* Mark frames beyond total_memory as used in the bitmap (defensive —
+       pmm_alloc_frame only scans up to g_total_frames anyway).
+       NOTE: do NOT subtract these from g_free_count.  g_free_count was
+       initialised to total_frames, so it only ever accounts for frames
+       within [0, total_frames); the frames beyond it were never counted
+       as free.  Subtracting them here underflowed the counter. */
     if (total_frames < PMM_TOTAL_FRAMES) {
         for (uint32_t i = total_frames; i < PMM_TOTAL_FRAMES; i++) {
             _bitmap_set(i);
         }
-        g_free_count -= (PMM_TOTAL_FRAMES - total_frames);
     }
 
     return OS_OK;
@@ -132,6 +136,11 @@ void pmm_ref_inc(uint32_t frame) {
 uint32_t pmm_ref_count(uint32_t frame) {
     uint32_t idx = frame / PMM_FRAME_SIZE;
     return _rc_tracked(idx) ? g_refcount[idx] : 1;
+}
+
+uint32_t pmm_frame_used(uint32_t idx) {
+    if (idx >= g_total_frames) return 0;
+    return _bitmap_test(idx) ? 1 : 0;
 }
 
 uint32_t pmm_get_free_count(void) {

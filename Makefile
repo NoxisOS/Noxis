@@ -68,7 +68,8 @@ KERNEL_C_OBJS = \
   build/shell/commands/cmd_halt.o   build/shell/commands/cmd_sleep.o \
   build/shell/commands/cmd_cd.o     build/shell/commands/cmd_mkdir.o \
   build/shell/commands/cmd_blkstat.o \
-  build/shell/commands/cmd_memstat.o
+  build/shell/commands/cmd_memstat.o \
+  build/shell/commands/cmd_memmap.o
 
 # ── Kernel ASM objects ───────────────────────────────────────
 KERNEL_ASM_OBJS = \
