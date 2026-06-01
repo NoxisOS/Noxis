@@ -216,6 +216,54 @@ synfs_node_t *synfs_lookup(const char *path) {
     return (synfs_node_t*)0;
 }
 
+/* ── Directory namespace integration ─────────────────────────── */
+
+uint32_t synfs_dir_ino(const char *path) {
+    if (_streq(path, "/proc") || _streq(path, "/proc/")) return SYNFS_INO_PROC;
+    if (_streq(path, "/dev")  || _streq(path, "/dev/"))  return SYNFS_INO_DEV;
+    return 0;
+}
+
+int synfs_is_dir_ino(uint32_t ino) {
+    return ino == SYNFS_INO_PROC || ino == SYNFS_INO_DEV;
+}
+
+/* Copy the basename of a node path (after the last '/') into out. */
+static void _basename(const char *path, char *out) {
+    const char *p = path, *last = path;
+    while (*p) { if (*p == '/') last = p + 1; p++; }
+    int i = 0;
+    while (last[i] && i < 23) { out[i] = last[i]; i++; }
+    out[i] = '\0';
+}
+
+int synfs_dir_entry(uint32_t dir_ino, uint32_t idx, char *name, int *is_dir) {
+    const char *prefix = (dir_ino == SYNFS_INO_PROC) ? "/proc/"
+                       : (dir_ino == SYNFS_INO_DEV)  ? "/dev/"
+                       : (const char*)0;
+    if (!prefix) return 0;
+
+    uint32_t seen = 0;
+    for (uint32_t i = 0; i < N_NODES; i++) {
+        if (!_prefix(g_nodes[i].path, prefix)) continue;
+        if (seen == idx) {
+            _basename(g_nodes[i].path, name);
+            if (is_dir) *is_dir = 0;   /* all synthetic nodes are files */
+            return 1;
+        }
+        seen++;
+    }
+    return 0;
+}
+
+/* Top-level synthetic directories injected into the root listing.
+   Names carry a leading '/' so they render as "/proc/", "/dev/" —
+   visually distinguishing the synthetic mounts from on-disk files. */
+static const char *g_root_dirs[] = { "/proc", "/dev" };
+
+uint32_t    synfs_root_dirs(void)            { return 2; }
+const char *synfs_root_dir_name(uint32_t i)  { return i < 2 ? g_root_dirs[i] : (const char*)0; }
+
 /* ── Read / write ─────────────────────────────────────────────── */
 
 static uint32_t g_rng = 0x12345678u;

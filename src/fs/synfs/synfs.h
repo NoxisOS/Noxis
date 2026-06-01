@@ -53,6 +53,13 @@ typedef struct synfs_node {
     uint32_t      arg;      /* generic (e.g. pid) */
 } synfs_node_t;
 
+/* ── Synthetic directory inodes ──────────────────────────────
+   These sentinel "inode" values let the syscall layer track a cwd
+   that lives in synfs rather than NoxFS.  They are far above any real
+   NoxFS inode number so they never collide.                         */
+#define SYNFS_INO_PROC  0xF0000001u
+#define SYNFS_INO_DEV   0xF0000002u
+
 /* ── API ─────────────────────────────────────────────────────── */
 
 /* Register the built-in /proc and /dev nodes. Call once at boot. */
@@ -60,6 +67,24 @@ void          synfs_init(void);
 
 /* 1 if `path` belongs to synfs (starts with /proc or /dev). */
 int           synfs_is_synthetic(const char *path);
+
+/* If `path` is a synthetic directory ("/proc" or "/dev"), return its
+ * sentinel inode; otherwise 0. */
+uint32_t      synfs_dir_ino(const char *path);
+
+/* 1 if `ino` is one of the synthetic directory sentinels. */
+int           synfs_is_dir_ino(uint32_t ino);
+
+/* Enumerate children of a synthetic directory.  Writes the child's
+ * basename into `name` (NUL-terminated, <= 23 chars) and sets *is_dir.
+ * Returns 1 if `idx` is valid, 0 past the end. */
+int           synfs_dir_entry(uint32_t dir_ino, uint32_t idx,
+                              char *name, int *is_dir);
+
+/* Number of top-level synthetic directories injected into root (proc,dev)
+ * plus a helper to fetch their names. */
+uint32_t      synfs_root_dirs(void);
+const char   *synfs_root_dir_name(uint32_t i);
 
 /* Resolve a path to a node, or NULL.  Handles dynamic /proc/<pid>. */
 synfs_node_t *synfs_lookup(const char *path);

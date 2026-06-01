@@ -11,9 +11,24 @@ void sys_open(isr_frame_t* frame) {
 
     process_t* proc = scheduler_current();
 
+    /* Build an absolute path for synthetic lookups: if the cwd is a
+       synthetic directory and the name is relative, prepend its prefix
+       (so `cd /proc; cat meminfo` resolves to /proc/meminfo).         */
+    char        synpath[64];
+    const char* lookpath = (const char*)name;
+    if (name[0] != '/' && synfs_is_dir_ino(proc->cwd_ino)) {
+        const char* pfx = (proc->cwd_ino == SYNFS_INO_PROC) ? "/proc/" : "/dev/";
+        int k = 0;
+        while (pfx[k] && k < 62) { synpath[k] = pfx[k]; k++; }
+        int j = 0;
+        while (name[j] && k < 63) { synpath[k++] = name[j++]; }
+        synpath[k] = '\0';
+        lookpath = synpath;
+    }
+
     /* ── Synthetic files (/proc, /dev) take priority ───────────── */
-    if (synfs_is_synthetic((const char*)name)) {
-        synfs_node_t* sn = synfs_lookup((const char*)name);
+    if (synfs_is_synthetic(lookpath)) {
+        synfs_node_t* sn = synfs_lookup(lookpath);
         if (!sn) { frame->eax = (uint32_t)-1; return; }
         for (uint32_t i = 3; i < PROC_MAX_FD; i++) {
             if (!proc->fd_table[i].used) {
