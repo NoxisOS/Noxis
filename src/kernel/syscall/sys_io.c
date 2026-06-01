@@ -13,13 +13,9 @@ void sys_write(isr_frame_t* frame) {
     if (len == 0) return;
     if (!_user_range_ok(frame->esi, len)) { frame->eax = (uint32_t)-1; return; }
 
-    /* stdout / stderr → VGA */
+    /* stdout / stderr → VGA (with ANSI escape support) */
     if (fd == STDOUT_FD || fd == STDERR_FD || fd == 0) {
-        for (uint32_t i = 0; i < len; i++) {
-            uint8_t c = buf[i];
-            if (c == 0) break;
-            vga_put_char(c);
-        }
+        vga_ansi_write(buf, len);
         frame->eax = len;
         return;
     }

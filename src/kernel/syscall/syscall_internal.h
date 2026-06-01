@@ -82,6 +82,8 @@ void sys_mkdir     (isr_frame_t* frame);
 void sys_chdir     (isr_frame_t* frame);
 void sys_getdents  (isr_frame_t* frame);
 void sys_stat      (isr_frame_t* frame);
+void sys_unlink    (isr_frame_t* frame);
+void sys_rename    (isr_frame_t* frame);
 
 /* sys_proc.c */
 void sys_exit      (isr_frame_t* frame);

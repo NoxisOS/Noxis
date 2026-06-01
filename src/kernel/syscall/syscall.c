@@ -49,6 +49,8 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_SLEEP:       sys_sleep      (frame); break;
     case SYS_SIGRETURN:   sys_sigreturn  (frame); break;
     case SYS_SIGPROCMASK: sys_sigprocmask(frame); break;
+    case SYS_UNLINK:      sys_unlink     (frame); break;
+    case SYS_RENAME:      sys_rename     (frame); break;
     default: break;
     }
 }

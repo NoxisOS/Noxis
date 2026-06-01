@@ -48,6 +48,7 @@ KERNEL_C_OBJS = \
   build/drivers/pit.o               build/drivers/kbd.o           \
   build/drivers/keymap.o            \
   build/drivers/ata.o               build/drivers/vga.o           \
+  build/kernel/vga_ansi.o                                       \
   build/drivers/block/block.o       build/drivers/serial.o        \
   build/drivers/tty/tty.o           \
   build/proc/process.o              build/proc/scheduler.o        \

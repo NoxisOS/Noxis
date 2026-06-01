@@ -58,6 +58,8 @@ section .text
 %define SYS_SLEEP       25
 %define SYS_SIGRETURN   26
 %define SYS_SIGPROCMASK 27
+%define SYS_UNLINK      28
+%define SYS_RENAME      29
 
 ; ────────────────────────────────────────────────────────────
 ; 0-argument syscalls
@@ -230,18 +232,34 @@ execve:
     pop  edi
     pop  esi
     pop  ebx
-    ret                      ; only reached on error (EAX = -1)
+    ret
 
-; int _sys_brk(unsigned int addr)
-global _sys_brk
-_sys_brk:
+; int unlink(const char *path)
+global unlink
+unlink:
     push ebx
-    mov  eax, SYS_BRK
-    mov  ebx, [esp+8]        ; new break (0 = query)
+    mov  eax, SYS_UNLINK
+    mov  ebx, [esp+8]        ; path
     lea  edx, [.ret]
     mov  ecx, esp
     sysenter
 .ret:
+    pop  ebx
+    ret
+
+; int rename(const char *old, const char *new)
+global rename
+rename:
+    push ebx
+    push esi
+    mov  eax, SYS_RENAME
+    mov  ebx, [esp+12]       ; old path
+    mov  esi, [esp+16]       ; new path
+    lea  edx, [.ret]
+    mov  ecx, esp
+    sysenter
+.ret:
+    pop  esi
     pop  ebx
     ret
 
@@ -513,5 +531,18 @@ sigprocmask:
 .ret:
     pop  edi
     pop  esi
+    pop  ebx
+    ret
+
+; int _sys_brk(unsigned int addr)
+global _sys_brk
+_sys_brk:
+    push ebx
+    mov  eax, SYS_BRK
+    mov  ebx, [esp+8]
+    lea  edx, [.ret]
+    mov  ecx, esp
+    sysenter
+.ret:
     pop  ebx
     ret
