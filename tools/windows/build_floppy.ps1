@@ -14,20 +14,26 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$FLOPPY_SIZE = 1474560  # 1.44 MB = 2880 sectors x 512
-
-$img = New-Object byte[] $FLOPPY_SIZE
 
 $mbr    = [IO.File]::ReadAllBytes($Mbr)
 $loader = [IO.File]::ReadAllBytes($Loader)
 $kernel = [IO.File]::ReadAllBytes($Kernel)
 
-# MBR at sector 0 (offset 0)
-[Array]::Copy($mbr,    0, $img,    0, [Math]::Min($mbr.Length,    512))
-# Stage-2 loader at sector 1 (offset 512)
-[Array]::Copy($loader, 0, $img,  512, $loader.Length)
-# Kernel at sector 5 (offset 2560)
-[Array]::Copy($kernel, 0, $img, 2560, $kernel.Length)
+# Create blank 1.44 MB image (2880 sectors x 512)
+$fs = New-Object IO.FileStream($Out, [IO.FileMode]::Create)
+$fs.SetLength(1474560)
 
-[IO.File]::WriteAllBytes($Out, $img)
+# MBR at sector 0 (offset 0)
+$fs.Position = 0
+$fs.Write($mbr, 0, $mbr.Length)
+
+# Stage-2 loader at sector 1 (offset 512)
+$fs.Position = 512
+$fs.Write($loader, 0, $loader.Length)
+
+# Kernel at sector 5 (offset 2560)
+$fs.Position = 2560
+$fs.Write($kernel, 0, $kernel.Length)
+
+$fs.Dispose()
 Write-Host "  -> $Out  (floppy 1.44 MB)"

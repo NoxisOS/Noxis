@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo_noxis.png.png" alt="Noxis OS Logo" width="120" />
+<img src="docs/logo_noxis.ico" alt="Noxis OS Logo" width="120" />
 
 <br/>
 
