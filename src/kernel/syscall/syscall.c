@@ -51,6 +51,8 @@ static void _syscall_dispatch(isr_frame_t* frame) {
     case SYS_SIGPROCMASK: sys_sigprocmask(frame); break;
     case SYS_UNLINK:      sys_unlink     (frame); break;
     case SYS_RENAME:      sys_rename     (frame); break;
+    case SYS_CHMOD:       sys_chmod      (frame); break;
+    case SYS_RMDIR:       sys_rmdir      (frame); break;
     default: break;
     }
 }

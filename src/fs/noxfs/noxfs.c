@@ -314,6 +314,7 @@ static os_status_t _store_data(uint32_t ino, const uint8_t* data,
     for (uint32_t s = 0; s < new_blks; s++) {
         uint32_t blk = _iget_block(&in, s, 1);
         if (blk == 0) return OS_ERR_OOM;
+
         buf_t* bp = bread(BUF_DEV_ATA, blk);
         if (!bp) return OS_ERR_IO;
         uint32_t copy = NOXFS_BLKSZ;
@@ -512,7 +513,7 @@ vfs_file_t* noxfs_creat(const uint8_t* name) {
     if (!g_ready || !name || g_count >= NOXFS_MAX_FILES) return (vfs_file_t*)0;
     if (noxfs_lookup(name)) return (vfs_file_t*)0;
 
-    uint32_t ino = _ialloc(NOXFS_INO_FILE);
+    uint32_t ino = _ialloc(NOXFS_MODE_FILE);
     if (ino == (uint32_t)-1) return (vfs_file_t*)0;
 
     if (_dir_add_entry(g_sb.root_ino, name, ino, NOXFS_FT_FILE) != OS_OK) {
@@ -536,7 +537,7 @@ vfs_file_t* noxfs_creat(const uint8_t* name) {
 vfs_file_t* noxfs_creat_at(uint32_t parent_ino, const uint8_t* name) {
     if (!g_ready || !name || g_count >= NOXFS_MAX_FILES) return (vfs_file_t*)0;
 
-    uint32_t ino = _ialloc(NOXFS_INO_FILE);
+    uint32_t ino = _ialloc(NOXFS_MODE_FILE);
     if (ino == (uint32_t)-1) return (vfs_file_t*)0;
 
     if (_dir_add_entry(parent_ino, name, ino, NOXFS_FT_FILE) != OS_OK)
@@ -807,7 +808,7 @@ uint32_t noxfs_mkdir(uint32_t parent_ino, const uint8_t* name) {
     if (_dir_lookup_name(parent_ino, name) != (uint32_t)-1)
         return (uint32_t)-1; /* already exists */
 
-    uint32_t dir_ino = _ialloc(NOXFS_INO_DIR);
+    uint32_t dir_ino = _ialloc(NOXFS_MODE_DIR);
     if (dir_ino == (uint32_t)-1) return (uint32_t)-1;
 
     /* Allocate data block for "." and ".." entries */
@@ -903,10 +904,38 @@ os_status_t noxfs_stat(uint32_t ino, vfs_file_t* out) {
     out->data    = (uint8_t*)0;
     out->size    = in.size;
     out->inode   = ino;
-    out->capacity = ((in.mode & NOXFS_INO_DIR) ? NOXFS_INO_DIR : 0)
-                  | ((in.mode & NOXFS_INO_FILE) ? NOXFS_INO_FILE : 0);
+    out->capacity = in.mode;   /* full mode: type bits + permission bits */
 
     return OS_OK;
+}
+
+/* Change permission bits of an inode (preserves type bits). */
+os_status_t noxfs_chmod(uint32_t ino, uint16_t perm) {
+    if (!g_ready) return OS_ERR_INVALID;
+    noxfs_inode_t in;
+    if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
+    in.mode = (uint16_t)((in.mode & ~NOXFS_PERM_MASK) | (perm & NOXFS_PERM_MASK));
+    return _iwrite(ino, &in);
+}
+
+/* Remove an empty directory from its parent. */
+os_status_t noxfs_rmdir(uint32_t parent_ino, const uint8_t* name) {
+    if (!g_ready || !name) return OS_ERR_INVALID;
+
+    uint32_t ino = _dir_lookup_name(parent_ino, name);
+    if (ino == (uint32_t)-1) return OS_ERR_NOT_FOUND;
+
+    noxfs_inode_t in;
+    if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
+
+    /* Must be a directory */
+    if (!(in.mode & NOXFS_INO_DIR)) return OS_ERR_INVALID;
+
+    /* Must be empty (only . and ..) */
+    if (in.size > 2 * sizeof(noxfs_dirent_t)) return OS_ERR_INVALID;
+
+    /* Delegate to unlink which handles block/inode freeing */
+    return noxfs_unlink(parent_ino, name);
 }
 
 uint32_t noxfs_root_ino(void) {

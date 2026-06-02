@@ -162,7 +162,11 @@ build/nsh.elf: $(NOXLIB_CRT) build/nsh.o build/noxlib.a $(USER_LD)
 	    $(NOXLIB_CRT) build/nsh.o build/noxlib.a
 
 # ── Disk image ───────────────────────────────────────────────
-$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(USER_ELFS)
+# Disk-builder scripts are dependencies so editing them forces a rebuild.
+DISK_TOOLS = tools/windows/build_floppy.ps1 tools/windows/build_disk.ps1 \
+             tools/linux/build_floppy.sh    tools/linux/build_disk.sh
+
+$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(USER_ELFS) $(DISK_TOOLS)
 	$(KILL_QEMU)
 	@echo BUILD $(DISK_IMG)
 	$(MAKE_FLOPPY)

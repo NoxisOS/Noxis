@@ -31,6 +31,19 @@ typedef struct __attribute__((packed)) {
     char name[24];
 } dirent_t;
 
+/* ── stat result (matches vfs_file_t fields used by sys_stat) ── */
+/* MUST match vfs_file_t layout exactly (fs/vfs/vfs.h). */
+typedef struct {
+    char     name[32];
+    uint8_t *data;
+    uint32_t size;
+    uint32_t inode;
+    uint32_t capacity;   /* sys_stat stores the full mode here */
+} stat_t;
+
+#define NOXFS_INO_DIR   0x4000u
+#define NOXFS_INO_FILE  0x8000u
+
 typedef struct {
     char *argv[MAX_ARGS+1]; int argc;
     char *redir_in, *redir_out; int append;
@@ -176,6 +189,21 @@ static int readline(char *buf, int max) {
 /* ══════════════════════════════════════════════════════════════
  * Builtins
  * ══════════════════════════════════════════════════════════════ */
+/* Convert mode bits to "drwxrwxrwx" string (10 chars + NUL). */
+static void _mode_str(uint32_t mode, char *out) {
+    out[0] = (mode & NOXFS_INO_DIR) ? 'd' : '-';
+    out[1] = (mode & 0x100) ? 'r' : '-';  /* owner r */
+    out[2] = (mode & 0x080) ? 'w' : '-';  /* owner w */
+    out[3] = (mode & 0x040) ? 'x' : '-';  /* owner x */
+    out[4] = (mode & 0x020) ? 'r' : '-';  /* group r */
+    out[5] = (mode & 0x010) ? 'w' : '-';  /* group w */
+    out[6] = (mode & 0x008) ? 'x' : '-';  /* group x */
+    out[7] = (mode & 0x004) ? 'r' : '-';  /* other r */
+    out[8] = (mode & 0x002) ? 'w' : '-';  /* other w */
+    out[9] = (mode & 0x001) ? 'x' : '-';  /* other x */
+    out[10]= '\0';
+}
+
 static int builtin_ls(void) {
     char buf[DIRENT_SZ*128];
     int n=getdents(99,buf,(int)sizeof(buf));
@@ -185,10 +213,18 @@ static int builtin_ls(void) {
         if(de->inode==0)continue;
         int nl=de->name_len<24?de->name_len:24; char nm[25]; memcpy(nm,de->name,nl);nm[nl]=0;
         if(!strcmp(nm,".")||!strcmp(nm,".."))continue;
-        /* Synfs dirs already carry a leading '/' in nm (/proc, /dev).
-           Regular NoxFS dirs don't (test, etc). Print as-is + trailing /. */
-        if(de->file_type==FT_DIR) printf("  %s/\n",nm);
-        else                      printf("  %s\n",nm);
+
+        /* Get permissions via stat (use name relative to cwd).
+           Synfs entries (/proc /dev) start with '/' — strip it for stat. */
+        char mstr[11]; mstr[0]=0;
+        stat_t sb;
+        const char *statname = (nm[0]=='/') ? nm+1 : nm;
+        if(stat(statname, &sb)==0) _mode_str(sb.capacity, mstr);
+
+        if(de->file_type==FT_DIR)
+            printf("  %s  %s/\n", mstr[0] ? mstr : "----------", nm);
+        else
+            printf("  %s  %s\n",  mstr[0] ? mstr : "----------", nm);
     }
     return 0;
 }
@@ -236,6 +272,38 @@ static int builtin_mv(stage_t *st) {
     return 0;
 }
 
+static int builtin_rmdir(stage_t *st) {
+    if(st->argc<2){printf("rmdir: missing directory\n");return 1;}
+    for(int i=1;i<st->argc;i++){
+        if(rmdir(st->argv[i])<0){
+            printf("rmdir: %s: not empty or not a directory\n",st->argv[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Parse an octal mode string like "755" into an int. */
+static int _parse_octal(const char *s) {
+    int m=0;
+    while(*s>='0'&&*s<='7'){ m=m*8+(*s-'0'); s++; }
+    if(*s) return -1;   /* invalid char */
+    return m;
+}
+
+static int builtin_chmod(stage_t *st) {
+    if(st->argc<3){printf("chmod: usage: chmod <octal> <file>\n");return 1;}
+    int mode=_parse_octal(st->argv[1]);
+    if(mode<0){printf("chmod: invalid mode '%s'\n",st->argv[1]);return 1;}
+    for(int i=2;i<st->argc;i++){
+        if(chmod(st->argv[i],mode)<0){
+            printf("chmod: %s: failed\n",st->argv[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int exec_builtin(stage_t *st) {
     if(st->argc==0)return 0;
     char *cmd=st->argv[0];
@@ -255,8 +323,10 @@ static int exec_builtin(stage_t *st) {
     if(!strcmp(cmd,"pwd")){printf("%s\n",g_cwd);return 0;}
     if(!strcmp(cmd,"cat"))return builtin_cat(st);
     if(!strcmp(cmd,"rm"))return builtin_rm(st);
+    if(!strcmp(cmd,"rmdir"))return builtin_rmdir(st);
     if(!strcmp(cmd,"cp"))return builtin_cp(st);
     if(!strcmp(cmd,"mv"))return builtin_mv(st);
+    if(!strcmp(cmd,"chmod"))return builtin_chmod(st);
     if(!strcmp(cmd,"mkdir")){
         if(st->argc<2){printf("mkdir: missing name\n");return 1;}
         for(int i=1;i<st->argc;i++){if(mkdir(st->argv[i])<0){printf("mkdir: %s: failed\n",st->argv[i]);}}
@@ -281,9 +351,11 @@ static int exec_builtin(stage_t *st) {
         printf("  ls             list files\n");
         printf("  cat <file>     print file contents\n");
         printf("  mkdir <dir>    create directory\n");
+        printf("  rmdir <dir>    remove empty directory\n");
         printf("  rm <file>      remove file\n");
         printf("  cp <src> <dst> copy file\n");
         printf("  mv <src> <dst> move/rename file\n");
+        printf("  chmod <m> <f>  change permissions (octal)\n");
         printf("  echo [args]    print text\n");
         printf("  clear          clear screen\n");
         printf("  keymap [name]  switch keyboard (us/fr)\n");

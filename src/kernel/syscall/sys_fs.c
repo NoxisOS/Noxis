@@ -239,3 +239,31 @@ void sys_rename(isr_frame_t* frame) {
     os_status_t r = noxfs_rename(src_parent, src_name, dst_parent, dst_name);
     frame->eax = (r == OS_OK) ? 0 : (uint32_t)-1;
 }
+
+void sys_chmod(isr_frame_t* frame) {
+    const uint8_t* path = (const uint8_t*)frame->ebx;
+    uint16_t       perm = (uint16_t)(frame->esi & NOXFS_PERM_MASK);
+    if (!path || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t   base = (path[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    uint32_t   ino  = noxfs_resolve(base, path);
+    if (ino == (uint32_t)-1) { frame->eax = (uint32_t)-1; return; }
+
+    os_status_t r = noxfs_chmod(ino, perm);
+    frame->eax = (r == OS_OK) ? 0 : (uint32_t)-1;
+}
+
+void sys_rmdir(isr_frame_t* frame) {
+    const uint8_t* path = (const uint8_t*)frame->ebx;
+    if (!path || !_user_range_ok(frame->ebx, 1)) { frame->eax = (uint32_t)-1; return; }
+
+    process_t* proc = scheduler_current();
+    uint32_t   base = (path[0] == '/') ? noxfs_root_ino() : proc->cwd_ino;
+    uint32_t   parent_ino;
+    uint8_t    name[32];
+    if (!_split_path(path, base, &parent_ino, name)) { frame->eax = (uint32_t)-1; return; }
+
+    os_status_t r = noxfs_rmdir(parent_ino, name);
+    frame->eax = (r == OS_OK) ? 0 : (uint32_t)-1;
+}

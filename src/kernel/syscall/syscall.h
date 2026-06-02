@@ -41,6 +41,8 @@
 #define SYS_SIGPROCMASK 27 /* EBX=how, ESI=*new_set, EDI=*old_set → EAX=0/-1          */
 #define SYS_UNLINK      28 /* EBX=path → EAX=0/-1                                   */
 #define SYS_RENAME      29 /* EBX=old, ESI=new → EAX=0/-1                           */
+#define SYS_CHMOD       30 /* EBX=path, ESI=mode → EAX=0/-1                         */
+#define SYS_RMDIR       31 /* EBX=path → EAX=0/-1                                   */
 
 /* ── file descriptors ──────────────────────────────────────── */
 #define STDIN_FD     0

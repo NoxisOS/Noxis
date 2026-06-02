@@ -26,8 +26,20 @@ $files = @(
     @{Name='nsh.elf';    Path='build/nsh.elf'}
 )
 
-function W32($a, $o, $v) { [Array]::Copy([BitConverter]::GetBytes([uint32]$v),0,$a,$o,4) }
-function W16($a, $o, $v) { [Array]::Copy([BitConverter]::GetBytes([uint16]$v),0,$a,$o,2) }
+# Direct byte assignment — [Array]::Copy on byte[] is unreliable on
+# Windows PowerShell 5.1 (silently corrupts), so write each byte by hand.
+function W32($a, $o, $v) {
+    $u = [uint32]$v
+    $a[$o]   = [byte]( $u        -band 0xFF)
+    $a[$o+1] = [byte](($u -shr 8)  -band 0xFF)
+    $a[$o+2] = [byte](($u -shr 16) -band 0xFF)
+    $a[$o+3] = [byte](($u -shr 24) -band 0xFF)
+}
+function W16($a, $o, $v) {
+    $u = [uint16]$v
+    $a[$o]   = [byte]( $u       -band 0xFF)
+    $a[$o+1] = [byte](($u -shr 8) -band 0xFF)
+}
 
 $img = New-Object byte[] ($blocks * $BLKSZ)
 $used_blks = $data_start
@@ -49,7 +61,7 @@ W32 $img ($sb_off+36) 0
 # ── block bitmap: mark metadata blocks used ───────────────
 $bmp_off = $blk_bmp_blk * $BLKSZ
 for ($i = 0; $i -lt $data_start; $i++) {
-    $byteIdx = $bmp_off + [int]($i / 8)
+    $byteIdx = $bmp_off + [int][Math]::Floor($i / 8)
     $bitIdx  = $i % 8
     $img[$byteIdx] = $img[$byteIdx] -bor (1 -shl $bitIdx)
 }
@@ -62,7 +74,7 @@ $img[$ibmp_off] = 1
 function AllocBlock {
     $bo = $blk_bmp_blk * $BLKSZ
     for ($b = $data_start; $b -lt $blocks; $b++) {
-        $byteIdx = $bo + [int]($b / 8)
+        $byteIdx = $bo + [int][Math]::Floor($b / 8)
         $bitIdx  = $b % 8
         if (($img[$byteIdx] -band (1 -shl $bitIdx)) -eq 0) {
             $img[$byteIdx] = $img[$byteIdx] -bor (1 -shl $bitIdx)
@@ -77,7 +89,7 @@ function AllocBlock {
 # ── root dir inode (inode 0) ──────────────────────────────
 $root_data_blk = AllocBlock
 $r_ino_off = $ino_tbl_blk * $BLKSZ
-W16 $img ($r_ino_off + 0)  0x4000    # mode = dir
+W16 $img ($r_ino_off + 0)  0x41ED   # mode = dir | 0755 (drwxr-xr-x)
 W32 $img ($r_ino_off + 10) $root_data_blk
 W16 $img ($r_ino_off + 54) 1         # links
 
@@ -98,12 +110,12 @@ foreach ($f in $files) {
         $dest = $fb[$j] * $BLKSZ
         $src  = $j * $BLKSZ
         $len  = [Math]::Min($BLKSZ, $sz - $src)
-        [Array]::Copy($data, $src, $img, $dest, $len)
+        [System.Buffer]::BlockCopy($data, $src, $img, $dest, $len)
     }
 
     # write file inode
     $f_ino_off = ($ino_tbl_blk * $BLKSZ) + ($ino_id * $INO_SZ)
-    W16 $img ($f_ino_off + 0)  0x8000       # mode = file
+    W16 $img ($f_ino_off + 0)  0x81ED       # mode = file | 0755 (-rwxr-xr-x, ELFs are executable)
     W32 $img ($f_ino_off + 6)  $sz          # size
     for ($j = 0; $j -lt [Math]::Min($need, 10); $j++) {
         W32 $img ($f_ino_off + 10 + ($j * 4)) $fb[$j]
@@ -119,7 +131,7 @@ foreach ($f in $files) {
     W16 $img ($f_ino_off + 54) 1            # links
 
     # mark inode in bitmap
-    $ibyte = $ibmp_off + [int]($ino_id / 8)
+    $ibyte = $ibmp_off + [int][Math]::Floor($ino_id / 8)
     $ibit  = $ino_id % 8
     $img[$ibyte] = $img[$ibyte] -bor (1 -shl $ibit)
 
@@ -130,7 +142,7 @@ foreach ($f in $files) {
     W16 $de 4  $DT_SZ
     $de[6] = [Math]::Min($nb.Length, 23)
     $de[7] = 1
-    [Array]::Copy($nb, 0, $de, 8, [Math]::Min($nb.Length, 24))
+    [System.Buffer]::BlockCopy($nb, 0, $de, 8, [Math]::Min($nb.Length, 23))
     [void]$dirents.Add($de)
 
     Write-Host ("  + {0,-14} {1,7} bytes  inode {2}" -f $f.Name, $sz, $ino_id)
@@ -155,10 +167,10 @@ for ($i = 1; $i -lt $root_need; $i++) {
 
 for ($i = 0; $i -lt $dirents.Count; $i++) {
     $boff   = $i * $DT_SZ
-    $bidx   = [int]($boff / $BLKSZ)
+    $bidx   = [int][Math]::Floor($boff / $BLKSZ)
     $within = $boff % $BLKSZ
     $dest   = ($root_blocks[$bidx] * $BLKSZ) + $within
-    [Array]::Copy($dirents[$i], 0, $img, $dest, $DT_SZ)
+    [System.Buffer]::BlockCopy($dirents[$i], 0, $img, $dest, $DT_SZ)
 }
 W32 $img ($r_ino_off + 6) $dir_sz   # root inode size
 

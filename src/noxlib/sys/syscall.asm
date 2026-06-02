@@ -60,6 +60,8 @@ section .text
 %define SYS_SIGPROCMASK 27
 %define SYS_UNLINK      28
 %define SYS_RENAME      29
+%define SYS_CHMOD       30
+%define SYS_RMDIR       31
 
 ; ────────────────────────────────────────────────────────────
 ; 0-argument syscalls
@@ -540,6 +542,35 @@ _sys_brk:
     push ebx
     mov  eax, SYS_BRK
     mov  ebx, [esp+8]
+    lea  edx, [.ret]
+    mov  ecx, esp
+    sysenter
+.ret:
+    pop  ebx
+    ret
+
+; int chmod(const char *path, int mode)
+global chmod
+chmod:
+    push ebx
+    push esi
+    mov  eax, SYS_CHMOD
+    mov  ebx, [esp+12]       ; path
+    mov  esi, [esp+16]       ; mode
+    lea  edx, [.ret]
+    mov  ecx, esp
+    sysenter
+.ret:
+    pop  esi
+    pop  ebx
+    ret
+
+; int rmdir(const char *path)
+global rmdir
+rmdir:
+    push ebx
+    mov  eax, SYS_RMDIR
+    mov  ebx, [esp+8]        ; path
     lea  edx, [.ret]
     mov  ecx, esp
     sysenter

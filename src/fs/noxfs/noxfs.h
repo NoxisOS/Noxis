@@ -37,8 +37,25 @@ typedef struct __attribute__((packed)) {
 } noxfs_sb_t;
 
 /* ── inode (64 bytes) ────────────────────────────────────────── */
-#define NOXFS_INO_FILE  0x8000
-#define NOXFS_INO_DIR   0x4000
+#define NOXFS_INO_FILE  0x8000u
+#define NOXFS_INO_DIR   0x4000u
+
+/* ── permission bits (Unix rwxrwxrwx in bits 8-0) ───────────── */
+#define NOXFS_PERM_MASK  0x01FFu   /* mask for the 9 permission bits */
+#define NOXFS_PERM_UR    0x0100u   /* owner read  */
+#define NOXFS_PERM_UW    0x0080u   /* owner write */
+#define NOXFS_PERM_UX    0x0040u   /* owner exec  */
+#define NOXFS_PERM_GR    0x0020u   /* group read  */
+#define NOXFS_PERM_GW    0x0010u   /* group write */
+#define NOXFS_PERM_GX    0x0008u   /* group exec  */
+#define NOXFS_PERM_OR    0x0004u   /* other read  */
+#define NOXFS_PERM_OW    0x0002u   /* other write */
+#define NOXFS_PERM_OX    0x0001u   /* other exec  */
+
+/* Default modes (type | permissions) */
+#define NOXFS_MODE_FILE  (NOXFS_INO_FILE | 0x01A4u)  /* -rw-r--r-- 0644 */
+#define NOXFS_MODE_EXEC  (NOXFS_INO_FILE | 0x01EDu)  /* -rwxr-xr-x 0755 */
+#define NOXFS_MODE_DIR   (NOXFS_INO_DIR  | 0x01EDu)  /* drwxr-xr-x 0755 */
 
 typedef struct __attribute__((packed)) {
     uint16_t mode;
@@ -75,8 +92,10 @@ vfs_file_t*   noxfs_creat(const uint8_t* name);
 vfs_file_t*   noxfs_creat_at(uint32_t parent_ino, const uint8_t* name);
 vfs_file_t*   noxfs_creat_path(const uint8_t* path);
 os_status_t   noxfs_unlink(uint32_t parent_ino, const uint8_t* name);
+os_status_t   noxfs_rmdir (uint32_t parent_ino, const uint8_t* name);
 os_status_t   noxfs_rename(uint32_t src_parent, const uint8_t* src_name,
                             uint32_t dst_parent, const uint8_t* dst_name);
+os_status_t   noxfs_chmod (uint32_t ino, uint16_t perm);
 void          noxfs_sync(void);
 
 /* ── Phase 2: directories ────────────────────────────────────── */

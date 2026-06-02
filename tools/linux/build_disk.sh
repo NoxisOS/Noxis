@@ -95,7 +95,7 @@ def main():
 
     # root inode (inode 0)
     r_off = INO_TBL_BLK * BLKSZ
-    struct.pack_into('<H', img, r_off + 0,  0x4000)       # mode = dir
+    struct.pack_into('<H', img, r_off + 0,  0x41ED)       # mode = dir | 0755
     struct.pack_into('<I', img, r_off + 10, root_data_blk)
     struct.pack_into('<H', img, r_off + 54, 1)            # links
 
@@ -127,7 +127,7 @@ def main():
             img[b*BLKSZ : b*BLKSZ + len(chunk)] = chunk
 
         f_off = INO_TBL_BLK * BLKSZ + ino_id * INO_SZ
-        struct.pack_into('<H', img, f_off + 0,  0x8000)
+        struct.pack_into('<H', img, f_off + 0,  0x81ED)  # file | 0755 (ELFs executable)
         struct.pack_into('<I', img, f_off + 6,  fsz)
         for j in range(min(n_blks, NOXFS_DIRECT)):
             struct.pack_into('<I', img, f_off + 10 + j*4, fb[j])

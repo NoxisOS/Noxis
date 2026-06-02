@@ -57,10 +57,26 @@ int     sigprocmask (int how, const void *set, void *oldset);
 
 /* ── Filesystem ─────────────────────────────────────────── */
 int     mkdir  (const char *path);
+int     rmdir  (const char *path);
 int     chdir  (const char *path);
 int     pipe   (int pipefd[2]);
 int     unlink (const char *path);
 int     rename (const char *old, const char *newpath);
+int     chmod  (const char *path, int mode);
+
+/* ── permission bit constants ───────────────────────────────── */
+#define S_IRUSR  0400
+#define S_IWUSR  0200
+#define S_IXUSR  0100
+#define S_IRGRP  0040
+#define S_IWGRP  0020
+#define S_IXGRP  0010
+#define S_IROTH  0004
+#define S_IWOTH  0002
+#define S_IXOTH  0001
+#define S_IRWXU  (S_IRUSR|S_IWUSR|S_IXUSR)
+#define S_IRWXG  (S_IRGRP|S_IWGRP|S_IXGRP)
+#define S_IRWXO  (S_IROTH|S_IWOTH|S_IXOTH)
 
 /* ── Misc ───────────────────────────────────────────────── */
 int     sleep  (unsigned int ms);
