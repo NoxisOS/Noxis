@@ -175,11 +175,15 @@ static int _split_path(const uint8_t* path, uint32_t base,
     for (int i = len - 1; i >= 0; i--) {
         if (path[i] == '/') { last_slash = i; break; }
     }
+    /* NoxFS dirent name field is 24 bytes → max 23 usable chars + NUL. */
+#define NOXFS_NAME_MAX 23
+
     if (last_slash < 0) {
         /* No slash: parent = base (cwd or root), name = full path. */
+        if (len > NOXFS_NAME_MAX) return 0;   /* name too long */
         *parent_out = base;
-        for (int i = 0; i < 31 && path[i]; i++) name_out[i] = path[i];
-        name_out[len < 31 ? len : 31] = 0;
+        for (int i = 0; i < len; i++) name_out[i] = path[i];
+        name_out[len] = 0;
         return 1;
     }
     /* Resolve parent directory. */
@@ -190,12 +194,16 @@ static int _split_path(const uint8_t* path, uint32_t base,
     uint32_t par_base = (path[0] == '/') ? noxfs_root_ino() : base;
     *parent_out = noxfs_resolve(par_base, parent_path);
     if (*parent_out == (uint32_t)-1) return 0;
-    /* Copy basename. */
+    /* Copy basename — reject if too long. */
     int bi = 0;
-    for (int i = last_slash + 1; i < len && bi < 31; i++)
+    for (int i = last_slash + 1; i < len; i++) {
+        if (bi >= NOXFS_NAME_MAX) return 0;   /* name too long */
         name_out[bi++] = path[i];
+    }
     name_out[bi] = 0;
     return 1;
+
+#undef NOXFS_NAME_MAX
 }
 
 void sys_unlink(isr_frame_t* frame) {

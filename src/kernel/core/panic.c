@@ -16,9 +16,10 @@
 #define VGA_BG_RED   0x4
 
 /* colour: attr = (bg << 4) | fg */
-#define ATTR_TITLE   ((uint8_t)((VGA_BG_RED << 4) | VGA_WHITE))   /* white on red */
-#define ATTR_REGS    ((uint8_t)((VGA_BG_RED << 4) | VGA_YELLOW))  /* yellow on red */
-#define ATTR_NORMAL  ((uint8_t)((VGA_BG_RED << 4) | VGA_WHITE))   /* white on red */
+#define VGA_BLINK    0x8   /* bit 3 of fg = blink/bright-bg in text mode */
+#define ATTR_TITLE   ((uint8_t)((VGA_BG_RED << 4) | VGA_WHITE | VGA_BLINK)) /* bright white on red — stands out */
+#define ATTR_REGS    ((uint8_t)((VGA_BG_RED << 4) | VGA_YELLOW))            /* yellow on red */
+#define ATTR_NORMAL  ((uint8_t)((VGA_BG_RED << 4) | VGA_WHITE))             /* white on red */
 
 /* ── private state ─────────────────────────────────────────── */
 static uint8_t _cur_attr = ATTR_NORMAL;
@@ -65,22 +66,33 @@ static void _panic_dec(uint32_t* row, uint32_t* col, uint32_t val) {
 /* ── stack trace ───────────────────────────────────────────── */
 
 static void _panic_stacktrace(uint32_t* row, uint32_t* col, uint32_t ebp) {
-    _cur_attr = ATTR_REGS;
+    /* Kernel stack lives between 1 MB and the higher-half boundary.
+       Only dereference EBP if both the frame pointer AND the return
+       address slot (ebp+4) are within that safe window — anything else
+       risks a double-fault inside the panic handler itself. */
+#define KSTACK_LO  0x00100000u   /* 1 MB — below this is firmware/BIOS */
+#define KSTACK_HI  0xC0000000u   /* higher-half kernel base */
+
     _panic_write(row, col, (const uint8_t*)"\nStack trace:\n");
+    _cur_attr = ATTR_REGS;
     for (int i = 0; i < 8; i++) {
-        /* Stay in kernel/user address space, not near zero or wrap */
-        if (ebp < 0x1000 || ebp > 0xFFFF0000u) break;
+        /* Validate the frame pointer itself, and that ebp+4 is readable. */
+        if (ebp < KSTACK_LO || ebp + 4 >= KSTACK_HI) break;
         uint32_t* frame_ptr = (uint32_t*)ebp;
+        uint32_t  next_ebp  = frame_ptr[0];
         uint32_t  ret_addr  = frame_ptr[1];
-        if (ret_addr < 0x1000) break;
+        /* A valid return address must also be in kernel space. */
+        if (ret_addr < KSTACK_LO || ret_addr >= KSTACK_HI) break;
         _panic_write(row, col, (const uint8_t*)"  #");
         _panic_dec(row, col, (uint32_t)i);
         _panic_write(row, col, (const uint8_t*)"  ");
         _panic_hex(row, col, ret_addr);
         _panic_write(row, col, (const uint8_t*)"\n");
-        ebp = frame_ptr[0];
+        /* Guard against non-advancing EBP chains (corrupt stack). */
+        if (next_ebp <= ebp) break;
+        ebp = next_ebp;
     }
-    _cur_attr = ATTR_NORMAL;
+    _cur_attr = ATTR_NORMAL;  /* always restored, even on early break */
 }
 
 /* ── public functions ──────────────────────────────────────── */

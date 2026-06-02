@@ -60,7 +60,7 @@ void     vga_update_cursor(void);
    the expected colour rather than a stale one left by a previous write. */
 void     vga_prime_cursor(void);
 
-/* Write a buffer, interpreting ANSI escape sequences (SGR colors, etc.) */
-void     vga_ansi_write(const uint8_t* buf, uint32_t len);
+/* Write a length-delimited buffer (may contain any byte incl. NUL). */
+void     vga_write_buf(const uint8_t* buf, uint32_t len);
 
 #endif /* DRIVERS_VGA_H */

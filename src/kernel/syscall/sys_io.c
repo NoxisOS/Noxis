@@ -15,7 +15,7 @@ void sys_write(isr_frame_t* frame) {
 
     /* stdout / stderr → VGA (with ANSI escape support) */
     if (fd == STDOUT_FD || fd == STDERR_FD || fd == 0) {
-        vga_ansi_write(buf, len);
+        vga_write_buf(buf, len);
         frame->eax = len;
         return;
     }

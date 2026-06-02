@@ -651,9 +651,19 @@ os_status_t noxfs_unlink(uint32_t parent_ino, const uint8_t* name) {
     noxfs_inode_t in;
     if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
 
+    /* Refuse to unlink a non-empty directory (would leak child inodes). */
+    if (in.mode & NOXFS_INO_DIR) {
+        /* A dir with only . and .. has size = 2 * sizeof(noxfs_dirent_t). */
+        if (in.size > 2 * sizeof(noxfs_dirent_t)) return OS_ERR_INVALID;
+    }
+
     /* Remove directory entry from parent. */
     os_status_t s = _dir_remove_entry(parent_ino, name);
     if (s != OS_OK) return s;
+
+    /* Re-read inode — _dir_remove_entry may have flushed the same inode
+       table block, leaving our local copy stale. */
+    if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
 
     /* Decrement link count; free if 0. */
     if (in.links > 0) in.links--;
@@ -703,17 +713,17 @@ os_status_t noxfs_rename(uint32_t src_parent, const uint8_t* src_name,
     noxfs_inode_t in;
     if (_iread(ino, &in) != OS_OK) return OS_ERR_IO;
 
-    /* Remove existing destination if present. */
-    uint32_t old_dst = _dir_lookup_name(dst_parent, dst_name);
-    if (old_dst != (uint32_t)-1)
-        noxfs_unlink(dst_parent, dst_name);
-
-    /* Add entry at destination. */
+    /* Add entry at destination first — if this fails nothing is lost. */
     uint8_t ft = (in.mode & NOXFS_INO_DIR) ? NOXFS_FT_DIR : NOXFS_FT_FILE;
     os_status_t s = _dir_add_entry(dst_parent, dst_name, ino, ft);
     if (s != OS_OK) return s;
 
-    /* Remove source entry. */
+    /* Remove existing destination only after src is safely linked at dst. */
+    uint32_t old_dst = _dir_lookup_name(dst_parent, dst_name);
+    if (old_dst != (uint32_t)-1 && old_dst != ino)
+        noxfs_unlink(dst_parent, dst_name);
+
+    /* Remove source entry — destination is already set. */
     return _dir_remove_entry(src_parent, src_name);
 }
 
