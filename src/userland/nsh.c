@@ -340,7 +340,7 @@ static int exec_builtin(stage_t *st) {
     }
     if(!strcmp(cmd,"exit")){exit((st->argc>1)?atoi(st->argv[1]):0);return 0;}
     if(!strcmp(cmd,"keymap")){
-        if(st->argc<2){int fd=open("/proc/keymap",O_RDONLY);if(fd<0){printf("keymap: unavailable\n");return 1;}char buf[128];int n;while((n=(int)read(fd,buf,sizeof(buf)))>0)write(STDOUT_FILENO,buf,n);close(fd);return 0;}
+        if(st->argc<2){int fd=open("/dev/keymap",O_RDONLY);if(fd<0){printf("keymap: unavailable\n");return 1;}char buf[128];int n;while((n=(int)read(fd,buf,sizeof(buf)))>0)write(STDOUT_FILENO,buf,n);close(fd);return 0;}
         int fd=open("/dev/keymap",O_RDONLY);if(fd<0){printf("keymap: cannot open\n");return 1;}write(fd,st->argv[1],(int)strlen(st->argv[1]));close(fd);printf("keymap: switched to %s\n",st->argv[1]);return 0;
     }
     if(!strcmp(cmd,"help")){

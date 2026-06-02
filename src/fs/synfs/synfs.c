@@ -177,7 +177,7 @@ static void _gen_memmap(sbuf_t *sb, uint32_t arg) {
     sb_u32(sb, total * 4 / 1024); sb_str(sb, " MB)\n");
 }
 
-/* /proc/keymap and /dev/keymap — show / switch the keyboard layout. */
+/* /dev/keymap — read shows the active + available layouts; write switches. */
 static void _gen_keymap(sbuf_t *sb, uint32_t arg) {
     (void)arg;
     sb_str(sb, "active: ");
@@ -287,7 +287,6 @@ static synfs_node_t g_nodes[] = {
     { "/proc/sched",   SYN_GEN,    _gen_sched,   (synfs_wr_fn)0, 0 },
     { "/proc/memmap",  SYN_GEN,    _gen_memmap,  (synfs_wr_fn)0, 0 },
     { "/proc/uptime",  SYN_GEN,    _gen_uptime,  (synfs_wr_fn)0, 0 },
-    { "/proc/keymap",  SYN_GEN,    _gen_keymap,  (synfs_wr_fn)0, 0 },
     { "/dev/keymap",   SYN_GEN,    _gen_keymap,  _wr_keymap,     0 },
     { "/dev/null",     SYN_NULL,   (synfs_gen_fn)0, (synfs_wr_fn)0, 0 },
     { "/dev/zero",     SYN_ZERO,   (synfs_gen_fn)0, (synfs_wr_fn)0, 0 },

@@ -5,8 +5,8 @@
  * A layout maps scancode-set-1 codes (0..127) to characters, with a
  * separate table for the shifted state.  Layouts are registered at boot;
  * the active one is consulted by the keyboard ISR.  Switching is exposed
- * to userland through the synthetic files /proc/keymap (read) and
- * /dev/keymap (write a layout name to switch).
+ * to userland through the synthetic file /dev/keymap: read it to see the
+ * active + available layouts, write a layout name to switch.
  */
 #ifndef DRIVERS_KEYMAP_H
 #define DRIVERS_KEYMAP_H
@@ -30,7 +30,7 @@ const keymap_t *keymap_active(void);
 /* Switch the active layout by name. Returns 1 on success, 0 if unknown. */
 int             keymap_set(const char *name);
 
-/* Introspection (for /proc/keymap). */
+/* Introspection (for /dev/keymap). */
 uint32_t        keymap_count(void);
 const keymap_t *keymap_at(uint32_t i);
 const char     *keymap_active_name(void);
