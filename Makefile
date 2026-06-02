@@ -4,11 +4,13 @@
 
 ifeq ($(OS),Windows_NT)
     SHELL       = cmd
+    KILL_QEMU   = @taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
     MAKE_FLOPPY = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_floppy.ps1 \
                       -Out $(DISK_IMG) -Mbr $(MBR_BIN) -Loader $(LOADER_BIN) -Kernel $(KERNEL_BIN)
     MAKE_NOXFS  = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_disk.ps1
 else
     SHELL       = sh
+    KILL_QEMU   = @true
     MAKE_FLOPPY = tools/linux/build_floppy.sh $(DISK_IMG) $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN)
     MAKE_NOXFS  = tools/linux/build_disk.sh build/disk.img \
                       ctest.elf:build/ctest.elf nsh.elf:build/nsh.elf
@@ -159,7 +161,7 @@ build/nsh.elf: $(NOXLIB_CRT) build/nsh.o build/noxlib.a $(USER_LD)
 
 # ── Disk image ───────────────────────────────────────────────
 $(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(USER_ELFS)
-	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
+	$(KILL_QEMU)
 	@echo BUILD $(DISK_IMG)
 	$(MAKE_FLOPPY)
 	@echo BUILD build/disk.img

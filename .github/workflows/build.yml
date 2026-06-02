@@ -1,0 +1,95 @@
+name: Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    name: Compile kernel + userland
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Cache the i686-elf cross-compiler ──────────────────────
+      - name: Cache cross-compiler
+        id: cache-cross
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/cross
+          key: i686-elf-gcc13-binutils241-v1
+
+      # ── Install build dependencies ──────────────────────────────
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            nasm build-essential bison flex \
+            libgmp-dev libmpc-dev libmpfr-dev texinfo wget python3
+
+      # ── Build the cross-compiler (only when not cached) ─────────
+      - name: Build i686-elf cross-compiler
+        if: steps.cache-cross.outputs.cache-hit != 'true'
+        run: |
+          export PREFIX="${{ github.workspace }}/cross"
+          export TARGET=i686-elf
+          export PATH="$PREFIX/bin:$PATH"
+          mkdir -p "$PREFIX"
+
+          cd /tmp
+
+          # binutils 2.41
+          wget -q https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.xz
+          tar -xf binutils-2.41.tar.xz
+          mkdir build-binutils && cd build-binutils
+          ../binutils-2.41/configure \
+            --target=$TARGET --prefix="$PREFIX" \
+            --with-sysroot --disable-nls --disable-werror
+          make -j$(nproc)
+          make install
+          cd /tmp
+
+          # gcc 13.2.0 (C only)
+          wget -q https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz
+          tar -xf gcc-13.2.0.tar.xz
+          mkdir build-gcc && cd build-gcc
+          ../gcc-13.2.0/configure \
+            --target=$TARGET --prefix="$PREFIX" \
+            --disable-nls --enable-languages=c --without-headers
+          make -j$(nproc) all-gcc
+          make -j$(nproc) all-target-libgcc
+          make install-gcc
+          make install-target-libgcc
+
+      # ── Add toolchain to PATH ───────────────────────────────────
+      - name: Add cross-compiler to PATH
+        run: echo "${{ github.workspace }}/cross/bin" >> $GITHUB_PATH
+
+      # ── Verify toolchain ────────────────────────────────────────
+      - name: Verify toolchain
+        run: |
+          i686-elf-gcc --version
+          i686-elf-ld --version
+          nasm --version
+
+      # ── Make the shell scripts executable ───────────────────────
+      - name: Set script permissions
+        run: chmod +x tools/linux/build_floppy.sh tools/linux/build_disk.sh
+
+      # ── Build ───────────────────────────────────────────────────
+      - name: Build
+        run: make
+
+      # ── Upload artifacts ─────────────────────────────────────────
+      - name: Upload disk images
+        uses: actions/upload-artifact@v4
+        with:
+          name: noxis-disk-images
+          path: |
+            build/noxis.img
+            build/disk.img
+          retention-days: 7

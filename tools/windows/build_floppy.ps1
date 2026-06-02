@@ -15,25 +15,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$mbr    = [IO.File]::ReadAllBytes($Mbr)
-$loader = [IO.File]::ReadAllBytes($Loader)
-$kernel = [IO.File]::ReadAllBytes($Kernel)
+# NOTE: variable names differ from params ($Mbr/$Loader/$Kernel) to avoid
+# PowerShell's case-insensitive variable aliasing converting byte[] to string.
+[byte[]]$mbrBytes    = [System.IO.File]::ReadAllBytes($Mbr)
+[byte[]]$loaderBytes = [System.IO.File]::ReadAllBytes($Loader)
+[byte[]]$kernelBytes = [System.IO.File]::ReadAllBytes($Kernel)
 
-# Create blank 1.44 MB image (2880 sectors x 512)
-$fs = New-Object IO.FileStream($Out, [IO.FileMode]::Create)
-$fs.SetLength(1474560)
+# Build 1.44 MB floppy (2880 sectors x 512) in memory
+[byte[]]$img = New-Object byte[] 1474560
 
 # MBR at sector 0 (offset 0)
-$fs.Position = 0
-$fs.Write($mbr, 0, $mbr.Length)
-
+[System.Buffer]::BlockCopy($mbrBytes,    0, $img,    0, $mbrBytes.Length)
 # Stage-2 loader at sector 1 (offset 512)
-$fs.Position = 512
-$fs.Write($loader, 0, $loader.Length)
-
+[System.Buffer]::BlockCopy($loaderBytes, 0, $img,  512, $loaderBytes.Length)
 # Kernel at sector 5 (offset 2560)
-$fs.Position = 2560
-$fs.Write($kernel, 0, $kernel.Length)
+[System.Buffer]::BlockCopy($kernelBytes, 0, $img, 2560, $kernelBytes.Length)
 
-$fs.Dispose()
+[System.IO.File]::WriteAllBytes((Join-Path (Get-Location) $Out), $img)
 Write-Host "  -> $Out  (floppy 1.44 MB)"
