@@ -5,12 +5,14 @@
 ifeq ($(OS),Windows_NT)
     SHELL       = cmd
     KILL_QEMU   = @taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
+    MKDIRP      = if not exist $(subst /,\,$1) mkdir $(subst /,\,$1)
     MAKE_FLOPPY = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_floppy.ps1 \
                       -Out $(DISK_IMG) -Mbr $(MBR_BIN) -Loader $(LOADER_BIN) -Kernel $(KERNEL_BIN)
     MAKE_NOXFS  = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_disk.ps1
 else
-    SHELL       = sh
+    SHELL       = /bin/sh
     KILL_QEMU   = @true
+    MKDIRP      = mkdir -p $1
     MAKE_FLOPPY = tools/linux/build_floppy.sh $(DISK_IMG) $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN)
     MAKE_NOXFS  = tools/linux/build_disk.sh build/disk.img \
                       ctest.elf:build/ctest.elf nsh.elf:build/nsh.elf
@@ -119,13 +121,13 @@ build/noxlib.a: $(NOXLIB_OBJS)
 
 # Compile noxlib C files with NOXLIB_CFLAGS (not kernel CFLAGS)
 build/noxlib/%.o: src/noxlib/%.c
-	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
+	@$(call MKDIRP,$(@D))
 	@echo CC   $<
 	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Assemble noxlib ASM files
 build/noxlib/%.o: src/noxlib/%.asm
-	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
+	@$(call MKDIRP,$(@D))
 	@echo AS   $<
 	$(AS) $(ASFLAGS) $< -o $@
 
@@ -139,12 +141,12 @@ USER_ELFS = $(C_ELFS)
 
 # ── C userland compilation (NOXLIB_CFLAGS) ────────────────────
 build/ctest.o: src/userland/ctest.c
-	@if not exist build mkdir build
+	@$(call MKDIRP,build)
 	@echo CC   $<
 	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 build/nsh.o: src/userland/nsh.c
-	@if not exist build mkdir build
+	@$(call MKDIRP,build)
 	@echo CC   $<
 	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
@@ -178,12 +180,12 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 
 # ── Boot binaries ────────────────────────────────────────────
 $(MBR_BIN): src/boot/mbr.asm src/boot/defines.asm
-	@if not exist build mkdir build
+	@$(call MKDIRP,build)
 	@echo AS   $@
 	$(AS) $(BOOTFLAGS) -isrc/boot/ $< -o $@
 
 $(LOADER_BIN): src/boot/loader.asm src/boot/defines.asm
-	@if not exist build mkdir build
+	@$(call MKDIRP,build)
 	@echo AS   $@
 	$(AS) $(BOOTFLAGS) -isrc/boot/ $< -o $@
 
@@ -196,12 +198,12 @@ DEPFLAGS = -MMD -MP
 
 # ── Generic compile rules (match any depth) ───────────────────
 build/%.o: src/%.c
-	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
+	@$(call MKDIRP,$(@D))
 	@echo CC   $<
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 build/%.o: src/%.asm
-	@if not exist $(subst /,\,$(@D)) mkdir $(subst /,\,$(@D))
+	@$(call MKDIRP,$(@D))
 	@echo AS   $<
 	$(AS) $(ASFLAGS) $< -o $@
 
