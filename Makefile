@@ -2,7 +2,18 @@
 # Noxis OS Build System
 # ─────────────────────────────────────────────────────────────
 
-SHELL     = cmd
+ifeq ($(OS),Windows_NT)
+    SHELL       = cmd
+    MAKE_FLOPPY = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_floppy.ps1 \
+                      -Out $(DISK_IMG) -Mbr $(MBR_BIN) -Loader $(LOADER_BIN) -Kernel $(KERNEL_BIN)
+    MAKE_NOXFS  = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_disk.ps1
+else
+    SHELL       = sh
+    MAKE_FLOPPY = tools/linux/build_floppy.sh $(DISK_IMG) $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN)
+    MAKE_NOXFS  = tools/linux/build_disk.sh build/disk.img \
+                      ctest.elf:build/ctest.elf nsh.elf:build/nsh.elf
+endif
+
 CC        = i686-elf-gcc
 LD        = i686-elf-ld
 AS        = nasm
@@ -147,12 +158,12 @@ build/nsh.elf: $(NOXLIB_CRT) build/nsh.o build/noxlib.a $(USER_LD)
 	    $(NOXLIB_CRT) build/nsh.o build/noxlib.a
 
 # ── Disk image ───────────────────────────────────────────────
-$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(USER_ELFS) tools/build_disk.ps1
+$(DISK_IMG): $(MBR_BIN) $(LOADER_BIN) $(KERNEL_BIN) $(USER_ELFS)
 	@taskkill /F /IM qemu-system-i386.exe >nul 2>&1 || echo.
 	@echo BUILD $(DISK_IMG)
-	powershell -NoProfile -Command "$$bytes=1474560; $$f=New-Object IO.FileStream('$(DISK_IMG)','Create'); $$f.SetLength($$bytes); $$f.Dispose(); $$mbr=[IO.File]::ReadAllBytes('$(MBR_BIN)'); $$ldr=[IO.File]::ReadAllBytes('$(LOADER_BIN)'); $$krnl=[IO.File]::ReadAllBytes('$(KERNEL_BIN)'); $$fs=New-Object IO.FileStream('$(DISK_IMG)','Open'); $$fs.Write($$mbr,0,$$mbr.Length); $$fs.Position=512; $$fs.Write($$ldr,0,$$ldr.Length); $$fs.Position=2560; $$fs.Write($$krnl,0,$$krnl.Length); $$fs.Dispose(); echo '  -> floppy'"
+	$(MAKE_FLOPPY)
 	@echo BUILD build/disk.img
-	powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_disk.ps1
+	$(MAKE_NOXFS)
 
 # ── Kernel link + strip ──────────────────────────────────────
 $(KERNEL_ELF): $(KERNEL_OBJS) linker.ld
