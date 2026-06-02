@@ -29,6 +29,10 @@
 struct isr_frame;
 void signal_deliver(isr_frame_t* frame);
 
+/* Kernel-stack address window (see proc_spawn: 0xD0000000 + pid*0x10000). */
+#define KSTACK_REGION_BASE  0xD0000000u
+#define KSTACK_REGION_TOP   0xE0000000u
+
 /* Page-fault error-code bits (pushed by the CPU). */
 #define PF_PRESENT  0x1   /* 0 = not-present page, 1 = protection violation */
 #define PF_WRITE    0x2   /* 0 = read, 1 = write                            */
@@ -122,6 +126,16 @@ static void _pagefault_handler(isr_frame_t* frame) {
         }
         /* If somehow we return (shouldn't happen), force kill. */
         proc_terminate(0x8B);
+    }
+
+    /* ── Kernel stack overflow detection (guard page) ───────────
+       Per-process kernel stacks live at 0xD0000000 + pid*0x10000,
+       PROC_KSTACK_PAGES mapped, with the rest of each 64 KB slot left
+       unmapped — an implicit guard region.  A kernel-mode fault landing
+       in this window is almost always a kernel stack overflow, which is
+       far more useful to name than a generic page fault. */
+    if (cr2 >= KSTACK_REGION_BASE && cr2 < KSTACK_REGION_TOP) {
+        kernel_panic((const uint8_t*)"KERNEL STACK OVERFLOW (guard page hit)", frame);
     }
 
     /* ── Fatal kernel fault: unrecoverable ─────────────────────── */

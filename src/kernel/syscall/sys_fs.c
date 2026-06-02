@@ -71,6 +71,11 @@ void sys_chdir(isr_frame_t* frame) {
     uint32_t ino  = noxfs_resolve(base, path);
     if (ino == (uint32_t)-1) { frame->eax = (uint32_t)-1; return; }
 
+    /* Refuse to cd into a non-directory (e.g. a regular file). */
+    vfs_file_t st;
+    if (noxfs_stat(ino, &st) != OS_OK) { frame->eax = (uint32_t)-1; return; }
+    if (!(st.capacity & NOXFS_INO_DIR)) { frame->eax = (uint32_t)-1; return; }
+
     proc->cwd_ino = ino;
     frame->eax = 0;
 }
