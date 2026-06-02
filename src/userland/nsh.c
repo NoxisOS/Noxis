@@ -98,6 +98,12 @@ static int parse(char **toks, int ntoks, pipeline_t *pl) {
 /* ══════════════════════════════════════════════════════════════
  * Tab completion — list files matching prefix
  * ══════════════════════════════════════════════════════════════ */
+/* Builtin command names, for completing the first word of a line. */
+static const char *g_builtins[] = {
+    "cd","pwd","ls","cat","mkdir","rmdir","rm","cp","mv","chmod",
+    "echo","clear","keymap","exit","help", 0
+};
+
 static void tab_complete(char *line, int *pos) {
     /* Extract the word being typed */
     int end=*pos, start=end;
@@ -105,20 +111,35 @@ static void tab_complete(char *line, int *pos) {
     int wlen=end-start; if(wlen==0)return;
     char word[128]; memcpy(word,line+start,wlen); word[wlen]=0;
 
-    /* List matching files/dirs from cwd */
-    char buf[DIRENT_SZ*128];
-    int n=getdents(99,buf,sizeof(buf));
-    if(n<=0)return;
-    dirent_t *de=(dirent_t*)buf; int cnt=n/DIRENT_SZ;
+    /* Are we completing the command (first word) or an argument?
+       First word = everything before `start` is blank. */
+    int is_cmd=1;
+    for(int i=0;i<start;i++) if(line[i]!=' '&&line[i]!='\t'){is_cmd=0;break;}
+
     char matches[64][32]; int mcount=0;
 
-    for(int i=0;i<cnt;i++,de++){
-        if(de->inode==0||de->name_len==0)continue;
-        int nl=de->name_len<24?de->name_len:24;
-        char nm[25]; memcpy(nm,de->name,nl); nm[nl]=0;
-        if(!strcmp(nm,".")||!strcmp(nm,".."))continue;
-        if(!strncmp(nm,word,wlen)){
-            if(mcount<64){strncpy(matches[mcount],nm,31);matches[mcount++][31]=0;}
+    /* Command position: offer matching builtins first. */
+    if(is_cmd){
+        for(int i=0;g_builtins[i];i++){
+            if(!strncmp(g_builtins[i],word,wlen)){
+                if(mcount<64){strncpy(matches[mcount],g_builtins[i],31);matches[mcount++][31]=0;}
+            }
+        }
+    }
+
+    /* Always also offer matching files/dirs from cwd. */
+    char buf[DIRENT_SZ*128];
+    int n=getdents(99,buf,sizeof(buf));
+    if(n>0){
+        dirent_t *de=(dirent_t*)buf; int cnt=n/DIRENT_SZ;
+        for(int i=0;i<cnt;i++,de++){
+            if(de->inode==0||de->name_len==0)continue;
+            int nl=de->name_len<24?de->name_len:24;
+            char nm[25]; memcpy(nm,de->name,nl); nm[nl]=0;
+            if(!strcmp(nm,".")||!strcmp(nm,".."))continue;
+            if(!strncmp(nm,word,wlen)){
+                if(mcount<64){strncpy(matches[mcount],nm,31);matches[mcount++][31]=0;}
+            }
         }
     }
     if(mcount==0)return;

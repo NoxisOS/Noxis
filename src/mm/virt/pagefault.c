@@ -87,12 +87,20 @@ static void _pagefault_handler(isr_frame_t* frame) {
     }
 
     /* ── Demand paging ─────────────────────────────────────────
-       A not-present access from ring 3 inside either the stack region
-       (grows down) or the heap region [brk_start, brk) maps a fresh
-       zero-filled page and retries the faulting instruction. */
+       A not-present access inside either the stack region (grows down)
+       or the heap region [brk_start, brk) maps a fresh zero-filled page
+       and retries the faulting instruction.
+
+       This must also fire for faults taken in KERNEL mode: during a
+       syscall the kernel legitimately reads/writes a user buffer that
+       lives on a not-yet-paged user stack page (e.g. getdents writing
+       into a large stack buffer in the shell).  Gating on `from_user`
+       would wrongly panic.  A genuine kernel null-deref is outside the
+       stack/heap regions, so it still falls through to the panic. */
+    (void)from_user;
     int in_stack = (cr2 >= USER_STACK_LIMIT && cr2 < USER_STACK_TOP);
     int in_heap  = (me && me->brk_start && cr2 >= me->brk_start && cr2 < me->brk);
-    if (from_user && !present && (in_stack || in_heap)) {
+    if (!present && (in_stack || in_heap)) {
         uint32_t va = PAGE_ALIGN_DOWN(cr2);
         uint32_t phys;
         if (pmm_alloc_frame(&phys) == OS_OK &&
