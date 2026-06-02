@@ -53,6 +53,7 @@ uint8_t vga_color(void) { return g_color; }
 static void _raw_putc(uint8_t c) {
     if (c == '\n') { g_col = 0; g_row++; }
     else if (c == '\r') { g_col = 0; }
+    else if (c == '\b') { if (g_col > 0) g_col--; }
     else {
         VGA_BUFFER[g_row * VGA_WIDTH + g_col] = (uint16_t)c | ((uint16_t)g_color << 8);
         g_col++;

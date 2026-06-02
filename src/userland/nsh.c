@@ -185,7 +185,9 @@ static int builtin_ls(void) {
         if(de->inode==0)continue;
         int nl=de->name_len<24?de->name_len:24; char nm[25]; memcpy(nm,de->name,nl);nm[nl]=0;
         if(!strcmp(nm,".")||!strcmp(nm,".."))continue;
-        if(de->file_type==FT_DIR) printf("  /%s/\n",(nm[0]=='/')?nm+1:nm);
+        /* Synfs dirs already carry a leading '/' in nm (/proc, /dev).
+           Regular NoxFS dirs don't (test, etc). Print as-is + trailing /. */
+        if(de->file_type==FT_DIR) printf("  %s/\n",nm);
         else                      printf("  %s\n",nm);
     }
     return 0;
