@@ -17,7 +17,7 @@
 <img src="https://img.shields.io/badge/Language-C11%20%2B%20NASM-blue?style=for-the-badge&logo=c" alt="Language"/>
 <img src="https://img.shields.io/badge/Architecture-x86%2032--bit-orange?style=for-the-badge&logo=intel" alt="Architecture"/>
 <img src="https://img.shields.io/badge/Kernel-Monolithic-green?style=for-the-badge" alt="Kernel Type"/>
-<img src="https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge" alt="License"/>
+<img src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey?style=for-the-badge" alt="License"/>
 </div>
 
 </div>
@@ -269,5 +269,5 @@ System halted. Please reboot.
 
 <p align="center">
 <strong>Built from scratch — one instruction at a time</strong><br/>
-<sub>© 2026 Noxis OS · Proprietary</sub>
+<sub>© 2026 Noxis OS · <a href="LICENSE">CC BY-NC 4.0</a> · Free to use, not for commercial purposes</sub>
 </p>
