@@ -22,6 +22,7 @@
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
 #include <mm/virt/heap.h>
+#include <mm/slab.h>
 #include <proc/scheduler.h>
 
 void serial_write_hex64(uint64_t v);
@@ -63,6 +64,7 @@ void kernel_main(void) {
     pmm_init(128ULL * 1024 * 1024);
     vmm_init();
     heap_init();
+    slab_init();
 
     /* Smoke test: alloc + map + heap. */
     uint64_t fr = pmm_alloc_frame();

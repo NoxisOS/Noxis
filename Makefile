@@ -55,6 +55,8 @@ KERNEL_C_OBJS = \
   build/mm/phys/pmm.o       \
   build/mm/virt/vmm.o       \
   build/mm/virt/heap.o      \
+  build/mm/slab.o           \
+  build/mm/arena.o          \
   build/proc/process.o      \
   build/proc/scheduler.o    \
   build/proc/elf.o          \
