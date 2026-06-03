@@ -39,8 +39,17 @@ process_t* proc_alloc(const uint8_t* name) {
     p->exit_code = 0;
     p->kctx_rsp  = 0;
     p->next   = NULL;
+    p->all_next = NULL;
     for (int i = 0; i < PROC_NAME_MAX - 1 && name[i]; i++) p->name[i] = name[i];
     p->name[PROC_NAME_MAX - 1] = 0;
+
+    /* Standard descriptors: 0=stdin (keyboard), 1=stdout, 2=stderr. */
+    for (int i = 0; i < PROC_MAX_FDS; i++) {
+        p->fds[i].kind = FD_CLOSED; p->fds[i].file = NULL; p->fds[i].offset = 0;
+    }
+    p->fds[0].kind = FD_CON_IN;
+    p->fds[1].kind = FD_CON_OUT;
+    p->fds[2].kind = FD_CON_OUT;
     return p;
 }
 

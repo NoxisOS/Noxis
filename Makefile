@@ -27,7 +27,7 @@ else
     MAKE_BOOTIMG = dd if=/dev/zero of=$(DISK_IMG) bs=512 count=2048 status=none && \
                    dd if=$(BOOT_BIN) of=$(DISK_IMG) conv=notrunc status=none && \
                    dd if=$(KERNEL_BIN) of=$(DISK_IMG) bs=512 seek=1 conv=notrunc status=none
-    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img hello.elf:build/hello.elf child.elf:build/child.elf
+    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img hello.elf:build/hello.elf child.elf:build/child.elf motd.txt:src/userland64/motd.txt
 endif
 
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
@@ -60,6 +60,7 @@ KERNEL_C_OBJS = \
   build/proc/process.o      \
   build/proc/scheduler.o    \
   build/proc/syscalls.o     \
+  build/proc/fd.o           \
   build/proc/elf.o          \
   build/fs/noxfs/buffer.o   \
   build/fs/noxfs/noxfs.o    \
@@ -150,7 +151,7 @@ $(DISK_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	$(MAKE_BOOTIMG)
 
 # NoxFS disk image (hdb = primary slave) built from the userland ELFs.
-$(NOXFS_IMG): build/hello.elf build/child.elf tools/windows/build_disk.ps1 tools/linux/build_disk.sh
+$(NOXFS_IMG): build/hello.elf build/child.elf src/userland64/motd.txt tools/windows/build_disk.ps1 tools/linux/build_disk.sh
 	@echo BUILD $@
 	$(MAKE_NOXFS)
 

@@ -15,6 +15,18 @@ typedef long           ssize_t;
 #define SYS_EXEC     4
 #define SYS_GETPID   5
 #define SYS_WAITPID  6
+#define SYS_OPEN     7
+#define SYS_CLOSE    8
+#define SYS_LSEEK    9
+
+#define O_RDONLY  0x00
+#define O_WRONLY  0x01
+#define O_RDWR    0x02
+#define O_CREAT   0x40
+
+#define SEEK_SET  0
+#define SEEK_CUR  1
+#define SEEK_END  2
 
 /* ── raw syscalls (System V: rdi,rsi,rdx; num in rax; clobbers rcx,r11) ── */
 static inline long _syscall3(long n, long a1, long a2, long a3) {
@@ -42,6 +54,13 @@ static inline long execv(const char* p)  { return _syscall3(SYS_EXEC, (long)p, 0
 static inline long getpid(void)          { return _syscall3(SYS_GETPID, 0, 0, 0); }
 static inline long waitpid(long pid, int* st) {
     return _syscall3(SYS_WAITPID, pid, (long)st, 0);
+}
+static inline long open(const char* path, int flags) {
+    return _syscall3(SYS_OPEN, (long)path, flags, 0);
+}
+static inline long close(int fd)         { return _syscall3(SYS_CLOSE, fd, 0, 0); }
+static inline long lseek(int fd, long off, int whence) {
+    return _syscall3(SYS_LSEEK, fd, off, whence);
 }
 
 static inline size_t strlen(const char* s) {

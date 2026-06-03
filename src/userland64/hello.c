@@ -29,7 +29,18 @@ int main(void) {
         puts(", status="); puti(st); puts("\n");
     }
 
-    puts("commands: hello, help, fork, pid, exit\n");
+    /* open/read/close demo: cat /motd.txt. */
+    long fd = open("motd.txt", O_RDONLY);
+    if (fd >= 0) {
+        puts("[demo] cat motd.txt (fd="); puti(fd); puts("):\n");
+        char fb[256]; ssize_t r;
+        while ((r = read((int)fd, fb, sizeof(fb))) > 0) write(1, fb, (size_t)r);
+        close((int)fd);
+    } else {
+        puts("[demo] open motd.txt failed\n");
+    }
+
+    puts("commands: hello, help, fork, pid, cat, exit\n");
 
     char line[128];
     for (;;) {
@@ -45,9 +56,17 @@ int main(void) {
         } else if (streq(line, "hello")) {
             puts("Hello from ring 3!\n");
         } else if (streq(line, "help")) {
-            puts("commands: hello, help, fork, pid, exit\n");
+            puts("commands: hello, help, fork, pid, cat, exit\n");
         } else if (streq(line, "pid")) {
             puts("my pid = "); puti(getpid()); puts("\n");
+        } else if (streq(line, "cat")) {
+            long fd = open("motd.txt", O_RDONLY);
+            if (fd < 0) { puts("cat: motd.txt not found\n"); }
+            else {
+                char fb[256]; ssize_t r;
+                while ((r = read((int)fd, fb, sizeof(fb))) > 0) write(1, fb, (size_t)r);
+                close((int)fd);
+            }
         } else if (streq(line, "fork")) {
             long pid = fork();
             if (pid == 0) {

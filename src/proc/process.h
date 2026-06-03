@@ -16,6 +16,19 @@
 #define PROC_NAME_MAX     32
 #define PROC_QUANTUM      10
 #define PROC_KSTACK_SIZE  16384      /* 16 KB kernel stack per thread */
+#define PROC_MAX_FDS      16         /* open files per process          */
+
+/* File-descriptor kinds. */
+#define FD_CLOSED   0
+#define FD_CON_IN   1                /* keyboard (stdin)                */
+#define FD_CON_OUT  2                /* VGA + serial (stdout/stderr)    */
+#define FD_FILE     3                /* a VFS file with a read/write head */
+
+typedef struct {
+    int       kind;                  /* FD_* */
+    void*     file;                  /* vfs_file_t* when kind == FD_FILE */
+    uint32_t  offset;                /* read/write head for files */
+} fd_t;
 
 typedef enum {
     PROC_READY    = 0,
@@ -40,6 +53,7 @@ typedef struct process {
     uint32_t         priority;
     struct process*  next;            /* ready-queue link                */
     struct process*  all_next;        /* global process-list link        */
+    fd_t             fds[PROC_MAX_FDS];/* open file descriptors           */
 } process_t;
 
 process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority);

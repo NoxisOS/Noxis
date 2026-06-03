@@ -32,6 +32,7 @@ int64_t sys_fork(syscall_frame_t* f) {
     if (!child) return -1;
     child->pml4   = child_pml4;
     child->parent = parent;
+    for (int i = 0; i < PROC_MAX_FDS; i++) child->fds[i] = parent->fds[i];
 
     /* Cloned syscall frame at the top of the child's kernel stack. */
     syscall_frame_t* cf =

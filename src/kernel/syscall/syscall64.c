@@ -22,6 +22,13 @@ void     sys_exit(int code);
 uint64_t sys_getpid(void);
 int64_t  sys_waitpid(int64_t pid, int* status);
 
+/* file descriptors live in proc/fd.c. */
+int64_t  sys_open(const uint8_t* path, int flags);
+int64_t  sys_close(int fd);
+int64_t  sys_lseek(int fd, int64_t off, int whence);
+int64_t  sys_read(int fd, uint8_t* buf, uint64_t len);
+int64_t  sys_write(int fd, const uint8_t* buf, uint64_t len);
+
 /* ── MSRs ─────────────────────────────────────────────────────── */
 #define MSR_EFER    0xC0000080
 #define MSR_STAR    0xC0000081
@@ -57,45 +64,26 @@ os_status_t syscall_init(void) {
 enum {
     SYS_EXIT = 0, SYS_WRITE = 1, SYS_READ = 2,
     SYS_FORK = 3, SYS_EXEC = 4, SYS_GETPID = 5, SYS_WAITPID = 6,
+    SYS_OPEN = 7, SYS_CLOSE = 8, SYS_LSEEK = 9,
 };
 
 void syscall_dispatch(syscall_frame_t* f) {
     switch (f->rax) {
-    case SYS_EXIT:
-        sys_exit((int)f->rdi);
-        return;                       /* never returns */
-
-    case SYS_WRITE:
-        vga_write_buf((const uint8_t*)f->rsi, (uint32_t)f->rdx);
-        serial_write_n((const uint8_t*)f->rsi, (uint32_t)f->rdx);
-        f->rax = f->rdx;
-        return;
-
-    case SYS_READ: {                  /* line-buffered keyboard read */
-        uint8_t* buf = (uint8_t*)f->rsi;
-        uint64_t max = f->rdx, got = 0;
-        while (got < max) {
-            int32_t c;
-            __asm__ __volatile__("sti");   /* let the keyboard IRQ fire */
-            while ((c = kbd_poll()) < 0) __asm__ __volatile__("hlt");
-            if (c == '\r') c = '\n';
-            buf[got++] = (uint8_t)c;
-            vga_put_char((uint8_t)c);
-            if (c == '\n') break;
-        }
-        __asm__ __volatile__("cli");
-        f->rax = got;
-        return;
-    }
-
+    case SYS_EXIT:    sys_exit((int)f->rdi);                       return;  /* no return */
+    case SYS_WRITE:   f->rax = (uint64_t)sys_write((int)f->rdi,
+                                  (const uint8_t*)f->rsi, f->rdx);          return;
+    case SYS_READ:    f->rax = (uint64_t)sys_read((int)f->rdi,
+                                  (uint8_t*)f->rsi, f->rdx);                return;
     case SYS_FORK:    f->rax = (uint64_t)sys_fork(f);                       return;
     case SYS_EXEC:    f->rax = (uint64_t)sys_exec(f, (const uint8_t*)f->rdi); return;
     case SYS_GETPID:  f->rax = sys_getpid();                               return;
     case SYS_WAITPID: f->rax = (uint64_t)sys_waitpid((int64_t)f->rdi,
                                                      (int*)f->rsi);         return;
-
-    default:
-        f->rax = (uint64_t)-1;
-        return;
+    case SYS_OPEN:    f->rax = (uint64_t)sys_open((const uint8_t*)f->rdi,
+                                                  (int)f->rsi);            return;
+    case SYS_CLOSE:   f->rax = (uint64_t)sys_close((int)f->rdi);            return;
+    case SYS_LSEEK:   f->rax = (uint64_t)sys_lseek((int)f->rdi,
+                                  (int64_t)f->rsi, (int)f->rdx);            return;
+    default:          f->rax = (uint64_t)-1;                               return;
     }
 }
