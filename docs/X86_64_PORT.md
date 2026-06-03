@@ -7,54 +7,29 @@ This is a multi-phase effort; each phase must boot before the next begins.
 
 ---
 
-## ✅ Phase 1+2 — Long-mode bring-up (DONE)
+## ✅ Phase 1 — Long-mode bring-up (DONE)
 
 Pure-NASM boot sector, no cross-compiler needed.
 
 - `src/boot64/boot.asm` — real mode → 32-bit protected → long mode
 - 4-level paging (PML4 → PDPT → PD), identity-maps first 2 MB with a 2 MB page
 - GDT with 32-bit code, data, and 64-bit code (L=1) segments
-- Prints `NOXIS 64` to VGA from 64-bit code
+
+## ✅ Phase 2 — 64-bit C kernel (DONE)
+
+- `src/boot64/entry.asm` — `_start64`: sets RSP, calls `kmain64()`
+- `src/boot64/kmain.c` — minimal C kernel, writes coloured text to VGA
+- `src/boot64/kernel.ld` — links the kernel flat at `0x10000`
+- Boot sector loads the kernel from disk (INT 13h/42h LBA read) then jumps in
 
 ```bash
-make boot64     # assemble build/boot64.img
+make boot64     # build/boot64.img (boot sector + 64-bit C kernel)
 make run64      # boot it in qemu-system-x86_64
 ```
 
-Verified: reaches long mode, executes 64-bit code, writes VGA. Zero CPU resets.
-
----
-
-## ⛔ Prerequisite for Phase 3+ — x86_64-elf cross-compiler
-
-The C kernel cannot be compiled for 64-bit without an `x86_64-elf` toolchain.
-The current machine only has `i686-elf-gcc`. Build it once (~20 min):
-
-```bash
-export PREFIX="$HOME/cross64"
-export TARGET=x86_64-elf
-export PATH="$PREFIX/bin:$PATH"
-mkdir -p "$PREFIX"
-
-# binutils
-wget https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.xz
-tar -xf binutils-2.41.tar.xz && mkdir build-binutils && cd build-binutils
-../binutils-2.41/configure --target=$TARGET --prefix="$PREFIX" \
-    --with-sysroot --disable-nls --disable-werror
-make -j$(nproc) && make install && cd ..
-
-# gcc (C only, no red zone in kernel later via -mno-red-zone in CFLAGS)
-wget https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz
-tar -xf gcc-13.2.0.tar.xz && mkdir build-gcc && cd build-gcc
-../gcc-13.2.0/configure --target=$TARGET --prefix="$PREFIX" \
-    --disable-nls --enable-languages=c --without-headers
-make -j$(nproc) all-gcc all-target-libgcc
-make install-gcc install-target-libgcc
-```
-
-Verify: `x86_64-elf-gcc --version`.
-
-> **On Windows**: build under WSL2, or fetch a prebuilt `x86_64-elf` toolchain.
+Verified: 64-bit C `kmain64()` runs, SysV AMD64 calling convention works,
+prints 3 coloured lines to VGA. Toolchain: `x86_64-elf-gcc 15.2.0`,
+`binutils 2.45` at `D:/Program Files/x86_64-elf-tools-windows/bin`.
 
 ---
 
