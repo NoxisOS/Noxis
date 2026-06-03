@@ -145,8 +145,12 @@ build/ctest.o: src/userland/ctest.c
 	@echo CC   $<
 	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
-build/nsh.o: src/userland/nsh.c
-	@$(call MKDIRP,build)
+# ── nsh shell (split into modules under src/userland/nsh/) ────
+NSH_SRCS = $(wildcard src/userland/nsh/*.c)
+NSH_OBJS = $(patsubst src/userland/nsh/%.c,build/nsh/%.o,$(NSH_SRCS))
+
+build/nsh/%.o: src/userland/nsh/%.c
+	@$(call MKDIRP,build/nsh)
 	@echo CC   $<
 	$(CC) $(NOXLIB_CFLAGS) $(DEPFLAGS) -c $< -o $@
 
@@ -156,10 +160,10 @@ build/ctest.elf: $(NOXLIB_CRT) build/ctest.o build/noxlib.a $(USER_LD)
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ \
 	    $(NOXLIB_CRT) build/ctest.o build/noxlib.a
 
-build/nsh.elf: $(NOXLIB_CRT) build/nsh.o build/noxlib.a $(USER_LD)
+build/nsh.elf: $(NOXLIB_CRT) $(NSH_OBJS) build/noxlib.a $(USER_LD)
 	@echo LD   $@
 	$(LD) -T $(USER_LD) -nostdlib -m elf_i386 -o $@ \
-	    $(NOXLIB_CRT) build/nsh.o build/noxlib.a
+	    $(NOXLIB_CRT) $(NSH_OBJS) build/noxlib.a
 
 # ── Disk image ───────────────────────────────────────────────
 # Disk-builder scripts are dependencies so editing them forces a rebuild.
@@ -232,6 +236,24 @@ run-debug: $(DISK_IMG)
 	@echo RUN  QEMU + GDB on :1234
 	start "QEMU-DEBUG" /B $(QEMU) -fda $(DISK_IMG) -hda build/disk.img -no-reboot -no-shutdown -s -S
 	@echo Connect: i686-elf-gdb -x .gdbinit
+
+# ─────────────────────────────────────────────────────────────
+# x86_64 port (work in progress, branch: x86_64)
+# Milestone 1: pure-NASM long-mode bring-up — no cross-compiler needed.
+# ─────────────────────────────────────────────────────────────
+QEMU64 = "D:\Program Files\qemu\qemu-system-x86_64"
+
+build/boot64.img: src/boot64/boot.asm
+	@$(call MKDIRP,build)
+	@echo AS   $@
+	$(AS) -f bin $< -o $@
+
+.PHONY: boot64 run64
+boot64: build/boot64.img
+
+run64: build/boot64.img
+	@echo RUN  QEMU x86_64 (long mode)
+	$(QEMU64) -drive file=build/boot64.img,format=raw -no-reboot
 
 clean:
 	@if exist build rmdir /s /q build

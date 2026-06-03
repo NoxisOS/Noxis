@@ -55,6 +55,21 @@ static void _puthex(uint32_t v) {
 }
 
 static void _report_user_fault(uint32_t cr2, uint32_t err, isr_frame_t* frame) {
+    /* Mirror to serial for headless debugging. */
+    {
+        extern void serial_write(const uint8_t*);
+        static const char hx[]="0123456789ABCDEF";
+        uint8_t s[64]; int i=0;
+        const char* t="SEGV cr2/eip/err ";
+        while (t[i] && i < 17) { s[i]=(uint8_t)t[i]; i++; }
+        for (int x=28; x>=0; x-=4) { s[i++]=(uint8_t)hx[(cr2>>x)&0xF]; }
+        s[i++]='/';
+        for (int x=28; x>=0; x-=4) { s[i++]=(uint8_t)hx[(frame->eip>>x)&0xF]; }
+        s[i++]='/';
+        for (int x=28; x>=0; x-=4) { s[i++]=(uint8_t)hx[(err>>x)&0xF]; }
+        s[i++]='\r'; s[i++]='\n'; s[i]=0;
+        serial_write(s);
+    }
     vga_set_color(VGA_LIGHT_RED, VGA_BLACK);
     vga_write((const uint8_t*)"\n  segfault: process killed (page fault)\n");
     vga_set_color(VGA_DARK_GREY, VGA_BLACK);
