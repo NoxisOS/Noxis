@@ -12,6 +12,7 @@
 #include <drivers/vga.h>
 
 void serial_write_hex64(uint64_t v);
+int32_t kbd_poll(void);
 
 /* ── MSRs ─────────────────────────────────────────────────────── */
 #define MSR_EFER    0xC0000080
@@ -65,6 +66,26 @@ uint64_t syscall_dispatch(uint64_t num, uint64_t a1, uint64_t a2, uint64_t a3) {
         vga_write_buf((const uint8_t*)a2, (uint32_t)a3);
         serial_write_n((const uint8_t*)a2, (uint32_t)a3);
         return a3;
+
+    case 2: { /* read(fd, buf, len) — line-buffered keyboard read */
+        (void)a1;
+        uint8_t* buf = (uint8_t*)a2;
+        uint64_t got = 0;
+        while (got < a3) {
+            int32_t c;
+            /* The syscall path runs with IF=0 (SFMASK); enable interrupts
+               so the keyboard IRQ can fire while we wait. */
+            __asm__ __volatile__("sti");
+            while ((c = kbd_poll()) < 0) __asm__ __volatile__("hlt");
+            if (c == '\r') c = '\n';
+            buf[got++] = (uint8_t)c;
+            /* Echo so the user sees what they type. */
+            vga_put_char((uint8_t)c);
+            if (c == '\n') break;
+        }
+        __asm__ __volatile__("cli");
+        return got;
+    }
 
     default:
         return (uint64_t)-1;
