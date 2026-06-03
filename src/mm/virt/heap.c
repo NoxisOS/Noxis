@@ -9,7 +9,11 @@
 
 void serial_write_hex64(uint64_t v);
 
-#define HEAP_BASE   (16ULL * 1024 * 1024)
+/* Heap lives at physical 16 MB..48 MB, accessed through the physmap so it
+   is reachable from every address space (kernel data must not sit in the
+   per-process low half). */
+#define PHYSMAP_BASE  0xFFFF800000000000ULL
+#define HEAP_BASE   (PHYSMAP_BASE + 16ULL * 1024 * 1024)
 #define HEAP_SIZE   (32ULL * 1024 * 1024)
 #define ALIGN16(n)  (((n) + 15) & ~15ULL)
 #define MAGIC       0xB10C600DB10C600DULL

@@ -30,6 +30,14 @@ os_status_t pmm_init(uint64_t ram_bytes) {
     for (uint64_t f = 0; f < reserved && f < g_nframes; f++) mark_used(f);
     g_free = g_nframes - reserved;
 
+    /* Reserve the kernel heap region [16 MB, 48 MB) so the PMM never
+       hands out frames the heap uses (the heap is a fixed window). */
+    uint64_t hstart = (16ULL * 1024 * 1024) / PAGE_SIZE;
+    uint64_t hend   = (48ULL * 1024 * 1024) / PAGE_SIZE;
+    for (uint64_t f = hstart; f < hend && f < g_nframes; f++) {
+        if (!is_used(f)) { mark_used(f); g_free--; }
+    }
+
     serial_write((const uint8_t*)"[noxis64] PMM frames="); serial_write_hex64(g_nframes);
     serial_write((const uint8_t*)" free=");                serial_write_hex64(g_free);
     serial_write((const uint8_t*)"\n");
