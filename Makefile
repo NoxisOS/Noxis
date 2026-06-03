@@ -39,14 +39,17 @@ KERNEL_C_OBJS = \
   build/mm/virt/vmm.o       \
   build/mm/virt/heap.o      \
   build/proc/process.o      \
-  build/proc/scheduler.o
+  build/proc/scheduler.o    \
+  build/kernel/syscall/syscall64.o
 
 KERNEL_ASM_OBJS = \
   build/boot/kernel_entry.o      \
   build/kernel/hal/gdt_load.o    \
   build/kernel/hal/idt_load.o    \
   build/kernel/isr/isr_stubs.o   \
-  build/proc/kthread_switch.o
+  build/proc/kthread_switch.o    \
+  build/proc/user_enter.o        \
+  build/kernel/syscall/syscall_entry.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 

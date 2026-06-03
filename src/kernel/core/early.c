@@ -26,20 +26,12 @@ void serial_write_hex64(uint64_t v);
 
 int32_t kbd_poll(void);
 os_status_t kbd_init(void);
+os_status_t syscall_init(void);
+extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
+extern uint8_t user_test_start[], user_test_end[];
 
-/* Two test kernel threads — prove preemptive multitasking. */
-static void thread_a(void) {
-    for (;;) {
-        serial_write((const uint8_t*)"[A]");
-        for (volatile uint64_t i = 0; i < 8000000ULL; i++) { }
-    }
-}
-static void thread_b(void) {
-    for (;;) {
-        serial_write((const uint8_t*)"[B]");
-        for (volatile uint64_t i = 0; i < 8000000ULL; i++) { }
-    }
-}
+#define UCODE_VA   0x40000000ULL
+#define USTACK_VA  0x40010000ULL
 
 void kernel_main(void) {
     vga_init();
@@ -96,22 +88,27 @@ void kernel_main(void) {
     kbd_init();
     serial_write((const uint8_t*)"OK\n");
 
-    /* ── Scheduler + preemptive multitasking test ─────────────── */
-    serial_write((const uint8_t*)"[noxis64] SCHED ... ");
-    scheduler_init();
-    scheduler_spawn((const uint8_t*)"a", thread_a, 1);
-    scheduler_spawn((const uint8_t*)"b", thread_b, 1);
-    pit_set_tick_cb(scheduler_tick);          /* PIT preempts threads */
+    /* ── Syscalls + ring 3 test ───────────────────────────────── */
+    serial_write((const uint8_t*)"[noxis64] SYSCALL ... ");
+    syscall_init();
     serial_write((const uint8_t*)"OK\n");
 
-    cpu_sti();
+    /* Map a user code page + user stack page (outside the identity map). */
+    vmm_map_page(UCODE_VA,  pmm_alloc_frame(), PAGE_RW | PAGE_USER);
+    vmm_map_page(USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
+
+    /* Copy the ring-3 test program into the user code page. */
+    uint8_t* dst = (uint8_t*)UCODE_VA;
+    uint64_t n = (uint64_t)(user_test_end - user_test_start);
+    for (uint64_t i = 0; i < n; i++) dst[i] = user_test_start[i];
 
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"core up + preemptive scheduler (see serial [A]/[B])\n");
+    vga_write((const uint8_t*)"entering ring 3...\n");
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-    serial_write((const uint8_t*)"[noxis64] core up, scheduling threads\n");
+    serial_write((const uint8_t*)"[noxis64] entering ring 3\n");
 
-    /* The boot context becomes the idle thread; PIT preemption rotates
-       between idle, thread A and thread B. */
-    for (;;) __asm__ __volatile__("hlt");
+    cpu_sti();
+    enter_ring3(UCODE_VA, USTACK_VA + 0x1000);   /* stack top */
+
+    for (;;) __asm__ __volatile__("hlt");        /* unreachable */
 }

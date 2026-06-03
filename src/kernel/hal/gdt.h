@@ -9,11 +9,11 @@
 #include <common/types.h>
 #include <common/status.h>
 
-/* Selectors (index << 3 | rpl). */
+/* Selectors (index << 3 | rpl).  User data precedes user code (SYSRET). */
 #define SEL_KCODE  0x08
 #define SEL_KDATA  0x10
-#define SEL_UCODE  0x1B   /* user code, rpl=3 */
-#define SEL_UDATA  0x23   /* user data, rpl=3 */
+#define SEL_UDATA  0x1B   /* 0x18 | rpl 3 */
+#define SEL_UCODE  0x23   /* 0x20 | rpl 3 */
 #define SEL_TSS    0x28
 
 /* Set the ring-0 stack pointer used on user→kernel transitions. */

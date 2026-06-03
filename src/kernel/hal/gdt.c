@@ -35,10 +35,12 @@ void gdt_set_kernel_stack(uint64_t rsp) { g_tss.rsp[0] = rsp; }
 
 os_status_t gdt_init(void) {
     g_gdt[0] = 0;
-    g_gdt[1] = seg(0x9A, 0xA);   /* kernel code, L=1 */
-    g_gdt[2] = seg(0x92, 0xA);   /* kernel data      */
-    g_gdt[3] = seg(0xFA, 0xA);   /* user code,  DPL3 */
-    g_gdt[4] = seg(0xF2, 0xA);   /* user data,  DPL3 */
+    /* Order matters for SYSRET: user DATA (0x18) must precede user CODE
+       (0x20).  SYSRET loads SS = STAR_SYSRET+8 and CS = STAR_SYSRET+16. */
+    g_gdt[1] = seg(0x9A, 0xA);   /* 0x08 kernel code, L=1 */
+    g_gdt[2] = seg(0x92, 0xA);   /* 0x10 kernel data      */
+    g_gdt[3] = seg(0xF2, 0xA);   /* 0x18 user data,  DPL3 */
+    g_gdt[4] = seg(0xFA, 0xA);   /* 0x20 user code,  DPL3, L=1 */
 
     for (uint64_t i = 0; i < sizeof(g_tss); i++) ((uint8_t*)&g_tss)[i] = 0;
     g_tss.rsp[0]     = (uint64_t)(g_ist1 + sizeof(g_ist1));
