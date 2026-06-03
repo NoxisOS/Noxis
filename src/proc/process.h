@@ -23,6 +23,8 @@
 #define FD_CON_IN   1                /* keyboard (stdin)                */
 #define FD_CON_OUT  2                /* VGA + serial (stdout/stderr)    */
 #define FD_FILE     3                /* a VFS file with a read/write head */
+#define FD_PIPE_R   4                /* read end of a pipe (file=pipe_t*) */
+#define FD_PIPE_W   5                /* write end of a pipe              */
 
 typedef struct {
     int       kind;                  /* FD_* */

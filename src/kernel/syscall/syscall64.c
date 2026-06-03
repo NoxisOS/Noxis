@@ -22,6 +22,7 @@ void     sys_exit(int code);
 uint64_t sys_getpid(void);
 int64_t  sys_waitpid(int64_t pid, int* status);
 int64_t  sys_readdir(uint64_t idx, uint8_t* namebuf);
+int64_t  sys_pipe(int* fd);
 
 /* file descriptors live in proc/fd.c. */
 int64_t  sys_open(const uint8_t* path, int flags);
@@ -93,6 +94,7 @@ void syscall_dispatch(syscall_frame_t* f) {
                                   (uint8_t*)f->rsi);                       return;
     case SYS_DUP:     f->rax = (uint64_t)sys_dup((int)f->rdi);              return;
     case SYS_DUP2:    f->rax = (uint64_t)sys_dup2((int)f->rdi, (int)f->rsi); return;
+    case SYS_PIPE:    f->rax = (uint64_t)sys_pipe((int*)f->rdi);            return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

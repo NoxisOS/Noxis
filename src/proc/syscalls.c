@@ -13,6 +13,9 @@
 void serial_write(const uint8_t* s);
 void serial_write_hex64(uint64_t v);
 uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
+void pipe_addref(int kind, void* file);
+void pipe_close(int kind, void* file);
+static int fd_is_pipe(int k) { return k == FD_PIPE_R || k == FD_PIPE_W; }
 
 #define USTACK_VA     0x50000000ULL
 #define PHYSMAP_BASE  0xFFFF800000000000ULL
@@ -36,7 +39,11 @@ int64_t sys_fork(syscall_frame_t* f) {
     if (!child) return -1;
     child->pml4   = child_pml4;
     child->parent = parent;
-    for (int i = 0; i < PROC_MAX_FDS; i++) child->fds[i] = parent->fds[i];
+    for (int i = 0; i < PROC_MAX_FDS; i++) {
+        child->fds[i] = parent->fds[i];
+        if (fd_is_pipe(child->fds[i].kind))      /* extra reference per end */
+            pipe_addref(child->fds[i].kind, child->fds[i].file);
+    }
 
     /* Cloned syscall frame at the top of the child's kernel stack. */
     syscall_frame_t* cf =
@@ -111,6 +118,11 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
 }
 
 void sys_exit(int code) {
+    /* Release any pipe references so readers see EOF / writers see broken pipe. */
+    process_t* cur = scheduler_current();
+    for (int i = 0; i < PROC_MAX_FDS; i++)
+        if (fd_is_pipe(cur->fds[i].kind)) pipe_close(cur->fds[i].kind, cur->fds[i].file);
+
     serial_write((const uint8_t*)"[noxis64] pid ");
     serial_write_hex64(scheduler_current()->pid);
     serial_write((const uint8_t*)" exit code=");

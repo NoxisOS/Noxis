@@ -38,6 +38,35 @@ static int parse(char* line, char** argv, char** infile,
     return n;
 }
 
+/* Run "left | right": connect left's stdout to right's stdin via a pipe. */
+static void run_pipe(char** lav, char** rav) {
+    int fds[2];
+    if (pipe(fds) < 0) { puts("nsh: pipe failed\n"); return; }
+
+    long p1 = fork();
+    if (p1 == 0) {
+        dup2(fds[1], 1); close(fds[0]); close(fds[1]);
+        execv(lav[0], lav); puts(lav[0]); puts(": not found\n"); exit(127);
+    }
+    long p2 = fork();
+    if (p2 == 0) {
+        dup2(fds[0], 0); close(fds[0]); close(fds[1]);
+        execv(rav[0], rav); puts(rav[0]); puts(": not found\n"); exit(127);
+    }
+    close(fds[0]); close(fds[1]);
+    int st = 0;
+    waitpid(p1, &st);
+    waitpid(p2, &st);
+}
+
+/* Split `line` on a single '|'; returns the right half (NUL-terminating the
+   left) or NULL if there is no pipe. */
+static char* split_pipe(char* line) {
+    for (char* p = line; *p; p++)
+        if (*p == '|') { *p = 0; return p + 1; }
+    return 0;
+}
+
 static void run(char** argv, char* infile, char* outfile, int append) {
     long pid = fork();
     if (pid == 0) {
@@ -69,9 +98,12 @@ int main(int argc, char** argv) {
     { char* a[] = { "echo.elf", "hello", "from", "nsh", 0 };   run(a, 0, 0, 0); }
     { char* a[] = { "echo.elf", "written", "via", ">", 0 };    run(a, 0, "out.txt", 0); }
     { char* a[] = { "cat.elf", "out.txt", 0 };                 run(a, 0, 0, 0); }
+    /* pipe demo: ls.elf | cat.elf */
+    { char* l[] = { "ls.elf", 0 }; char* r[] = { "cat.elf", 0 }; run_pipe(l, r); }
 
     char  line[256];
     char* av[MAX_ARGS];
+    char* rav[MAX_ARGS];
     char* in; char* out; int app;
     for (;;) {
         puts("nsh$ ");
@@ -79,6 +111,15 @@ int main(int argc, char** argv) {
         if (n <= 0) continue;
         if (line[n - 1] == '\n') n--;
         line[n] = 0;
+
+        char* rhs = split_pipe(line);
+        if (rhs) {                           /* a single-stage pipeline */
+            char *i2, *o2; int a2;
+            if (parse(line, av, &in, &out, &app) == 0) continue;
+            if (parse(rhs, rav, &i2, &o2, &a2) == 0) continue;
+            run_pipe(av, rav);
+            continue;
+        }
 
         int ac = parse(line, av, &in, &out, &app);
         if (ac == 0) continue;

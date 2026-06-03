@@ -16,6 +16,14 @@ void    vga_put_char(uint8_t c);
 void    serial_write_n(const uint8_t* buf, uint32_t len);
 int32_t kbd_poll(void);
 
+/* pipe ops (proc/pipe.c) */
+void    pipe_addref(int kind, void* file);
+void    pipe_close(int kind, void* file);
+int64_t pipe_read(void* file, uint8_t* buf, uint64_t len);
+int64_t pipe_write(void* file, const uint8_t* buf, uint64_t len);
+
+static int fd_is_pipe(int kind) { return kind == FD_PIPE_R || kind == FD_PIPE_W; }
+
 /* open() flags (subset of POSIX). */
 #define O_RDONLY  0x00
 #define O_WRONLY  0x01
@@ -55,6 +63,7 @@ int64_t sys_open(const uint8_t* path, int flags) {
 int64_t sys_close(int fd) {
     fd_t* e = fd_get(fd);
     if (!e) return -1;
+    if (fd_is_pipe(e->kind)) pipe_close(e->kind, e->file);
     e->kind = FD_CLOSED; e->file = NULL; e->offset = 0;
     return 0;
 }
@@ -64,7 +73,11 @@ int64_t sys_dup(int fd) {
     if (!e) return -1;
     process_t* p = scheduler_current();
     for (int i = 0; i < PROC_MAX_FDS; i++)
-        if (p->fds[i].kind == FD_CLOSED) { p->fds[i] = *e; return i; }
+        if (p->fds[i].kind == FD_CLOSED) {
+            p->fds[i] = *e;
+            if (fd_is_pipe(e->kind)) pipe_addref(e->kind, e->file);
+            return i;
+        }
     return -1;
 }
 
@@ -73,7 +86,10 @@ int64_t sys_dup2(int oldfd, int newfd) {
     if (!e) return -1;
     if (newfd < 0 || newfd >= PROC_MAX_FDS) return -1;
     if (oldfd == newfd) return newfd;
-    scheduler_current()->fds[newfd] = *e;
+    process_t* p = scheduler_current();
+    if (fd_is_pipe(p->fds[newfd].kind)) pipe_close(p->fds[newfd].kind, p->fds[newfd].file);
+    p->fds[newfd] = *e;
+    if (fd_is_pipe(e->kind)) pipe_addref(e->kind, e->file);
     return newfd;
 }
 
@@ -115,6 +131,7 @@ int64_t sys_read(int fd, uint8_t* buf, uint64_t len) {
             buf[got++] = f->data[e->offset++];
         return (int64_t)got;
     }
+    if (e->kind == FD_PIPE_R) return pipe_read(e->file, buf, len);
     return -1;                          /* not readable */
 }
 
@@ -134,5 +151,6 @@ int64_t sys_write(int fd, const uint8_t* buf, uint64_t len) {
         if (w > 0) e->offset += (uint32_t)w;
         return w;
     }
+    if (e->kind == FD_PIPE_W) return pipe_write(e->file, buf, len);
     return -1;                          /* not writable */
 }

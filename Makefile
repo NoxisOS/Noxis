@@ -61,6 +61,7 @@ KERNEL_C_OBJS = \
   build/proc/scheduler.o    \
   build/proc/syscalls.o     \
   build/proc/fd.o           \
+  build/proc/pipe.o         \
   build/proc/elf.o          \
   build/fs/noxfs/buffer.o   \
   build/fs/noxfs/noxfs.o    \
