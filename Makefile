@@ -27,7 +27,7 @@ else
     MAKE_BOOTIMG = dd if=/dev/zero of=$(DISK_IMG) bs=512 count=2048 status=none && \
                    dd if=$(BOOT_BIN) of=$(DISK_IMG) conv=notrunc status=none && \
                    dd if=$(KERNEL_BIN) of=$(DISK_IMG) bs=512 seek=1 conv=notrunc status=none
-    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img hello.elf:build/hello.elf
+    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img hello.elf:build/hello.elf child.elf:build/child.elf
 endif
 
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
@@ -122,6 +122,14 @@ build/hello.elf: build/u_crt0.o build/u_hello.o src/userland64/user.ld
 	@echo LD   $@
 	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_hello.o
 
+build/u_child.o: src/userland64/child.c
+	@$(call MKDIRP,build)
+	$(CC) $(UCFLAGS) -c $< -o $@
+
+build/child.elf: build/u_crt0.o build/u_child.o src/userland64/user.ld
+	@echo LD   $@
+	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_child.o
+
 # The blob incbin's build/hello.elf, so it must exist first.
 build/userland64/hello_blob.o: src/userland64/hello_blob.asm build/hello.elf
 	@$(call MKDIRP,build/userland64)
@@ -141,8 +149,8 @@ $(DISK_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	@echo BUILD $@
 	$(MAKE_BOOTIMG)
 
-# NoxFS disk image (hdb = primary slave) built from build/hello.elf.
-$(NOXFS_IMG): build/hello.elf tools/windows/build_disk.ps1 tools/linux/build_disk.sh
+# NoxFS disk image (hdb = primary slave) built from the userland ELFs.
+$(NOXFS_IMG): build/hello.elf build/child.elf tools/windows/build_disk.ps1 tools/linux/build_disk.sh
 	@echo BUILD $@
 	$(MAKE_NOXFS)
 

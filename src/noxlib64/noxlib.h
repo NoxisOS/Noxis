@@ -8,9 +8,13 @@
 typedef unsigned long  size_t;
 typedef long           ssize_t;
 
-#define SYS_EXIT   0
-#define SYS_WRITE  1
-#define SYS_READ   2
+#define SYS_EXIT     0
+#define SYS_WRITE    1
+#define SYS_READ     2
+#define SYS_FORK     3
+#define SYS_EXEC     4
+#define SYS_GETPID   5
+#define SYS_WAITPID  6
 
 /* ── raw syscalls (System V: rdi,rsi,rdx; num in rax; clobbers rcx,r11) ── */
 static inline long _syscall3(long n, long a1, long a2, long a3) {
@@ -33,11 +37,29 @@ static inline void exit(int code) {
     for (;;) { }
 }
 
+static inline long fork(void)            { return _syscall3(SYS_FORK, 0, 0, 0); }
+static inline long execv(const char* p)  { return _syscall3(SYS_EXEC, (long)p, 0, 0); }
+static inline long getpid(void)          { return _syscall3(SYS_GETPID, 0, 0, 0); }
+static inline long waitpid(long pid, int* st) {
+    return _syscall3(SYS_WAITPID, pid, (long)st, 0);
+}
+
 static inline size_t strlen(const char* s) {
     size_t n = 0; while (s[n]) n++; return n;
 }
 static inline void puts(const char* s) {
     write(1, s, strlen(s));
+}
+
+/* Print a signed decimal integer. */
+static inline void puti(long v) {
+    char buf[24];
+    int i = sizeof(buf);
+    unsigned long u = (v < 0) ? (unsigned long)(-v) : (unsigned long)v;
+    buf[--i] = 0;
+    do { buf[--i] = (char)('0' + (u % 10)); u /= 10; } while (u);
+    if (v < 0) buf[--i] = '-';
+    write(1, &buf[i], strlen(&buf[i]));
 }
 
 #endif /* NOXLIB64_H */

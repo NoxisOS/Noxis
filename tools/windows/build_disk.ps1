@@ -22,7 +22,8 @@ $ino_tbl_blk = 3
 $data_start  = $ino_tbl_blk + $ino_blks
 
 $files = @(
-    @{Name='hello.elf';  Path='build/hello.elf'}
+    @{Name='hello.elf';  Path='build/hello.elf'},
+    @{Name='child.elf';  Path='build/child.elf'}
 )
 
 # Direct byte assignment — [Array]::Copy on byte[] is unreliable on

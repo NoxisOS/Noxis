@@ -12,7 +12,24 @@ static int streq(const char* a, const char* b) {
 
 int main(void) {
     puts("\nNoxis 64-bit userland shell (ring 3)\n");
-    puts("commands: hello, help, exit\n");
+
+    /* One-shot fork+exec demo at startup (runs without keyboard input). */
+    puts("[demo] parent pid="); puti(getpid()); puts("\n");
+    long dpid = fork();
+    if (dpid == 0) {
+        puts("[demo] child pid="); puti(getpid());
+        puts(", exec child.elf...\n");
+        execv("child.elf");                 /* replaces this image */
+        puts("[demo] exec FAILED\n");       /* only reached on error */
+        exit(1);
+    } else {
+        int st = -1;
+        long w = waitpid(dpid, &st);
+        puts("[demo] parent reaped child "); puti(w);
+        puts(", status="); puti(st); puts("\n");
+    }
+
+    puts("commands: hello, help, fork, pid, exit\n");
 
     char line[128];
     for (;;) {
@@ -28,7 +45,22 @@ int main(void) {
         } else if (streq(line, "hello")) {
             puts("Hello from ring 3!\n");
         } else if (streq(line, "help")) {
-            puts("commands: hello, help, exit\n");
+            puts("commands: hello, help, fork, pid, exit\n");
+        } else if (streq(line, "pid")) {
+            puts("my pid = "); puti(getpid()); puts("\n");
+        } else if (streq(line, "fork")) {
+            long pid = fork();
+            if (pid == 0) {
+                puts("  [child]  hello from the forked child, pid=");
+                puti(getpid()); puts("\n");
+                exit(7);
+            } else {
+                puts("  [parent] forked child pid="); puti(pid); puts("\n");
+                int st = -1;
+                long w = waitpid(pid, &st);
+                puts("  [parent] child "); puti(w);
+                puts(" exited, status="); puti(st); puts("\n");
+            }
         } else if (n > 0) {
             puts("you said: ");
             write(1, line, (size_t)n);
