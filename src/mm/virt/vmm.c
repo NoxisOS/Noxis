@@ -1,6 +1,14 @@
 /**
  * @file    mm/virt/vmm.c
- * @brief   Virtual memory manager — 4-level paging (PML4/PDPT/PD/PT).
+ * @brief   Virtual memory manager — 4-level paging, physmap, address spaces.
+ *
+ * Address-space layout (per process PML4):
+ *   PML4[0]   — private user half (0 .. 0x7FFFFFFFFFFF)
+ *   PML4[256] — physmap: all RAM mapped at 0xFFFF800000000000 (shared)
+ *   PML4[511] — kernel image at 0xFFFFFFFF80000000 (shared)
+ *
+ * The kernel accesses physical memory through the physmap, so PML4[0]
+ * can be fully private to each user process.
  */
 #include <mm/virt/vmm.h>
 #include <mm/phys/pmm.h>
@@ -8,51 +16,82 @@
 
 void serial_write_hex64(uint64_t v);
 
-#define PAGE_PS       0x80
-#define ENTRIES       512
-#define MAP_2M        (2ULL * 1024 * 1024)
-#define IDENTITY_MB   128
+#define PAGE_PS        0x80
+#define ENTRIES        512
+#define MAP_2M         (2ULL * 1024 * 1024)
+#define IDENTITY_MB    128
+#define PHYSMAP_BASE   0xFFFF800000000000ULL
+#define PML4_PHYSMAP   256
+#define PML4_KERNEL    511
 
-static uint64_t* g_pml4;
+static uint64_t  g_kernel_pml4;     /* physical address of the kernel PML4 */
+static int       g_physmap_on = 0;  /* 0 = low identity, 1 = use physmap   */
 
-static uint64_t* as_table(uint64_t phys) { return (uint64_t*)phys; }
+/* Map a physical address to a kernel-accessible pointer. Before the physmap
+   is live we rely on the boot's low identity map (phys == virt). */
+static uint64_t* as_table(uint64_t phys) {
+    return g_physmap_on ? (uint64_t*)(PHYSMAP_BASE + phys) : (uint64_t*)phys;
+}
 static void zero_table(uint64_t* t) { for (int i = 0; i < ENTRIES; i++) t[i] = 0; }
 
 os_status_t vmm_init(void) {
-    g_pml4 = as_table(pmm_alloc_frame());
-    zero_table(g_pml4);
+    uint64_t pml4_phys = pmm_alloc_frame();
+    uint64_t* pml4 = as_table(pml4_phys);
+    zero_table(pml4);
 
-    uint64_t* pdpt = as_table(pmm_alloc_frame());
+    /* Low identity (0..128 MB) — used during the CR3 switch and kept so the
+       kernel address space can still reach low RAM directly. */
+    uint64_t pdpt_phys = pmm_alloc_frame();
+    uint64_t* pdpt = as_table(pdpt_phys);
     zero_table(pdpt);
-    g_pml4[0] = (uint64_t)pdpt | PAGE_PRESENT | PAGE_RW;
+    pml4[0] = pdpt_phys | PAGE_PRESENT | PAGE_RW;
 
-    uint64_t* pd = as_table(pmm_alloc_frame());
+    uint64_t pd_phys = pmm_alloc_frame();
+    uint64_t* pd = as_table(pd_phys);
     zero_table(pd);
-    pdpt[0] = (uint64_t)pd | PAGE_PRESENT | PAGE_RW;
-
-    uint64_t pages = (IDENTITY_MB * 1024ULL * 1024ULL) / MAP_2M;
-    for (uint64_t i = 0; i < pages; i++)
+    pdpt[0] = pd_phys | PAGE_PRESENT | PAGE_RW;
+    for (uint64_t i = 0; i < (IDENTITY_MB * 1024ULL * 1024ULL) / MAP_2M; i++)
         pd[i] = (i * MAP_2M) | PAGE_PRESENT | PAGE_RW | PAGE_PS;
 
-    /* Preserve the higher-half kernel mapping the boot set up in PML4[511]
-       (the boot PML4 is at physical 0x1000, reachable via low identity). */
+    /* Physmap: PML4[256] → PDPT → PD (1 GB of RAM via 2 MB pages). */
+    uint64_t pmpdpt_phys = pmm_alloc_frame();
+    uint64_t* pmpdpt = as_table(pmpdpt_phys);
+    zero_table(pmpdpt);
+    pml4[PML4_PHYSMAP] = pmpdpt_phys | PAGE_PRESENT | PAGE_RW;
+
+    uint64_t pmpd_phys = pmm_alloc_frame();
+    uint64_t* pmpd = as_table(pmpd_phys);
+    zero_table(pmpd);
+    pmpdpt[0] = pmpd_phys | PAGE_PRESENT | PAGE_RW;
+    for (uint64_t i = 0; i < ENTRIES; i++)
+        pmpd[i] = (i * MAP_2M) | PAGE_PRESENT | PAGE_RW | PAGE_PS;
+
+    /* Higher-half kernel mapping from the boot PML4 (at phys 0x1000). */
     uint64_t* boot_pml4 = (uint64_t*)0x1000;
-    g_pml4[511] = boot_pml4[511];
+    pml4[PML4_KERNEL] = boot_pml4[PML4_KERNEL];
 
-    __asm__ __volatile__("mov %0, %%cr3" :: "r"((uint64_t)g_pml4) : "memory");
+    g_kernel_pml4 = pml4_phys;
+    __asm__ __volatile__("mov %0, %%cr3" :: "r"(pml4_phys) : "memory");
+    g_physmap_on = 1;   /* from now on as_table() uses the physmap */
 
-    serial_write((const uint8_t*)"[noxis64] VMM PML4="); serial_write_hex64((uint64_t)g_pml4);
-    serial_write((const uint8_t*)"\n");
+    serial_write((const uint8_t*)"[noxis64] VMM PML4="); serial_write_hex64(pml4_phys);
+    serial_write((const uint8_t*)" physmap=on\n");
     return OS_OK;
 }
 
-int vmm_map_page(uint64_t va, uint64_t pa, uint64_t flags) {
+uint64_t vmm_kernel_pml4(void) { return g_kernel_pml4; }
+
+void vmm_switch(uint64_t pml4_phys) {
+    __asm__ __volatile__("mov %0, %%cr3" :: "r"(pml4_phys) : "memory");
+}
+
+/* Map one 4 KB page into the given PML4 (physical), allocating tables. */
+int vmm_map_page_into(uint64_t pml4_phys, uint64_t va, uint64_t pa, uint64_t flags) {
     uint64_t i4 = (va >> 39) & 0x1FF, i3 = (va >> 30) & 0x1FF;
     uint64_t i2 = (va >> 21) & 0x1FF, i1 = (va >> 12) & 0x1FF;
+    uint64_t u = flags & PAGE_USER;
 
-    uint64_t u = flags & PAGE_USER;   /* propagate USER down every level */
-
-    uint64_t* pml4 = g_pml4;
+    uint64_t* pml4 = as_table(pml4_phys);
     if (!(pml4[i4] & PAGE_PRESENT)) {
         uint64_t t = pmm_alloc_frame(); if (!t) return -1;
         zero_table(as_table(t));
@@ -74,4 +113,23 @@ int vmm_map_page(uint64_t va, uint64_t pa, uint64_t flags) {
     pt[i1] = (pa & ~0xFFFULL) | (flags & 0xFFF) | PAGE_PRESENT;
     __asm__ __volatile__("invlpg (%0)" :: "r"(va) : "memory");
     return 0;
+}
+
+/* Map into the current (kernel) address space. */
+int vmm_map_page(uint64_t va, uint64_t pa, uint64_t flags) {
+    return vmm_map_page_into(g_kernel_pml4, va, pa, flags);
+}
+
+/* Create a new address space: private user half, shared physmap + kernel. */
+uint64_t vmm_create_address_space(void) {
+    uint64_t pml4_phys = pmm_alloc_frame();
+    if (!pml4_phys) return 0;
+    uint64_t* pml4 = as_table(pml4_phys);
+    zero_table(pml4);
+
+    uint64_t* kpml4 = as_table(g_kernel_pml4);
+    pml4[PML4_PHYSMAP] = kpml4[PML4_PHYSMAP];   /* shared physmap */
+    pml4[PML4_KERNEL]  = kpml4[PML4_KERNEL];    /* shared kernel  */
+    /* PML4[0] left empty — private user half. */
+    return pml4_phys;
 }
