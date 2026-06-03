@@ -31,6 +31,7 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     p->quantum_remaining = PROC_QUANTUM;
     p->priority    = priority;
     p->kstack_base = stack;
+    p->kstack_top  = stack + PROC_KSTACK_SIZE;
     p->pml4  = 0;                /* kernel address space by default */
     p->next  = NULL;
     for (int i = 0; i < PROC_NAME_MAX - 1 && name[i]; i++) p->name[i] = name[i];

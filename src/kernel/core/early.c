@@ -37,6 +37,21 @@ extern uint8_t hello_elf_start[], hello_elf_end[];
 
 #define USTACK_VA  0x50000000ULL   /* user stack page (outside identity map) */
 
+/* Background kernel thread: prints once a second to prove that the timer
+   preempts the ring-3 process and the scheduler interleaves both. */
+static void heartbeat(void) {
+    uint32_t last = 0, n = 0;
+    for (;;) {
+        uint32_t t = pit_uptime_ms();
+        if (t - last >= 1000) {
+            last = t;
+            serial_write((const uint8_t*)"[noxis64] heartbeat #");
+            serial_write_hex64(++n);
+            serial_write((const uint8_t*)" (bg kernel thread, preempting ring 3)\n");
+        }
+    }
+}
+
 void kernel_main(void) {
     vga_init();
     vga_clear();
@@ -164,6 +179,13 @@ void kernel_main(void) {
                                     entry, USTACK_VA + 0x1000, 1);
     scheduler_add(up);
 
+    /* A background ring-0 kernel thread, scheduled alongside the ring-3 user. */
+    scheduler_add(proc_spawn((const uint8_t*)"heartbeat", heartbeat, 1));
+
+    /* Preemptive multitasking: let the PIT drive the scheduler. A ring-3
+       process is now preempted by the timer (frame on its kernel stack). */
+    pit_set_tick_cb(scheduler_tick);
+
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
     vga_write((const uint8_t*)"exec ELF64 ring-3 program (scheduled, private AS)...\n");
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
@@ -171,5 +193,8 @@ void kernel_main(void) {
     cpu_sti();
     scheduler_yield();                     /* switch into the user process */
 
-    for (;;) __asm__ __volatile__("hlt");  /* idle once the user yields/exits */
+    /* Idle loop: always re-enable interrupts before halting. A context switch
+       can resume us from an interrupt context (IF=0); sti;hlt guarantees the
+       timer keeps firing so the scheduler stays alive. */
+    for (;;) __asm__ __volatile__("sti; hlt");
 }

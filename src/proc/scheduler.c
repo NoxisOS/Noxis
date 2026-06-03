@@ -8,6 +8,7 @@
 #include <proc/scheduler.h>
 #include <proc/process.h>
 #include <mm/virt/vmm.h>
+#include <kernel/hal/gdt.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);
@@ -68,6 +69,10 @@ void scheduler_yield(void) {
        Safe here: kernel stacks live in the physmap, shared by every AS. */
     if (next->pml4 != prev->pml4)
         vmm_switch(next->pml4 ? next->pml4 : vmm_kernel_pml4());
+
+    /* Point TSS.rsp0 at the next thread's kernel stack so a ring-3 → ring-0
+       transition (interrupt/syscall) lands on the right stack. */
+    if (next->kstack_top) gdt_set_kernel_stack(next->kstack_top);
 
     kthread_switch(&prev->kctx_rsp, next->kctx_rsp);
 }
