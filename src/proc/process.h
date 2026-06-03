@@ -30,6 +30,7 @@ typedef struct process {
     proc_state_t     state;
     uint64_t         kctx_rsp;       /* saved RSP for kthread_switch */
     uint64_t         kstack_base;    /* allocation base (to free later) */
+    uint64_t         pml4;           /* address space (0 = kernel AS) */
     uint32_t         quantum_remaining;
     uint32_t         priority;
     struct process*  next;

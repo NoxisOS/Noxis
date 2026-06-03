@@ -7,6 +7,7 @@
  */
 #include <proc/scheduler.h>
 #include <proc/process.h>
+#include <mm/virt/vmm.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);
@@ -62,6 +63,11 @@ void scheduler_yield(void) {
     next->state = PROC_RUNNING;
     next->quantum_remaining = PROC_QUANTUM;
     g_current = next;
+
+    /* Switch address space if the next thread has its own (0 = kernel AS).
+       Safe here: kernel stacks live in the physmap, shared by every AS. */
+    if (next->pml4 != prev->pml4)
+        vmm_switch(next->pml4 ? next->pml4 : vmm_kernel_pml4());
 
     kthread_switch(&prev->kctx_rsp, next->kctx_rsp);
 }
