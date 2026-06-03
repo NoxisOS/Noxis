@@ -44,6 +44,8 @@ int64_t sys_fork(syscall_frame_t* f) {
         if (fd_is_pipe(child->fds[i].kind))      /* extra reference per end */
             pipe_addref(child->fds[i].kind, child->fds[i].file);
     }
+    child->sig_pending = 0;                      /* pending signals are not inherited */
+    for (int i = 0; i < 32; i++) child->sig_handler[i] = parent->sig_handler[i];
 
     /* Cloned syscall frame at the top of the child's kernel stack. */
     syscall_frame_t* cf =

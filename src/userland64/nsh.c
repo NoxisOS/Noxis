@@ -100,6 +100,8 @@ int main(int argc, char** argv) {
     { char* a[] = { "cat.elf", "out.txt", 0 };                 run(a, 0, 0, 0); }
     /* pipe demo: ls.elf | cat.elf */
     { char* l[] = { "ls.elf", 0 }; char* r[] = { "cat.elf", 0 }; run_pipe(l, r); }
+    /* signal demo */
+    { char* a[] = { "sigtest.elf", 0 }; run(a, 0, 0, 0); }
 
     char  line[256];
     char* av[MAX_ARGS];

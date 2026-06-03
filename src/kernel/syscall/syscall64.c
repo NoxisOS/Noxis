@@ -23,6 +23,9 @@ uint64_t sys_getpid(void);
 int64_t  sys_waitpid(int64_t pid, int* status);
 int64_t  sys_readdir(uint64_t idx, uint8_t* namebuf);
 int64_t  sys_pipe(int* fd);
+int64_t  sys_signal(int sig, uint64_t handler);
+int64_t  sys_kill(int64_t pid, int sig);
+void     deliver_signals(syscall_frame_t* f);
 
 /* file descriptors live in proc/fd.c. */
 int64_t  sys_open(const uint8_t* path, int flags);
@@ -70,9 +73,10 @@ enum {
     SYS_FORK = 3, SYS_EXEC = 4, SYS_GETPID = 5, SYS_WAITPID = 6,
     SYS_OPEN = 7, SYS_CLOSE = 8, SYS_LSEEK = 9, SYS_READDIR = 10,
     SYS_DUP = 11, SYS_DUP2 = 12, SYS_PIPE = 13,
+    SYS_KILL = 14, SYS_SIGNAL = 15,
 };
 
-void syscall_dispatch(syscall_frame_t* f) {
+static void do_syscall(syscall_frame_t* f) {
     switch (f->rax) {
     case SYS_EXIT:    sys_exit((int)f->rdi);                       return;  /* no return */
     case SYS_WRITE:   f->rax = (uint64_t)sys_write((int)f->rdi,
@@ -95,6 +99,13 @@ void syscall_dispatch(syscall_frame_t* f) {
     case SYS_DUP:     f->rax = (uint64_t)sys_dup((int)f->rdi);              return;
     case SYS_DUP2:    f->rax = (uint64_t)sys_dup2((int)f->rdi, (int)f->rsi); return;
     case SYS_PIPE:    f->rax = (uint64_t)sys_pipe((int*)f->rdi);            return;
+    case SYS_KILL:    f->rax = (uint64_t)sys_kill((int64_t)f->rdi, (int)f->rsi); return;
+    case SYS_SIGNAL:  f->rax = (uint64_t)sys_signal((int)f->rdi, f->rsi);   return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
+}
+
+void syscall_dispatch(syscall_frame_t* f) {
+    do_syscall(f);
+    deliver_signals(f);                /* deliver pending signals on return */
 }

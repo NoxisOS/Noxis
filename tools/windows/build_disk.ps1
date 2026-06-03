@@ -28,6 +28,7 @@ $files = @(
     @{Name='echo.elf';   Path='build/echo.elf'},
     @{Name='cat.elf';    Path='build/cat.elf'},
     @{Name='ls.elf';     Path='build/ls.elf'},
+    @{Name='sigtest.elf';Path='build/sigtest.elf'},
     @{Name='motd.txt';   Path='src/userland64/motd.txt'}
 )
 

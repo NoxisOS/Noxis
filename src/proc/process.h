@@ -56,7 +56,14 @@ typedef struct process {
     struct process*  next;            /* ready-queue link                */
     struct process*  all_next;        /* global process-list link        */
     fd_t             fds[PROC_MAX_FDS];/* open file descriptors           */
+    uint32_t         sig_pending;     /* bitmask of pending signals      */
+    uint64_t         sig_handler[32]; /* user handler VA per signal (0=default) */
 } process_t;
+
+#define SIGINT   2
+#define SIGKILL  9
+#define SIGUSR1  10
+#define SIGTERM  15
 
 process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority);
 

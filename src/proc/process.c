@@ -50,6 +50,9 @@ process_t* proc_alloc(const uint8_t* name) {
     p->fds[0].kind = FD_CON_IN;
     p->fds[1].kind = FD_CON_OUT;
     p->fds[2].kind = FD_CON_OUT;
+
+    p->sig_pending = 0;
+    for (int i = 0; i < 32; i++) p->sig_handler[i] = 0;
     return p;
 }
 

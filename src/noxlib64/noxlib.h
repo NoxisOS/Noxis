@@ -22,6 +22,13 @@ typedef long           ssize_t;
 #define SYS_DUP      11
 #define SYS_DUP2     12
 #define SYS_PIPE     13
+#define SYS_KILL     14
+#define SYS_SIGNAL   15
+
+#define SIGINT   2
+#define SIGKILL  9
+#define SIGUSR1  10
+#define SIGTERM  15
 
 #define O_RDONLY  0x00
 #define O_WRONLY  0x01
@@ -75,6 +82,10 @@ static inline long readdir(long idx, char* namebuf) {
 static inline long dup(int fd)            { return _syscall3(SYS_DUP, fd, 0, 0); }
 static inline long dup2(int o, int n)     { return _syscall3(SYS_DUP2, o, n, 0); }
 static inline long pipe(int fds[2])       { return _syscall3(SYS_PIPE, (long)fds, 0, 0); }
+static inline long kill(long pid, int sig){ return _syscall3(SYS_KILL, pid, sig, 0); }
+static inline long signal(int sig, void (*h)(int)) {
+    return _syscall3(SYS_SIGNAL, sig, (long)h, 0);
+}
 
 static inline size_t strlen(const char* s) {
     size_t n = 0; while (s[n]) n++; return n;
