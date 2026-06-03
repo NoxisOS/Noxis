@@ -127,11 +127,20 @@ os_status_t ata_write(uint8_t bus, uint8_t drive, uint32_t lba,
 
 /* ── block device layer integration ─────────────────────────── */
 
-/* IDENTIFY the primary master and return its LBA28 sector count, or 0. */
-static uint32_t _ata_identify_sectors(void) {
-    uint16_t base = ATA_PRIMARY_BASE;
+/* Drive backing the block device / filesystem. The boot disk is the
+   primary master; the NoxFS image is attached as the primary slave (hdb). */
+static uint8_t g_blk_bus   = ATA_PRIMARY;
+static uint8_t g_blk_drive = ATA_SLAVE;
 
-    port_byte_out(ATA_DRIVE(base), 0xA0);          /* master */
+void ata_set_block_drive(uint8_t bus, uint8_t drive) {
+    g_blk_bus = bus; g_blk_drive = drive;
+}
+
+/* IDENTIFY the block-device drive and return its LBA28 sector count, or 0. */
+static uint32_t _ata_identify_sectors(void) {
+    uint16_t base = (g_blk_bus == ATA_SECONDARY) ? ATA_SECONDARY_BASE
+                                                  : ATA_PRIMARY_BASE;
+    port_byte_out(ATA_DRIVE(base), g_blk_drive == ATA_SLAVE ? 0xB0 : 0xA0);
     for (uint32_t i = 0; i < 4; i++) io_delay();
     port_byte_out(ATA_COUNT(base), 0);
     port_byte_out(ATA_LBA_LO(base), 0);
@@ -159,8 +168,8 @@ static os_status_t _ata_transfer(block_device_t* dev, uint32_t lba,
     while (count > 0) {
         uint32_t chunk = count > 255 ? 255 : count;
         os_status_t s = write
-            ? ata_write(ATA_PRIMARY, ATA_MASTER, lba, (uint8_t)chunk, p)
-            : ata_read (ATA_PRIMARY, ATA_MASTER, lba, (uint8_t)chunk, p);
+            ? ata_write(g_blk_bus, g_blk_drive, lba, (uint8_t)chunk, p)
+            : ata_read (g_blk_bus, g_blk_drive, lba, (uint8_t)chunk, p);
         if (s != OS_OK) return s;
         lba   += chunk;
         count -= chunk;

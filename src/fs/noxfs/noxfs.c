@@ -387,17 +387,15 @@ os_status_t noxfs_init(void) {
     g_count = 0;
     buf_init();
 
-    /* Read superblock directly — bypass buffer cache for boot reliability. */
+    /* Read the superblock (block 0) via the block device (the FS drive). */
     {
-        uint8_t raw[NOXFS_BLKSZ];
-        if (ata_read(ATA_PRIMARY, ATA_MASTER, 0, 1, (uint16_t*)raw) != OS_OK)
-            return OS_ERR_NOT_FOUND;
-
-        uint32_t magic = *(uint32_t*)raw;
-        if (magic != NOXFS_MAGIC) return OS_ERR_NOT_FOUND;
-
+        buf_t* bp = bread(BUF_DEV_ATA, 0);
+        if (!bp) return OS_ERR_NOT_FOUND;
+        uint32_t magic = *(uint32_t*)bp->data;
+        if (magic != NOXFS_MAGIC) { brelse(bp); return OS_ERR_NOT_FOUND; }
         for (uint32_t i = 0; i < sizeof(noxfs_sb_t); i++)
-            ((uint8_t*)&g_sb)[i] = raw[i];
+            ((uint8_t*)&g_sb)[i] = bp->data[i];
+        brelse(bp);
     }
 
     if (_dir_scan(g_sb.root_ino) != OS_OK) return OS_ERR_IO;

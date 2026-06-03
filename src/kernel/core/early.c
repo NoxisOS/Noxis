@@ -92,12 +92,23 @@ void kernel_main(void) {
         }
     }
 
-    /* ── VFS (NoxFS on disk, falls back to ramfs) ─────────────── */
+    /* ── NoxFS lives on the primary slave (hdb); register it ──── */
+    ata_init(ATA_PRIMARY, ATA_SLAVE);
+    ata_set_block_drive(ATA_PRIMARY, ATA_SLAVE);
+    ata_register_block();
+
     serial_write((const uint8_t*)"[noxis64] VFS ... ");
     vfs_init();
     serial_write((const uint8_t*)"OK (files=");
     serial_write_hex64(vfs_count());
     serial_write((const uint8_t*)")\n");
+
+    /* List the files NoxFS found. */
+    for (uint32_t i = 0; i < vfs_count(); i++) {
+        vfs_file_t* f = vfs_entry(i);
+        if (f) { serial_write((const uint8_t*)"   - ");
+                 serial_write(f->name); serial_write((const uint8_t*)"\n"); }
+    }
 
     /* ── Timer + keyboard + interrupts ────────────────────────── */
     serial_write((const uint8_t*)"[noxis64] PIT ... ");

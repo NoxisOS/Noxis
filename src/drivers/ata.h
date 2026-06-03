@@ -53,4 +53,7 @@ os_status_t ata_write(uint8_t bus, uint8_t drive, uint32_t lba,
  */
 int ata_register_block(void);
 
+/* Select which ATA drive backs the block device / filesystem. */
+void ata_set_block_drive(uint8_t bus, uint8_t drive);
+
 #endif /* DRIVERS_ATA_H */

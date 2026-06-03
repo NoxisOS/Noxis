@@ -66,8 +66,10 @@ KERNEL_BIN = build/kernel.bin
 BOOT_BIN   = build/boot.bin
 DISK_IMG   = build/noxis.img
 
+NOXFS_IMG  = build/disk.img
+
 .PHONY: all clean run
-all: $(DISK_IMG)
+all: $(DISK_IMG) $(NOXFS_IMG)
 
 # ── Compile rules ─────────────────────────────────────────────
 build/%.o: src/%.c
@@ -121,12 +123,19 @@ $(DISK_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	@echo BUILD $@
 	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$b=[IO.File]::ReadAllBytes('build/boot.bin'); $$k=[IO.File]::ReadAllBytes('build/kernel.bin'); $$img=New-Object byte[] (512*2048); [Array]::Copy($$b,0,$$img,0,512); [System.Buffer]::BlockCopy($$k,0,$$img,512,$$k.Length); [IO.File]::WriteAllBytes('build/noxis.img',$$img)"
 
-run: $(DISK_IMG)
-	@echo RUN  QEMU x86_64
-	$(QEMU) -drive file=build/noxis.img,format=raw -no-reboot -serial stdio
+# NoxFS disk image (hdb = primary slave) built from build/hello.elf.
+$(NOXFS_IMG): build/hello.elf tools/windows/build_disk.ps1
+	@echo BUILD $@
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_disk.ps1
 
-run-headless: $(DISK_IMG)
-	$(QEMU) -drive file=build/noxis.img,format=raw -no-reboot -display none -serial stdio
+run: $(DISK_IMG) $(NOXFS_IMG)
+	@echo RUN  QEMU x86_64
+	$(QEMU) -drive file=build/noxis.img,format=raw,index=0 \
+	        -drive file=build/disk.img,format=raw,index=1 -no-reboot -serial stdio
+
+run-headless: $(DISK_IMG) $(NOXFS_IMG)
+	$(QEMU) -drive file=build/noxis.img,format=raw,index=0 \
+	        -drive file=build/disk.img,format=raw,index=1 -no-reboot -display none -serial stdio
 
 -include $(wildcard build/**/*.d build/*.d)
 
