@@ -33,16 +33,20 @@ KERNEL_C_OBJS = \
   build/drivers/keymap.o    \
   build/kernel/hal/gdt.o    \
   build/kernel/hal/pic.o    \
+  build/kernel/hal/fpu.o    \
   build/kernel/isr/isr.o    \
   build/mm/phys/pmm.o       \
   build/mm/virt/vmm.o       \
-  build/mm/virt/heap.o
+  build/mm/virt/heap.o      \
+  build/proc/process.o      \
+  build/proc/scheduler.o
 
 KERNEL_ASM_OBJS = \
   build/boot/kernel_entry.o      \
   build/kernel/hal/gdt_load.o    \
   build/kernel/hal/idt_load.o    \
-  build/kernel/isr/isr_stubs.o
+  build/kernel/isr/isr_stubs.o   \
+  build/proc/kthread_switch.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 

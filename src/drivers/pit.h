@@ -33,4 +33,8 @@ void pit_sleep_ms(uint32_t ms);
  */
 uint32_t pit_uptime_ms(void);
 
+#include <kernel/isr/isr.h>
+/* Register a per-tick callback (used by the scheduler for preemption). */
+void pit_set_tick_cb(void (*cb)(isr_frame_t*));
+
 #endif /* DRIVERS_PIT_H */

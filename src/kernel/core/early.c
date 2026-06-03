@@ -14,16 +14,32 @@
 #include <drivers/keymap.h>
 #include <kernel/hal/gdt.h>
 #include <kernel/hal/pic.h>
+#include <kernel/hal/fpu.h>
 #include <kernel/hal/ports.h>
 #include <kernel/isr/isr.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
 #include <mm/virt/heap.h>
+#include <proc/scheduler.h>
 
 void serial_write_hex64(uint64_t v);
 
 int32_t kbd_poll(void);
 os_status_t kbd_init(void);
+
+/* Two test kernel threads — prove preemptive multitasking. */
+static void thread_a(void) {
+    for (;;) {
+        serial_write((const uint8_t*)"[A]");
+        for (volatile uint64_t i = 0; i < 8000000ULL; i++) { }
+    }
+}
+static void thread_b(void) {
+    for (;;) {
+        serial_write((const uint8_t*)"[B]");
+        for (volatile uint64_t i = 0; i < 8000000ULL; i++) { }
+    }
+}
 
 void kernel_main(void) {
     vga_init();
@@ -44,6 +60,10 @@ void kernel_main(void) {
 
     serial_write((const uint8_t*)"[noxis64] PIC ... ");
     pic_remap();
+    serial_write((const uint8_t*)"OK\n");
+
+    serial_write((const uint8_t*)"[noxis64] FPU ... ");
+    fpu_init();
     serial_write((const uint8_t*)"OK\n");
 
     pmm_init(128ULL * 1024 * 1024);
@@ -76,19 +96,22 @@ void kernel_main(void) {
     kbd_init();
     serial_write((const uint8_t*)"OK\n");
 
+    /* ── Scheduler + preemptive multitasking test ─────────────── */
+    serial_write((const uint8_t*)"[noxis64] SCHED ... ");
+    scheduler_init();
+    scheduler_spawn((const uint8_t*)"a", thread_a, 1);
+    scheduler_spawn((const uint8_t*)"b", thread_b, 1);
+    pit_set_tick_cb(scheduler_tick);          /* PIT preempts threads */
+    serial_write((const uint8_t*)"OK\n");
+
     cpu_sti();
 
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"core up: GDT IDT PIC PMM VMM HEAP PIT KBD\n");
+    vga_write((const uint8_t*)"core up + preemptive scheduler (see serial [A]/[B])\n");
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-    vga_write((const uint8_t*)"type something (keyboard echo):\n");
-    serial_write((const uint8_t*)"[noxis64] core up, keyboard echo loop\n");
+    serial_write((const uint8_t*)"[noxis64] core up, scheduling threads\n");
 
-    /* Interactive echo loop — proves keyboard IRQ + VGA output. */
-    for (;;) {
-        int32_t c = kbd_poll();
-        if (c < 0) { __asm__ __volatile__("hlt"); continue; }
-        if (c == '\b') vga_backspace();
-        else           vga_put_char((uint8_t)c);
-    }
+    /* The boot context becomes the idle thread; PIT preemption rotates
+       between idle, thread A and thread B. */
+    for (;;) __asm__ __volatile__("hlt");
 }

@@ -15,10 +15,14 @@
 #define PIT_CMD       0x43
 
 static volatile uint32_t g_ticks;
+static void (*g_tick_cb)(isr_frame_t*);   /* scheduler hook (optional) */
+
+void pit_set_tick_cb(void (*cb)(isr_frame_t*)) { g_tick_cb = cb; }
+
 
 static void _pit_isr(isr_frame_t* frame) {
-    (void)frame;
     g_ticks++;
+    if (g_tick_cb) g_tick_cb(frame);
 }
 
 os_status_t pit_init(uint32_t hz) {

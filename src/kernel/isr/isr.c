@@ -68,10 +68,12 @@ void isr_handler(isr_frame_t* frame) {
     if (!frame) return;
     uint64_t vec = frame->vector;
 
-    /* Hardware IRQs (32..47): dispatch then acknowledge the PIC. */
+    /* Hardware IRQs (32..47): acknowledge the PIC *before* dispatching, so
+       a handler that context-switches away (the timer → scheduler) doesn't
+       leave the IRQ unacknowledged and starve the new thread of ticks. */
     if (vec >= 32 && vec < 48) {
-        if (g_handlers[vec]) g_handlers[vec](frame);
         pic_send_eoi((uint8_t)(vec - 32));
+        if (g_handlers[vec]) g_handlers[vec](frame);
         return;
     }
 

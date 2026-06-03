@@ -1,59 +1,42 @@
 ; ─────────────────────────────────────────────────────────────
-; asm/kthread_switch.asm — Kernel thread context switch
+; asm/kthread_switch.asm — 64-bit kernel-thread context switch.
 ;
-; void kthread_switch(uint32_t* old_esp, uint32_t* new_esp);
+; void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);
+;   RDI = where to store the outgoing thread's RSP
+;   RSI = the incoming thread's saved RSP
 ;
-; Saves callee-saved registers + ESP on old stack, loads new ESP,
-; restores callee-saved from new stack, returns into new thread.
-;
-; When a thread is first switched TO, its stack was pre-initialized
-; by proc_spawn to look like kthread_switch saved it just before a
-; ret to the entry function.
-;
-; Stack layout after pushes (offsets from saved ESP):
-;   [esp+0]  ebx   ← popped first on restore
-;   [esp+4]  edi
-;   [esp+8]  esi
-;   [esp+12] ebp
-;   [esp+16] return address  (where kthread_switch returns to)
+; Saves the SysV callee-saved registers, swaps stacks, restores them,
+; and returns into the new thread.  A freshly-spawned thread's stack is
+; pre-built (see process.c) so the final `ret` jumps to its entry point.
 ; ─────────────────────────────────────────────────────────────
-
-section .text
-[BITS 32]
-
+[BITS 64]
 global kthread_switch
-global kthread_entry           ; entry trampoline for new threads
-
-; ── kthread_entry ─────────────────────────────────────────────
-; Every new kernel thread lands here on its FIRST run.
-; At this point we're still "inside" the PIT ISR context (IF=0).
-; Re-enable interrupts, then jump to the actual entry function
-; (its address is the next value on the stack from the pre-init).
-kthread_entry:
-    sti                          ; re-enable IRQs — PIT can now fire again
-    ret                          ; pop entry fn addr and jump to it
+global thread_trampoline
 
 kthread_switch:
-    ; Save callee-saved registers on current stack
-    push ebp
-    push esi
-    push edi
-    push ebx
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+    mov  [rdi], rsp        ; save outgoing RSP
+    mov  rsp, rsi          ; load incoming RSP
+    pop  r15
+    pop  r14
+    pop  r13
+    pop  r12
+    pop  rbp
+    pop  rbx
+    ret
 
-    ; *old_esp = esp
-    mov  eax, [esp + 20]    ; old_esp param
-    mov  [eax], esp
-
-    ; esp = *new_esp
-    mov  eax, [esp + 24]    ; new_esp param — NOTE: still on OLD stack here,
-                             ; so old_esp is at +20 and new_esp at +24.
-                             ; After `mov esp, [eax]` we're on the new stack.
-    mov  esp, [eax]
-
-    ; Restore callee-saved registers from new stack
-    pop  ebx
-    pop  edi
-    pop  esi
-    pop  ebp
-
-    ret                      ; return into new thread's saved call site
+; First entry of a freshly-spawned thread.  proc_spawn primes RBX with the
+; real entry point and makes this the `ret` target.  We enable interrupts
+; (a new thread is reached with IF=0 since it never iret'd) then call it.
+thread_trampoline:
+    sti
+    call rbx
+.hang:
+    cli
+    hlt
+    jmp .hang
