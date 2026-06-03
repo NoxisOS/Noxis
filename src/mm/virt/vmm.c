@@ -34,6 +34,11 @@ os_status_t vmm_init(void) {
     for (uint64_t i = 0; i < pages; i++)
         pd[i] = (i * MAP_2M) | PAGE_PRESENT | PAGE_RW | PAGE_PS;
 
+    /* Preserve the higher-half kernel mapping the boot set up in PML4[511]
+       (the boot PML4 is at physical 0x1000, reachable via low identity). */
+    uint64_t* boot_pml4 = (uint64_t*)0x1000;
+    g_pml4[511] = boot_pml4[511];
+
     __asm__ __volatile__("mov %0, %%cr3" :: "r"((uint64_t)g_pml4) : "memory");
 
     serial_write((const uint8_t*)"[noxis64] VMM PML4="); serial_write_hex64((uint64_t)g_pml4);

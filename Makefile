@@ -33,7 +33,7 @@ endif
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
 CFLAGS  = -std=c11 -ffreestanding -nostdlib -nostdinc \
           -Wall -Wextra -Werror -Wno-unused-parameter \
-          -m64 -mno-red-zone -mno-mmx -mno-sse -mgeneral-regs-only \
+          -m64 -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mgeneral-regs-only \
           -fno-pic -fno-stack-protector -fno-asynchronous-unwind-tables \
           -I src -O2
 DEPFLAGS = -MMD -MP

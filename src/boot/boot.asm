@@ -14,11 +14,13 @@
 [ORG 0x7C00]
 
 %define PML4        0x1000
-%define PDPT        0x2000
-%define PD          0x3000
+%define PDPT        0x2000        ; low identity PDPT
+%define PD          0x3000        ; low identity PD (0..1 GB)
+%define PDPT_HI     0x4000        ; higher-half PDPT
+%define PD_HI       0x5000        ; higher-half PD (kernel)
 %define KERNEL_SEG  0x1000        ; 0x1000:0x0000 = phys 0x10000
 %define KERNEL_LBA  1
-%define KERNEL_SECS 64            ; load 32 KB (kernel is ~6 KB; BIOS caps at 127)
+%define KERNEL_SECS 127           ; load ~64 KB (kernel grew; BIOS caps at 127)
 
 start:
     cli
@@ -39,11 +41,13 @@ start:
     int  0x13
     jc   disk_err
 
-    ; ── Page tables: identity-map first 1 GB with 2 MB pages ──
+    ; ── Page tables: zero PML4..PD_HI (5 tables) ──────────────
     mov  edi, PML4
     xor  eax, eax
-    mov  ecx, 0x3000 / 4
+    mov  ecx, 0x5000 / 4
     rep  stosd
+
+    ; Low identity map: PML4[0] → PDPT → PD (1 GB, 2 MB pages).
     mov  dword [PML4], PDPT | 0x3
     mov  dword [PDPT], PD   | 0x3
     mov  edi, PD
@@ -54,6 +58,19 @@ start:
     add  eax, 0x200000
     add  edi, 8
     loop .fill_pd
+
+    ; Higher-half kernel map: 0xFFFFFFFF80000000 → phys 0 (1 GB).
+    ;   PML4[511] → PDPT_HI, PDPT_HI[510] → PD_HI, PD_HI[*] = 2 MB.
+    mov  dword [PML4 + 511*8], PDPT_HI | 0x3
+    mov  dword [PDPT_HI + 510*8], PD_HI | 0x3
+    mov  edi, PD_HI
+    mov  eax, 0x83
+    mov  ecx, 512
+.fill_pd_hi:
+    mov  [edi], eax
+    add  eax, 0x200000
+    add  edi, 8
+    loop .fill_pd_hi
 
     lgdt [gdt_desc]
     mov  eax, cr0
