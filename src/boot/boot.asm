@@ -18,7 +18,7 @@
 %define PD          0x3000
 %define KERNEL_SEG  0x1000        ; 0x1000:0x0000 = phys 0x10000
 %define KERNEL_LBA  1
-%define KERNEL_SECS 256           ; load 128 KB — room for the kernel to grow
+%define KERNEL_SECS 64            ; load 32 KB (kernel is ~6 KB; BIOS caps at 127)
 
 start:
     cli

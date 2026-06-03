@@ -1,31 +1,29 @@
 ; ─────────────────────────────────────────────────────────────
-; asm/gdt_load.asm — Load the GDT and reload segment registers
-;
-; Purpose: Executes lgdt, far-jumps to reload CS, then reloads
-;          all data segment registers with the kernel DS selector.
-;
-; Entry:  [esp+4] = pointer to gdt_ptr_t structure
-; Exit:   All segment registers reloaded
+; asm/gdt_load.asm — load the 64-bit GDT, reload segments + TSS.
 ; ─────────────────────────────────────────────────────────────
+[BITS 64]
 
-section .text
-[BITS 32]
+global gdt64_load
+global tss64_load
 
-global gdt_flush
-
-gdt_flush:
-    mov  eax, [esp + 4]            ; pointer to gdt_ptr_t
-    lgdt [eax]                     ; load GDT
-
-    ; Far jump to reload CS with kernel code selector (0x08)
-    jmp  0x08:.reload_cs
-
-.reload_cs:
-    ; Reload all data segments with kernel data selector (0x10)
+; void gdt64_load(struct gdt_ptr* p)   — RDI = &{limit, base}
+gdt64_load:
+    lgdt [rdi]
     mov  ax, 0x10
     mov  ds, ax
     mov  es, ax
+    mov  ss, ax
     mov  fs, ax
     mov  gs, ax
-    mov  ss, ax
+    lea  rax, [rel .reload_cs]
+    push 0x08
+    push rax
+    retfq                        ; far return → CS = 0x08
+.reload_cs:
+    ret
+
+; void tss64_load(uint16_t sel)   — DI = selector
+tss64_load:
+    mov  ax, di
+    ltr  ax
     ret

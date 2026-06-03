@@ -1,24 +1,59 @@
 /**
- * @file    kernel/isr.c
- * @brief   ISR dispatcher — routes interrupts to registered handlers
- * @author  Noxis Team
- * @date    2026-05-29
+ * @file    kernel/isr/isr.c
+ * @brief   64-bit ISR dispatcher — routes exceptions/IRQs to handlers.
  */
 #include <kernel/isr/isr.h>
-#include <kernel/core/panic.h>
-#include <kernel/hal/pic.h>
-#include <common/types.h>
+#include <drivers/serial.h>
 
-/* ── file-scope state ──────────────────────────────────────── */
+void serial_write_hex64(uint64_t v);
+
 static isr_handler_t g_handlers[ISR_MAX_HANDLERS];
 
-/* ── public functions ──────────────────────────────────────── */
+extern void* isr_stub_table[];   /* isr_stubs.asm: 32 exception stubs */
+
+/* IDT (256 × 16-byte gates). */
+struct __attribute__((packed)) idt_entry {
+    uint16_t off_lo;
+    uint16_t sel;
+    uint8_t  ist;
+    uint8_t  type;
+    uint16_t off_mid;
+    uint32_t off_hi;
+    uint32_t reserved;
+};
+struct __attribute__((packed)) idt_ptr { uint16_t limit; uint64_t base; };
+
+static struct idt_entry g_idt[256];
+extern void idt64_load(struct idt_ptr* p);   /* idt_load.asm */
+
+static void set_gate(int n, void* h, uint8_t type) {
+    uint64_t a = (uint64_t)h;
+    g_idt[n].off_lo  = a & 0xFFFF;
+    g_idt[n].sel     = 0x08;
+    g_idt[n].ist     = 0;
+    g_idt[n].type    = type;
+    g_idt[n].off_mid = (a >> 16) & 0xFFFF;
+    g_idt[n].off_hi  = (a >> 32) & 0xFFFFFFFF;
+    g_idt[n].reserved = 0;
+}
+
+static const char* const _names[32] = {
+    "Divide Error","Debug","NMI","Breakpoint","Overflow","Bound Range",
+    "Invalid Opcode","Device Not Available","Double Fault","Coproc Segment",
+    "Invalid TSS","Segment Not Present","Stack Fault","General Protection",
+    "Page Fault","Reserved","x87 FP","Alignment Check","Machine Check",
+    "SIMD FP","Virtualization","Control Protection","Reserved","Reserved",
+    "Reserved","Reserved","Reserved","Reserved","Hypervisor","VMM Comm",
+    "Security","Reserved"
+};
 
 void isr_init(void) {
-    /* Zero all handlers */
-    for (uint32_t i = 0; i < ISR_MAX_HANDLERS; i++) {
-        g_handlers[i] = (isr_handler_t)0;
-    }
+    for (int i = 0; i < ISR_MAX_HANDLERS; i++) g_handlers[i] = (isr_handler_t)0;
+    for (int i = 0; i < 256; i++) set_gate(i, (void*)0, 0);
+    for (int i = 0; i < 32; i++) set_gate(i, isr_stub_table[i], 0x8E);
+
+    struct idt_ptr p = { sizeof(g_idt) - 1, (uint64_t)g_idt };
+    idt64_load(&p);
 }
 
 os_status_t isr_register_handler(uint8_t vector, isr_handler_t handler) {
@@ -27,63 +62,26 @@ os_status_t isr_register_handler(uint8_t vector, isr_handler_t handler) {
     return OS_OK;
 }
 
-/*
- * Exception name table for panic messages
- */
-static const uint8_t* _exception_names[] = {
-    (const uint8_t*)"Divide Error",
-    (const uint8_t*)"Debug",
-    (const uint8_t*)"NMI",
-    (const uint8_t*)"Breakpoint",
-    (const uint8_t*)"Overflow",
-    (const uint8_t*)"Bound Range",
-    (const uint8_t*)"Invalid Opcode",
-    (const uint8_t*)"Device Not Available",
-    (const uint8_t*)"Double Fault",
-    (const uint8_t*)"Coprocessor Segment",
-    (const uint8_t*)"Invalid TSS",
-    (const uint8_t*)"Segment Not Present",
-    (const uint8_t*)"Stack Fault",
-    (const uint8_t*)"General Protection",
-    (const uint8_t*)"Page Fault",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"x87 FP",
-    (const uint8_t*)"Alignment Check",
-    (const uint8_t*)"Machine Check",
-    (const uint8_t*)"SIMD FP",
-    (const uint8_t*)"Virtualization",
-    (const uint8_t*)"Control Protection",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"Reserved",
-    (const uint8_t*)"Hypervisor",
-    (const uint8_t*)"VMM Comm",
-    (const uint8_t*)"Security",
-    (const uint8_t*)"Reserved",
-};
-
 void isr_handler(isr_frame_t* frame) {
     if (!frame) return;
+    uint64_t vec = frame->vector;
 
-    /* Handle IRQs: send EOI before dispatching */
-    if (frame->vector >= 0x20 && frame->vector < 0x30) {
-        pic_send_eoi((uint8_t)(frame->vector - 0x20));
-    }
-
-    /* Dispatch to registered handler if any */
-    if (g_handlers[frame->vector]) {
-        g_handlers[frame->vector](frame);
+    if (vec < ISR_MAX_HANDLERS && g_handlers[vec]) {
+        g_handlers[vec](frame);
         return;
     }
 
-    /* CPU exceptions (0-31): panic with info */
-    if (frame->vector < 32) {
-        const uint8_t* name = _exception_names[frame->vector];
-        kernel_panic(name, frame);
+    if (vec < 32) {
+        serial_write((const uint8_t*)"\n[noxis64] EXCEPTION ");
+        serial_write_hex64(vec);
+        serial_write((const uint8_t*)"  ");
+        serial_write((const uint8_t*)_names[vec]);
+        serial_write((const uint8_t*)"  err="); serial_write_hex64(frame->error_code);
+        serial_write((const uint8_t*)"\n[noxis64] rip="); serial_write_hex64(frame->rip);
+        uint64_t cr2; __asm__ __volatile__("mov %%cr2,%0" : "=r"(cr2));
+        serial_write((const uint8_t*)" cr2="); serial_write_hex64(cr2);
+        serial_write((const uint8_t*)"\n[noxis64] halted.\n");
+        for (;;) __asm__ __volatile__("cli; hlt");
     }
-
-    /* Unhandled interrupt — ignore silently */
+    /* Unhandled IRQ — ignore for now. */
 }

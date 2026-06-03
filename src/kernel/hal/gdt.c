@@ -1,67 +1,62 @@
 /**
  * @file    hal/gdt.c
- * @brief   Global Descriptor Table — segments + TSS
- * @author  Noxis Team
- * @date    2026-05-29
+ * @brief   64-bit GDT + TSS.
+ *
+ *   0x08 kernel code | 0x10 kernel data | 0x1B user code | 0x23 user data
+ *   0x28 TSS (16-byte system descriptor)
  */
 #include <kernel/hal/gdt.h>
 #include <common/types.h>
 
-static gdt_entry_t g_gdt[GDT_ENTRIES];
-static gdt_ptr_t   g_gdt_ptr;
-static tss_t       g_tss;
+struct __attribute__((packed)) gdt_ptr { uint16_t limit; uint64_t base; };
 
-extern void gdt_flush(gdt_ptr_t* ptr);
-extern void tss_flush(void);
+struct __attribute__((packed)) tss64 {
+    uint32_t reserved0;
+    uint64_t rsp[3];
+    uint64_t reserved1;
+    uint64_t ist[7];
+    uint64_t reserved2;
+    uint16_t reserved3;
+    uint16_t iomap_base;
+};
 
-static void _gdt_encode(uint32_t index, uint32_t base, uint32_t limit,
-                        uint8_t access, uint8_t flags) {
-    g_gdt[index].limit_low   = (uint16_t)(limit & 0xFFFF);
-    g_gdt[index].base_low    = (uint16_t)(base & 0xFFFF);
-    g_gdt[index].base_mid    = (uint8_t)((base >> 16) & 0xFF);
-    g_gdt[index].access      = access;
-    g_gdt[index].granularity = ((flags & 0x0F) << 4) | ((limit >> 16) & 0x0F);
-    g_gdt[index].base_high   = (uint8_t)((base >> 24) & 0xFF);
+static uint64_t      g_gdt[7];
+static struct tss64  g_tss;
+static uint8_t       g_ist1[4096] __attribute__((aligned(16)));
+
+extern void gdt64_load(struct gdt_ptr* p);   /* gdt_load.asm */
+extern void tss64_load(uint16_t sel);
+
+static uint64_t seg(uint8_t access, uint8_t flags) {
+    return ((uint64_t)access << 40) | ((uint64_t)(flags & 0x0F) << 52);
 }
+
+void gdt_set_kernel_stack(uint64_t rsp) { g_tss.rsp[0] = rsp; }
 
 os_status_t gdt_init(void) {
-    _gdt_encode(GDT_NULL, 0, 0, 0, 0);
+    g_gdt[0] = 0;
+    g_gdt[1] = seg(0x9A, 0xA);   /* kernel code, L=1 */
+    g_gdt[2] = seg(0x92, 0xA);   /* kernel data      */
+    g_gdt[3] = seg(0xFA, 0xA);   /* user code,  DPL3 */
+    g_gdt[4] = seg(0xF2, 0xA);   /* user data,  DPL3 */
 
-    _gdt_encode(GDT_KERNEL_CS, 0, 0xFFFFF,
-        GDT_PRESENT | GDT_DPL0 | GDT_CODE_DATA | GDT_EXEC | GDT_RW,
-        GDT_GRAN_4K | GDT_SIZE_32);
+    for (uint64_t i = 0; i < sizeof(g_tss); i++) ((uint8_t*)&g_tss)[i] = 0;
+    g_tss.rsp[0]     = (uint64_t)(g_ist1 + sizeof(g_ist1));
+    g_tss.ist[0]     = (uint64_t)(g_ist1 + sizeof(g_ist1));
+    g_tss.iomap_base = sizeof(struct tss64);
 
-    _gdt_encode(GDT_KERNEL_DS, 0, 0xFFFFF,
-        GDT_PRESENT | GDT_DPL0 | GDT_CODE_DATA | GDT_RW,
-        GDT_GRAN_4K | GDT_SIZE_32);
+    uint64_t base  = (uint64_t)&g_tss;
+    uint64_t limit = sizeof(struct tss64) - 1;
+    uint64_t lo = (limit & 0xFFFF)
+                | ((base & 0xFFFFFF) << 16)
+                | ((uint64_t)0x89 << 40)
+                | (((limit >> 16) & 0xF) << 48)
+                | (((base >> 24) & 0xFF) << 56);
+    g_gdt[5] = lo;
+    g_gdt[6] = (base >> 32) & 0xFFFFFFFF;
 
-    _gdt_encode(GDT_USER_CS, 0, 0xFFFFF,
-        GDT_PRESENT | GDT_DPL3 | GDT_CODE_DATA | GDT_EXEC | GDT_RW,
-        GDT_GRAN_4K | GDT_SIZE_32);
-
-    _gdt_encode(GDT_USER_DS, 0, 0xFFFFF,
-        GDT_PRESENT | GDT_DPL3 | GDT_CODE_DATA | GDT_RW,
-        GDT_GRAN_4K | GDT_SIZE_32);
-
-    /* TSS: system descriptor, base = &g_tss, limit = sizeof(tss_t)-1 */
-    _gdt_encode(GDT_TSS, (uint32_t)&g_tss, sizeof(tss_t) - 1,
-        GDT_PRESENT | GDT_DPL0 | GDT_TSS_AVAIL,
-        GDT_GRAN_1B | GDT_SIZE_16);
-
-    g_gdt_ptr.limit = (uint16_t)(sizeof(g_gdt) - 1);
-    g_gdt_ptr.base  = (uint32_t)&g_gdt;
-    gdt_flush(&g_gdt_ptr);
-
-    /* Initialize TSS — only esp0/ss0 matter for now */
-    g_tss.esp0 = 0;
-    g_tss.ss0  = SELECTOR(GDT_KERNEL_DS, 0);
-
-    /* Load task register */
-    tss_flush();
-
+    struct gdt_ptr p = { sizeof(g_gdt) - 1, (uint64_t)g_gdt };
+    gdt64_load(&p);
+    tss64_load(SEL_TSS);
     return OS_OK;
-}
-
-void gdt_set_kernel_stack(uint32_t esp) {
-    g_tss.esp0 = esp;
 }

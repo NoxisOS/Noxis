@@ -1,8 +1,7 @@
 /**
- * @file    mm/vmm.h
- * @brief   Virtual Memory Manager interface
+ * @file    mm/virt/vmm.h
+ * @brief   Virtual memory manager — 4-level paging (x86-64).
  * @author  Noxis Team
- * @date    2026-05-29
  */
 #ifndef MM_VMM_H
 #define MM_VMM_H
@@ -10,104 +9,14 @@
 #include <common/types.h>
 #include <common/status.h>
 
-/**
- * @brief Initializes paging and higher-half kernel mapping.
- *        Must be called from ASM before any C code at higher-half.
- * @param pd_phys   Physical address of the page directory
- * @param pt0_phys  Physical address of identity page table (0-4MB)
- * @param pt_kernel_phys  Physical address of kernel page table
- * @return OS_OK on success
- */
-os_status_t vmm_init(uint32_t pd_phys, uint32_t pt0_phys, uint32_t pt_kernel_phys);
+#define PAGE_PRESENT  0x1
+#define PAGE_RW       0x2
+#define PAGE_USER     0x4
 
-/**
- * @brief Maps a 4 KB virtual page to a physical frame
- * @param virt   Virtual address (page-aligned)
- * @param phys   Physical address (page-aligned)
- * @param flags  Page flags (PAGE_PRESENT | PAGE_RW, etc.)
- * @return OS_OK on success
- */
-os_status_t vmm_map_page(uint32_t virt, uint32_t phys, uint32_t flags);
+/* Build a fresh PML4 (identity-maps low RAM with 2 MB pages) and load it. */
+os_status_t vmm_init(void);
 
-/**
- * @brief Invalidates a single TLB entry
- * @param virt  Virtual address to invalidate
- */
-void vmm_invlpg(uint32_t virt);
-
-/* ── per-process address space ─────────────────────────────── */
-
-/** Returns the physical address of the currently-active page directory. */
-uint32_t vmm_get_pd_phys(void);
-
-/**
- * @brief Allocates a new page directory.
- *        Kernel PDEs (0xC0000000+) are cloned from the active kernel PD;
- *        user PDEs (< 0xC0000000) are zeroed.
- * @param pd_phys_out  Receives the physical address of the new PD.
- */
-os_status_t vmm_create_pd(uint32_t* pd_phys_out);
-
-/**
- * @brief Maps virt→phys inside a specific (possibly non-current) PD.
- *        Uses two scratch virtual pages to access the target PD/PT.
- */
-os_status_t vmm_map_page_in(uint32_t pd_phys, uint32_t virt,
-                             uint32_t phys, uint32_t flags);
-
-/**
- * @brief Resolves virt to a physical address inside a specific PD.
- * @return physical address, or 0 if not mapped.
- */
-uint32_t vmm_virt_to_phys_in(uint32_t pd_phys, uint32_t virt);
-
-/**
- * @brief Unmaps virt in a specific PD and frees the backing frame.
- * @return the freed physical frame (page-aligned), or 0 if not mapped.
- */
-uint32_t vmm_unmap_page_in(uint32_t pd_phys, uint32_t virt);
-
-/**
- * @brief Resolve a copy-on-write fault at fault_addr in the current PD.
- * @return 1 if it was a CoW page and was resolved (retry the instruction),
- *         0 otherwise (not CoW / OOM — treat as a real fault).
- */
-int vmm_handle_cow(uint32_t fault_addr);
-
-/**
- * @brief Callback invoked for each present user page during vmm_walk_user.
- * @param vaddr  page-aligned virtual address
- * @param flags  the low 12 PTE flag bits (PAGE_RW, PAGE_USER, PAGE_COW, …)
- * @param ctx    opaque caller context
- */
-typedef void (*vmm_walk_fn)(uint32_t vaddr, uint32_t flags, void* ctx);
-
-/**
- * @brief Walk every present user-space mapping of a page directory.
- */
-void vmm_walk_user(uint32_t pd_phys, vmm_walk_fn cb, void* ctx);
-
-/**
- * @brief Deep-copies all user-space pages (virt < 0xC0000000) from
- *        parent's PD into a freshly-created child PD.
- * @param parent_pd_phys  Parent's page directory physical address.
- * @param child_pd_out    Receives the child's PD physical address.
- */
-os_status_t vmm_fork_pd(uint32_t parent_pd_phys, uint32_t* child_pd_out);
-
-/** Loads a page directory into CR3 (switches active address space). */
-void vmm_switch_pd(uint32_t pd_phys);
-
-/**
- * @brief Registers the #PF (vector 14) handler enabling demand paging.
- *        Call once during boot, after isr_init().
- */
-void pagefault_init(void);
-
-/**
- * @brief Frees all user-space frames+tables inside pd_phys, then frees
- *        the PD frame itself.  Kernel PDEs are left untouched.
- */
-void vmm_destroy_pd(uint32_t pd_phys);
+/* Map one 4 KB page va → pa, allocating page-table levels as needed. */
+int vmm_map_page(uint64_t va, uint64_t pa, uint64_t flags);
 
 #endif /* MM_VMM_H */
