@@ -9,7 +9,9 @@ extern main
 section .text
 _start:
     xor  rbp, rbp
-    call main            ; int main(void)
+    mov  rdi, [rsp]      ; argc  (kernel placed it at the top of the stack)
+    lea  rsi, [rsp + 8]  ; argv  (array of pointers follows argc)
+    call main            ; int main(int argc, char** argv)
     mov  rdi, rax        ; exit code = main's return value
     mov  rax, 0          ; SYS_EXIT
     syscall

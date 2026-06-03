@@ -50,7 +50,9 @@ static inline void exit(int code) {
 }
 
 static inline long fork(void)            { return _syscall3(SYS_FORK, 0, 0, 0); }
-static inline long execv(const char* p)  { return _syscall3(SYS_EXEC, (long)p, 0, 0); }
+static inline long execv(const char* p, char* const argv[]) {
+    return _syscall3(SYS_EXEC, (long)p, (long)argv, 0);
+}
 static inline long getpid(void)          { return _syscall3(SYS_GETPID, 0, 0, 0); }
 static inline long waitpid(long pid, int* st) {
     return _syscall3(SYS_WAITPID, pid, (long)st, 0);

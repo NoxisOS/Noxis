@@ -4,9 +4,12 @@
  */
 #include "../noxlib64/noxlib.h"
 
-int main(void) {
-    puts("[exec] child.elf now running in ring 3, pid=");
+int main(int argc, char** argv) {
+    puts("[exec] child.elf running in ring 3, pid=");
     puti(getpid());
-    puts("\n");
+    puts(", argc="); puti(argc); puts("\n");
+    for (int i = 0; i < argc; i++) {
+        puts("  argv["); puti(i); puts("]="); puts(argv[i]); puts("\n");
+    }
     return 42;
 }

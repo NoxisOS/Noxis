@@ -18,8 +18,9 @@ int main(void) {
     long dpid = fork();
     if (dpid == 0) {
         puts("[demo] child pid="); puti(getpid());
-        puts(", exec child.elf...\n");
-        execv("child.elf");                 /* replaces this image */
+        puts(", exec child.elf with args...\n");
+        char* av[] = { "child.elf", "arg1", "hello-world", 0 };
+        execv("child.elf", av);             /* replaces this image */
         puts("[demo] exec FAILED\n");       /* only reached on error */
         exit(1);
     } else {

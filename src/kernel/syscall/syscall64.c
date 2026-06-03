@@ -17,7 +17,7 @@ int32_t kbd_poll(void);
 
 /* fork/exec/exit live in proc/ (need process + vmm internals). */
 int64_t  sys_fork(syscall_frame_t* f);
-int64_t  sys_exec(syscall_frame_t* f, const uint8_t* path);
+int64_t  sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv);
 void     sys_exit(int code);
 uint64_t sys_getpid(void);
 int64_t  sys_waitpid(int64_t pid, int* status);
@@ -75,7 +75,8 @@ void syscall_dispatch(syscall_frame_t* f) {
     case SYS_READ:    f->rax = (uint64_t)sys_read((int)f->rdi,
                                   (uint8_t*)f->rsi, f->rdx);                return;
     case SYS_FORK:    f->rax = (uint64_t)sys_fork(f);                       return;
-    case SYS_EXEC:    f->rax = (uint64_t)sys_exec(f, (const uint8_t*)f->rdi); return;
+    case SYS_EXEC:    f->rax = (uint64_t)sys_exec(f, (const uint8_t*)f->rdi,
+                                                  (const uint8_t**)f->rsi);    return;
     case SYS_GETPID:  f->rax = sys_getpid();                               return;
     case SYS_WAITPID: f->rax = (uint64_t)sys_waitpid((int64_t)f->rdi,
                                                      (int*)f->rsi);         return;

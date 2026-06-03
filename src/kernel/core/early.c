@@ -167,8 +167,14 @@ void kernel_main(void) {
     serial_write((const uint8_t*)"entry="); serial_write_hex64(entry);
     serial_write((const uint8_t*)"\n");
 
-    /* User stack page, mapped into the private address space. */
-    vmm_map_page_into(uas, USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
+    /* User stack page, mapped into the private address space.  Seed a minimal
+       argv stack (argc=0, NULL) so crt0 reads a valid frame at rsp. */
+    uint64_t ustk = pmm_alloc_frame();
+    vmm_map_page_into(uas, USTACK_VA, ustk, PAGE_RW | PAGE_USER);
+    uint64_t* utop = (uint64_t*)(0xFFFF800000000000ULL + ustk + 0x1000);
+    utop[-1] = 0;            /* argv[0] = NULL */
+    utop[-2] = 0;            /* argc    = 0    */
+    uint64_t ursp = USTACK_VA + 0x1000 - 16;
 
     /* Spawn the user as a scheduled process and hand it the CPU. The scheduler
        switches CR3 to its address space, the kernel-thread trampoline drops to
@@ -176,7 +182,7 @@ void kernel_main(void) {
     serial_write((const uint8_t*)"[noxis64] spawning user process + yielding\n");
     scheduler_init();
     process_t* up = proc_spawn_user((const uint8_t*)"hello", uas,
-                                    entry, USTACK_VA + 0x1000, 1);
+                                    entry, ursp, 1);
     scheduler_register(up);
 
     /* A background ring-0 kernel thread, scheduled alongside the ring-3 user. */

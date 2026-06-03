@@ -14,7 +14,11 @@ void serial_write(const uint8_t* s);
 void serial_write_hex64(uint64_t v);
 uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
 
-#define USTACK_VA  0x50000000ULL
+#define USTACK_VA     0x50000000ULL
+#define PHYSMAP_BASE  0xFFFF800000000000ULL
+#define MAX_ARGS      16
+
+static uint64_t kstrlen(const uint8_t* s) { uint64_t n = 0; while (s[n]) n++; return n; }
 
 /* ── fork ──────────────────────────────────────────────────────
  * Duplicate the current process: copy its user address space, then build a
@@ -62,7 +66,7 @@ int64_t sys_fork(syscall_frame_t* f) {
  * fresh address space, loads the ELF, then rewrites the syscall frame so the
  * return path sysrets straight into the new program.
  */
-int64_t sys_exec(syscall_frame_t* f, const uint8_t* path) {
+int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) {
     vfs_file_t* prog = vfs_lookup(path);
     if (!prog || !prog->data) return -1;
 
@@ -70,16 +74,39 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path) {
     if (!nas) return -1;
     uint64_t entry = elf64_load_into(nas, prog->data);
     if (!entry) return -1;
-    vmm_map_page_into(nas, USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
+
+    uint64_t stk = pmm_alloc_frame();
+    if (!stk) return -1;
+    vmm_map_page_into(nas, USTACK_VA, stk, PAGE_RW | PAGE_USER);
+
+    /* Build the argv stack into the new page through the physmap (the physmap
+       is shared, so argv from the *current* AS is still readable here — we have
+       not switched CR3 yet). Layout at rsp: argc, argv[0..argc-1], NULL, strings. */
+    uint8_t*  page = (uint8_t*)(PHYSMAP_BASE + stk);   /* kernel view of the page */
+    uint64_t  off  = 0x1000;                            /* offset within the page  */
+    uint64_t  argv_uva[MAX_ARGS];
+    int       argc = 0;
+    if (argv) for (; argc < MAX_ARGS && argv[argc]; argc++) { /* count */ }
+
+    for (int i = argc - 1; i >= 0; i--) {               /* copy strings, top-down */
+        uint64_t len = kstrlen(argv[i]) + 1;
+        off -= len;
+        for (uint64_t b = 0; b < len; b++) page[off + b] = argv[i][b];
+        argv_uva[i] = USTACK_VA + off;
+    }
+    off &= ~7ULL;                                       /* align */
+    off -= 8; *(uint64_t*)(page + off) = 0;             /* argv[argc] = NULL */
+    for (int i = argc - 1; i >= 0; i--) { off -= 8; *(uint64_t*)(page + off) = argv_uva[i]; }
+    off -= 8; *(uint64_t*)(page + off) = (uint64_t)argc;/* argc (rsp points here) */
 
     process_t* cur = scheduler_current();
     cur->pml4 = nas;
     vmm_switch(nas);                   /* kernel half is shared, frame stays valid */
 
     f->rip    = entry;
-    f->ursp   = USTACK_VA + 0x1000;
+    f->ursp   = USTACK_VA + off;
     f->rflags = 0x202;                 /* IF=1 */
-    f->rax    = 0;                     /* fresh program entry; rax don't-care */
+    f->rax    = 0;
     return 0;
 }
 
