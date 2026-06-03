@@ -1,9 +1,9 @@
 /**
- * @file    src/noxlib64/noxlib.h
+ * @file    src/noxlib/noxlib.h
  * @brief   Minimal 64-bit userland C runtime (syscall wrappers + helpers).
  */
-#ifndef NOXLIB64_H
-#define NOXLIB64_H
+#ifndef NOXLIB_H
+#define NOXLIB_H
 
 typedef unsigned long  size_t;
 typedef long           ssize_t;
@@ -114,4 +114,4 @@ static inline void puti(long v) {
     write(1, &buf[i], strlen(&buf[i]));
 }
 
-#endif /* NOXLIB64_H */
+#endif /* NOXLIB_H */

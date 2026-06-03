@@ -1,9 +1,9 @@
 /**
- * @file    src/userland64/sigtest.c
+ * @file    src/userland/sigtest.c
  * @brief   Demonstrates signals: a child installs a SIGUSR1 handler and loops;
  *          the parent sends SIGUSR1; the handler runs and the child exits.
  */
-#include "../noxlib64/noxlib.h"
+#include "../noxlib/noxlib.h"
 
 static volatile int got = 0;
 

@@ -1,8 +1,8 @@
 /**
- * @file    src/userland64/ps.c
+ * @file    src/userland/ps.c
  * @brief   ps — lists running processes via the procinfo syscall (/proc-style).
  */
-#include "../noxlib64/noxlib.h"
+#include "../noxlib/noxlib.h"
 
 int main(int argc, char** argv) {
     (void)argc; (void)argv;

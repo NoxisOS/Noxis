@@ -6,7 +6,7 @@
  * while empty and writers remain; returns 0 (EOF) once all writers close.
  * write() blocks while full and readers remain.
  */
-#include <kernel/syscall/syscall64.h>
+#include <kernel/syscall/syscall.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <common/types.h>

@@ -27,7 +27,7 @@ else
     MAKE_BOOTIMG = dd if=/dev/zero of=$(DISK_IMG) bs=512 count=2048 status=none && \
                    dd if=$(BOOT_BIN) of=$(DISK_IMG) conv=notrunc status=none && \
                    dd if=$(KERNEL_BIN) of=$(DISK_IMG) bs=512 seek=1 conv=notrunc status=none
-    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img nsh.elf:build/nsh.elf hello.elf:build/hello.elf child.elf:build/child.elf echo.elf:build/echo.elf cat.elf:build/cat.elf ls.elf:build/ls.elf sigtest.elf:build/sigtest.elf ps.elf:build/ps.elf motd.txt:src/userland64/motd.txt
+    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img nsh.elf:build/nsh.elf hello.elf:build/hello.elf child.elf:build/child.elf echo.elf:build/echo.elf cat.elf:build/cat.elf ls.elf:build/ls.elf sigtest.elf:build/sigtest.elf ps.elf:build/ps.elf motd.txt:src/userland/motd.txt
 endif
 
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
@@ -68,7 +68,7 @@ KERNEL_C_OBJS = \
   build/fs/noxfs/noxfs.o    \
   build/fs/vfs/ramfs.o      \
   build/fs/vfs/vfs.o        \
-  build/kernel/syscall/syscall64.o
+  build/kernel/syscall/syscall.o
 
 KERNEL_ASM_OBJS = \
   build/boot/kernel_entry.o      \
@@ -78,7 +78,7 @@ KERNEL_ASM_OBJS = \
   build/proc/kthread_switch.o    \
   build/proc/user_enter.o        \
   build/kernel/syscall/syscall_entry.o \
-  build/userland64/hello_blob.o
+  build/userland/hello_blob.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
@@ -113,26 +113,26 @@ $(BOOT_BIN): src/boot/boot.asm
 UCFLAGS = -std=c11 -ffreestanding -nostdlib -nostdinc -m64 \
           -fno-pic -fno-stack-protector -Wall -Wextra -O2
 
-build/u_crt0.o: src/noxlib64/crt0.asm
+build/u_crt0.o: src/noxlib/crt0.asm
 	@$(call MKDIRP,build)
 	$(AS) -f elf64 $< -o $@
 
-# Generic rules: every src/userland64/<name>.c → build/<name>.elf
-build/u_%.o: src/userland64/%.c src/noxlib64/noxlib.h
+# Generic rules: every src/userland/<name>.c → build/<name>.elf
+build/u_%.o: src/userland/%.c src/noxlib/noxlib.h
 	@$(call MKDIRP,build)
 	$(CC) $(UCFLAGS) -c $< -o $@
 
-build/%.elf: build/u_crt0.o build/u_%.o src/userland64/user.ld
+build/%.elf: build/u_crt0.o build/u_%.o src/userland/user.ld
 	@echo LD   $@
-	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_$*.o
+	$(LD) -T src/userland/user.ld -nostdlib -o $@ build/u_crt0.o build/u_$*.o
 
 # All userland programs shipped on the NoxFS disk.
 USER_ELFS = build/nsh.elf build/hello.elf build/child.elf \
             build/echo.elf build/cat.elf build/ls.elf build/sigtest.elf build/ps.elf
 
 # The blob incbin's build/hello.elf, so it must exist first.
-build/userland64/hello_blob.o: src/userland64/hello_blob.asm build/hello.elf
-	@$(call MKDIRP,build/userland64)
+build/userland/hello_blob.o: src/userland/hello_blob.asm build/hello.elf
+	@$(call MKDIRP,build/userland)
 	$(AS) -f elf64 $< -o $@
 
 # ── Kernel link + flatten ─────────────────────────────────────
@@ -150,7 +150,7 @@ $(DISK_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	$(MAKE_BOOTIMG)
 
 # NoxFS disk image (hdb = primary slave) built from the userland ELFs.
-$(NOXFS_IMG): $(USER_ELFS) src/userland64/motd.txt tools/windows/build_disk.ps1 tools/linux/build_disk.sh
+$(NOXFS_IMG): $(USER_ELFS) src/userland/motd.txt tools/windows/build_disk.ps1 tools/linux/build_disk.sh
 	@echo BUILD $@
 	$(MAKE_NOXFS)
 

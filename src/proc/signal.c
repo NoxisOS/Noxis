@@ -7,7 +7,7 @@
  * original RIP so the handler can `ret` back); otherwise the default action
  * for terminating signals is to exit the process.
  */
-#include <kernel/syscall/syscall64.h>
+#include <kernel/syscall/syscall.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <common/types.h>

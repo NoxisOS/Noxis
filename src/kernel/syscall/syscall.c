@@ -1,12 +1,12 @@
 /**
- * @file    kernel/syscall/syscall64.c
+ * @file    kernel/syscall/syscall.c
  * @brief   x86-64 syscall/sysret setup + dispatcher.
  *
  * The entry stub (syscall_entry.asm) hands us a syscall_frame_t holding the
  * full user register state; we read args from it and write the return value
  * back to f->rax.  This lets fork() clone the caller's exact context.
  */
-#include <kernel/syscall/syscall64.h>
+#include <kernel/syscall/syscall.h>
 #include <common/types.h>
 #include <common/status.h>
 #include <drivers/serial.h>

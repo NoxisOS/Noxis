@@ -1,5 +1,5 @@
 /**
- * @file    kernel/syscall/syscall64.h
+ * @file    kernel/syscall/syscall.h
  * @brief   x86-64 syscall trapframe + dispatcher interface.
  *
  * syscall_entry.asm captures the full user register state into a
@@ -7,8 +7,8 @@
  * it and exec()/signals can rewrite it. Field order MUST match the push order
  * in syscall_entry.asm (rax pushed last → lowest address → first field).
  */
-#ifndef KERNEL_SYSCALL64_H
-#define KERNEL_SYSCALL64_H
+#ifndef KERNEL_SYSCALL_H
+#define KERNEL_SYSCALL_H
 
 #include <common/types.h>
 #include <common/status.h>
@@ -28,4 +28,4 @@ extern void fork_ret_trampoline(void);
 /* Updated by the scheduler: top of the current process's kernel stack. */
 extern uint64_t g_cur_kstack;
 
-#endif /* KERNEL_SYSCALL64_H */
+#endif /* KERNEL_SYSCALL_H */

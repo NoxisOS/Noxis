@@ -9,7 +9,7 @@
 #include <proc/process.h>
 #include <mm/virt/vmm.h>
 #include <kernel/hal/gdt.h>
-#include <kernel/syscall/syscall64.h>
+#include <kernel/syscall/syscall.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);

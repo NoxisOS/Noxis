@@ -2,7 +2,7 @@
  * @file    proc/syscalls.c
  * @brief   Process-management syscalls: fork, exec, exit, getpid, waitpid.
  */
-#include <kernel/syscall/syscall64.h>
+#include <kernel/syscall/syscall.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <mm/virt/vmm.h>

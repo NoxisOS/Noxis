@@ -1,5 +1,5 @@
 ; ─────────────────────────────────────────────────────────────
-; src/noxlib64/crt0.asm — 64-bit userland C runtime entry.
+; src/noxlib/crt0.asm — 64-bit userland C runtime entry.
 ; Calls main(), then exits with its return value via SYS_EXIT.
 ; ─────────────────────────────────────────────────────────────
 [BITS 64]

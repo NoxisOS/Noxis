@@ -5,7 +5,7 @@
  * Each process owns a small fd table (process_t.fds).  fds 0/1/2 are the
  * console (keyboard / VGA+serial); open() binds further fds to VFS files.
  */
-#include <kernel/syscall/syscall64.h>
+#include <kernel/syscall/syscall.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <fs/vfs/vfs.h>

@@ -1,9 +1,9 @@
 /**
- * @file    src/userland64/hello.c
+ * @file    src/userland/hello.c
  * @brief   A tiny interactive ring-3 program (proto-shell) — proves
  *          read + write syscalls and a userland REPL in 64-bit.
  */
-#include "../noxlib64/noxlib.h"
+#include "../noxlib/noxlib.h"
 
 static int streq(const char* a, const char* b) {
     while (*a && *a == *b) { a++; b++; }

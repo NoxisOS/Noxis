@@ -1,11 +1,11 @@
 /**
- * @file    src/userland64/nsh.c
+ * @file    src/userland/nsh.c
  * @brief   Noxis shell — reads a line, tokenizes it, fork+execs the command.
  *
  * Built-ins: exit, help.  Everything else is launched as an external program
  * (e.g. "ls.elf", "echo.elf hi", "cat.elf motd.txt").
  */
-#include "../noxlib64/noxlib.h"
+#include "../noxlib/noxlib.h"
 
 #define MAX_ARGS 32
 

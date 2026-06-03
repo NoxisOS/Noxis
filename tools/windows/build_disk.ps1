@@ -30,7 +30,7 @@ $files = @(
     @{Name='ls.elf';     Path='build/ls.elf'},
     @{Name='sigtest.elf';Path='build/sigtest.elf'},
     @{Name='ps.elf';     Path='build/ps.elf'},
-    @{Name='motd.txt';   Path='src/userland64/motd.txt'}
+    @{Name='motd.txt';   Path='src/userland/motd.txt'}
 )
 
 # Direct byte assignment — [Array]::Copy on byte[] is unreliable on

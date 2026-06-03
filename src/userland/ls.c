@@ -1,8 +1,8 @@
 /**
- * @file    src/userland64/ls.c
+ * @file    src/userland/ls.c
  * @brief   ls — lists the files in the VFS via the readdir syscall.
  */
-#include "../noxlib64/noxlib.h"
+#include "../noxlib/noxlib.h"
 
 int main(int argc, char** argv) {
     (void)argc; (void)argv;

@@ -1,8 +1,8 @@
 /**
- * @file    src/userland64/child.c
+ * @file    src/userland/child.c
  * @brief   Tiny ring-3 program used to demonstrate exec(): prints and exits.
  */
-#include "../noxlib64/noxlib.h"
+#include "../noxlib/noxlib.h"
 
 int main(int argc, char** argv) {
     puts("[exec] child.elf running in ring 3, pid=");

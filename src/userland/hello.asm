@@ -1,5 +1,5 @@
 ; ─────────────────────────────────────────────────────────────
-; src/userland64/hello.asm — a real ELF64 ring-3 user program.
+; src/userland/hello.asm — a real ELF64 ring-3 user program.
 ; Linked at 0x40000000 (outside the kernel identity map); loaded by
 ; the kernel's ELF64 loader.  Uses the Noxis syscall ABI.
 ; ─────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 ; ─────────────────────────────────────────────────────────────
-; src/userland64/hello_blob.asm — embed the built hello.elf into the
+; src/userland/hello_blob.asm — embed the built hello.elf into the
 ; kernel image so the ELF64 loader can run it without a filesystem yet.
 ; ─────────────────────────────────────────────────────────────
 [BITS 64]
