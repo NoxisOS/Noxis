@@ -239,14 +239,38 @@ run-debug: $(DISK_IMG)
 
 # ─────────────────────────────────────────────────────────────
 # x86_64 port (work in progress, branch: x86_64)
-# Milestone 1: pure-NASM long-mode bring-up — no cross-compiler needed.
+# Milestone 2: 64-bit C kernel booted by a long-mode boot sector.
 # ─────────────────────────────────────────────────────────────
-QEMU64 = "D:\Program Files\qemu\qemu-system-x86_64"
+QEMU64    = "D:\Program Files\qemu\qemu-system-x86_64"
+TOOLS64   = D:/Program Files/x86_64-elf-tools-windows/bin
+CC64      = "$(TOOLS64)/x86_64-elf-gcc"
+LD64      = "$(TOOLS64)/x86_64-elf-ld"
+OBJCOPY64 = "$(TOOLS64)/x86_64-elf-objcopy"
 
-build/boot64.img: src/boot64/boot.asm
+CFLAGS64  = -ffreestanding -nostdlib -nostdinc -m64 \
+            -mno-red-zone -mno-mmx -mno-sse -mgeneral-regs-only \
+            -fno-pic -fno-stack-protector -Wall -Wextra -O2
+
+build/boot64_mbr.bin: src/boot64/boot.asm
 	@$(call MKDIRP,build)
-	@echo AS   $@
 	$(AS) -f bin $< -o $@
+
+build/b64_entry.o: src/boot64/entry.asm
+	@$(call MKDIRP,build)
+	$(AS) -f elf64 $< -o $@
+
+build/b64_kmain.o: src/boot64/kmain.c
+	@$(call MKDIRP,build)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+build/b64_kernel.bin: build/b64_entry.o build/b64_kmain.o src/boot64/kernel.ld
+	$(LD64) -T src/boot64/kernel.ld -nostdlib -o build/b64_kernel.elf \
+	    build/b64_entry.o build/b64_kmain.o
+	$(OBJCOPY64) -O binary build/b64_kernel.elf $@
+
+build/boot64.img: build/boot64_mbr.bin build/b64_kernel.bin
+	@echo BUILD $@
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$m=[IO.File]::ReadAllBytes('build/boot64_mbr.bin'); $$k=[IO.File]::ReadAllBytes('build/b64_kernel.bin'); $$img=New-Object byte[] (512*65); [Array]::Copy($$m,0,$$img,0,512); [System.Buffer]::BlockCopy($$k,0,$$img,512,$$k.Length); [IO.File]::WriteAllBytes('build/boot64.img',$$img)"
 
 .PHONY: boot64 run64
 boot64: build/boot64.img
