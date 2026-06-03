@@ -8,8 +8,16 @@
 #include <kernel/hal/ports.h>
 #include <common/types.h>
 
-#define VGA_BUFFER  ((volatile uint16_t*)0xB8000)
 #define VGA_COLOR(fg, bg)  ((uint8_t)(((bg) << 4) | ((fg) & 0x0F)))
+
+/* The text buffer is reached at low phys 0xB8000 during early boot (valid via
+   the boot identity map), then through the physmap once paging is live, so it
+   stays accessible from every address space (the low half is per-process). */
+#define VGA_LOW   ((volatile uint16_t*)0xB8000ULL)
+#define VGA_HIGH  ((volatile uint16_t*)(0xFFFF800000000000ULL + 0xB8000))
+static volatile uint16_t* VGA_BUFFER = VGA_LOW;
+
+void vga_use_physmap(void) { VGA_BUFFER = VGA_HIGH; }
 
 static uint32_t g_row;
 static uint32_t g_col;

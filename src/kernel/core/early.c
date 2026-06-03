@@ -32,6 +32,7 @@ os_status_t kbd_init(void);
 os_status_t syscall_init(void);
 extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
 uint64_t elf64_load(const uint8_t* img);
+uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
 extern uint8_t hello_elf_start[], hello_elf_end[];
 
 #define USTACK_VA  0x50000000ULL   /* user stack page (outside identity map) */
@@ -63,6 +64,7 @@ void kernel_main(void) {
 
     pmm_init(128ULL * 1024 * 1024);
     vmm_init();
+    vga_use_physmap();      /* text buffer now reachable from any address space */
     heap_init();
     slab_init();
 
@@ -130,29 +132,36 @@ void kernel_main(void) {
     syscall_init();
     serial_write((const uint8_t*)"OK\n");
 
+    /* Create a private address space for the user program (PML4[0] private,
+       physmap + kernel shared). The ELF and its stack live only here. */
+    serial_write((const uint8_t*)"[noxis64] new address space ... ");
+    uint64_t uas = vmm_create_address_space();
+    serial_write_hex64(uas); serial_write((const uint8_t*)"\n");
+
     /* Load hello.elf from the NoxFS disk (fall back to the embedded copy). */
     serial_write((const uint8_t*)"[noxis64] exec /hello.elf from disk ... ");
     uint64_t entry = 0;
     vfs_file_t* prog = vfs_lookup((const uint8_t*)"hello.elf");
     if (prog && prog->data) {
-        entry = elf64_load(prog->data);
+        entry = elf64_load_into(uas, prog->data);
         serial_write((const uint8_t*)"(from NoxFS) ");
     } else {
-        entry = elf64_load(hello_elf_start);
+        entry = elf64_load_into(uas, hello_elf_start);
         serial_write((const uint8_t*)"(embedded fallback) ");
     }
     serial_write((const uint8_t*)"entry="); serial_write_hex64(entry);
     serial_write((const uint8_t*)"\n");
 
-    /* User stack page. */
-    vmm_map_page(USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
+    /* User stack page, mapped into the private address space. */
+    vmm_map_page_into(uas, USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
 
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"exec ELF64 ring-3 program...\n");
+    vga_write((const uint8_t*)"exec ELF64 ring-3 program (private AS)...\n");
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-    serial_write((const uint8_t*)"[noxis64] entering ring 3\n");
+    serial_write((const uint8_t*)"[noxis64] switching to user AS + entering ring 3\n");
 
     cpu_sti();
+    vmm_switch(uas);                       /* PML4[0] now the private user half */
     enter_ring3(entry, USTACK_VA + 0x1000);
 
     for (;;) __asm__ __volatile__("hlt");        /* unreachable */

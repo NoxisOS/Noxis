@@ -34,6 +34,7 @@
 
 /* Setup + screen ops */
 void     vga_init(void);
+void     vga_use_physmap(void);   /* switch the text buffer to the physmap */
 void     vga_clear(void);
 
 /* Color */
