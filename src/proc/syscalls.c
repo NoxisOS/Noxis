@@ -121,6 +121,18 @@ void sys_exit(int code) {
 
 uint64_t sys_getpid(void) { return scheduler_current()->pid; }
 
+/* Copy the name of the idx-th VFS entry into namebuf (<=32). Returns 1 if it
+   exists, 0 past the end — lets userland `ls` enumerate the directory. */
+int64_t sys_readdir(uint64_t idx, uint8_t* namebuf) {
+    if (idx >= vfs_count()) return 0;
+    vfs_file_t* f = vfs_entry((uint32_t)idx);
+    if (!f) return 0;
+    int i = 0;
+    for (; f->name[i] && i < 31; i++) namebuf[i] = f->name[i];
+    namebuf[i] = 0;
+    return 1;
+}
+
 int64_t sys_waitpid(int64_t pid, int* status) {
     process_t* parent = scheduler_current();
     for (;;) {

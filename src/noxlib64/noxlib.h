@@ -18,6 +18,7 @@ typedef long           ssize_t;
 #define SYS_OPEN     7
 #define SYS_CLOSE    8
 #define SYS_LSEEK    9
+#define SYS_READDIR  10
 
 #define O_RDONLY  0x00
 #define O_WRONLY  0x01
@@ -64,9 +65,16 @@ static inline long close(int fd)         { return _syscall3(SYS_CLOSE, fd, 0, 0)
 static inline long lseek(int fd, long off, int whence) {
     return _syscall3(SYS_LSEEK, fd, off, whence);
 }
+static inline long readdir(long idx, char* namebuf) {
+    return _syscall3(SYS_READDIR, idx, (long)namebuf, 0);
+}
 
 static inline size_t strlen(const char* s) {
     size_t n = 0; while (s[n]) n++; return n;
+}
+static inline int strcmp(const char* a, const char* b) {
+    while (*a && *a == *b) { a++; b++; }
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
 }
 static inline void puts(const char* s) {
     write(1, s, strlen(s));

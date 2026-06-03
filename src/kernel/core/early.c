@@ -153,10 +153,11 @@ void kernel_main(void) {
     uint64_t uas = vmm_create_address_space();
     serial_write_hex64(uas); serial_write((const uint8_t*)"\n");
 
-    /* Load hello.elf from the NoxFS disk (fall back to the embedded copy). */
-    serial_write((const uint8_t*)"[noxis64] exec /hello.elf from disk ... ");
+    /* Load the init program (nsh.elf) from the NoxFS disk; fall back to the
+       embedded hello.elf if the shell is missing. */
+    serial_write((const uint8_t*)"[noxis64] exec /nsh.elf from disk ... ");
     uint64_t entry = 0;
-    vfs_file_t* prog = vfs_lookup((const uint8_t*)"hello.elf");
+    vfs_file_t* prog = vfs_lookup((const uint8_t*)"nsh.elf");
     if (prog && prog->data) {
         entry = elf64_load_into(uas, prog->data);
         serial_write((const uint8_t*)"(from NoxFS) ");
@@ -181,7 +182,7 @@ void kernel_main(void) {
        ring 3 (user_thread_main → enter_ring3). The boot context becomes idle. */
     serial_write((const uint8_t*)"[noxis64] spawning user process + yielding\n");
     scheduler_init();
-    process_t* up = proc_spawn_user((const uint8_t*)"hello", uas,
+    process_t* up = proc_spawn_user((const uint8_t*)"nsh", uas,
                                     entry, ursp, 1);
     scheduler_register(up);
 

@@ -27,7 +27,7 @@ else
     MAKE_BOOTIMG = dd if=/dev/zero of=$(DISK_IMG) bs=512 count=2048 status=none && \
                    dd if=$(BOOT_BIN) of=$(DISK_IMG) conv=notrunc status=none && \
                    dd if=$(KERNEL_BIN) of=$(DISK_IMG) bs=512 seek=1 conv=notrunc status=none
-    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img hello.elf:build/hello.elf child.elf:build/child.elf motd.txt:src/userland64/motd.txt
+    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img nsh.elf:build/nsh.elf hello.elf:build/hello.elf child.elf:build/child.elf echo.elf:build/echo.elf cat.elf:build/cat.elf ls.elf:build/ls.elf motd.txt:src/userland64/motd.txt
 endif
 
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
@@ -115,21 +115,18 @@ build/u_crt0.o: src/noxlib64/crt0.asm
 	@$(call MKDIRP,build)
 	$(AS) -f elf64 $< -o $@
 
-build/u_hello.o: src/userland64/hello.c
+# Generic rules: every src/userland64/<name>.c → build/<name>.elf
+build/u_%.o: src/userland64/%.c src/noxlib64/noxlib.h
 	@$(call MKDIRP,build)
 	$(CC) $(UCFLAGS) -c $< -o $@
 
-build/hello.elf: build/u_crt0.o build/u_hello.o src/userland64/user.ld
+build/%.elf: build/u_crt0.o build/u_%.o src/userland64/user.ld
 	@echo LD   $@
-	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_hello.o
+	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_$*.o
 
-build/u_child.o: src/userland64/child.c
-	@$(call MKDIRP,build)
-	$(CC) $(UCFLAGS) -c $< -o $@
-
-build/child.elf: build/u_crt0.o build/u_child.o src/userland64/user.ld
-	@echo LD   $@
-	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_child.o
+# All userland programs shipped on the NoxFS disk.
+USER_ELFS = build/nsh.elf build/hello.elf build/child.elf \
+            build/echo.elf build/cat.elf build/ls.elf
 
 # The blob incbin's build/hello.elf, so it must exist first.
 build/userland64/hello_blob.o: src/userland64/hello_blob.asm build/hello.elf
@@ -151,7 +148,7 @@ $(DISK_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	$(MAKE_BOOTIMG)
 
 # NoxFS disk image (hdb = primary slave) built from the userland ELFs.
-$(NOXFS_IMG): build/hello.elf build/child.elf src/userland64/motd.txt tools/windows/build_disk.ps1 tools/linux/build_disk.sh
+$(NOXFS_IMG): $(USER_ELFS) src/userland64/motd.txt tools/windows/build_disk.ps1 tools/linux/build_disk.sh
 	@echo BUILD $@
 	$(MAKE_NOXFS)
 

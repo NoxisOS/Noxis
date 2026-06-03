@@ -21,6 +21,7 @@ int64_t  sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv)
 void     sys_exit(int code);
 uint64_t sys_getpid(void);
 int64_t  sys_waitpid(int64_t pid, int* status);
+int64_t  sys_readdir(uint64_t idx, uint8_t* namebuf);
 
 /* file descriptors live in proc/fd.c. */
 int64_t  sys_open(const uint8_t* path, int flags);
@@ -64,7 +65,7 @@ os_status_t syscall_init(void) {
 enum {
     SYS_EXIT = 0, SYS_WRITE = 1, SYS_READ = 2,
     SYS_FORK = 3, SYS_EXEC = 4, SYS_GETPID = 5, SYS_WAITPID = 6,
-    SYS_OPEN = 7, SYS_CLOSE = 8, SYS_LSEEK = 9,
+    SYS_OPEN = 7, SYS_CLOSE = 8, SYS_LSEEK = 9, SYS_READDIR = 10,
 };
 
 void syscall_dispatch(syscall_frame_t* f) {
@@ -85,6 +86,8 @@ void syscall_dispatch(syscall_frame_t* f) {
     case SYS_CLOSE:   f->rax = (uint64_t)sys_close((int)f->rdi);            return;
     case SYS_LSEEK:   f->rax = (uint64_t)sys_lseek((int)f->rdi,
                                   (int64_t)f->rsi, (int)f->rdx);            return;
+    case SYS_READDIR: f->rax = (uint64_t)sys_readdir(f->rdi,
+                                  (uint8_t*)f->rsi);                       return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

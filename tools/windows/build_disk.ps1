@@ -22,8 +22,12 @@ $ino_tbl_blk = 3
 $data_start  = $ino_tbl_blk + $ino_blks
 
 $files = @(
+    @{Name='nsh.elf';    Path='build/nsh.elf'},
     @{Name='hello.elf';  Path='build/hello.elf'},
     @{Name='child.elf';  Path='build/child.elf'},
+    @{Name='echo.elf';   Path='build/echo.elf'},
+    @{Name='cat.elf';    Path='build/cat.elf'},
+    @{Name='ls.elf';     Path='build/ls.elf'},
     @{Name='motd.txt';   Path='src/userland64/motd.txt'}
 )
 
