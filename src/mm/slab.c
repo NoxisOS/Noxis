@@ -14,20 +14,11 @@
 #include <mm/virt/heap.h>
 #include <common/types.h>
 
-#include <proc/process.h>
-#include <fs/pipe/pipe.h>
-
-/* ── Global caches ──────────────────────────────────────── */
-slab_cache_t *g_process_slab = (slab_cache_t*)0;
-slab_cache_t *g_pipe_slab    = (slab_cache_t*)0;
-
 static slab_cache_t *g_all_caches[8];
 static uint32_t      g_n_caches = 0;
 
-void slab_init(void) {
-    g_process_slab = slab_create("process_t", sizeof(process_t), 16);
-    g_pipe_slab    = slab_create("pipe_t",    sizeof(pipe_t),    8);
-}
+/* Caches are created on demand via slab_create(); nothing preallocated. */
+void slab_init(void) { }
 
 /* ── slab_create ──────────────────────────────────────────── */
 

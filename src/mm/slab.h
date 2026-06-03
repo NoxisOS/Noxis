@@ -43,11 +43,7 @@ typedef struct slab_cache {
     uint32_t      grow_by;      /* objects added per refill            */
 } slab_cache_t;
 
-/* ── Global kernel object caches ─────────────────────────── */
-extern slab_cache_t *g_process_slab;   /* sizeof(process_t)  */
-extern slab_cache_t *g_pipe_slab;      /* sizeof(pipe_t)     */
-
-/* Initialise all global caches (call once, after heap_init()). */
+/* Initialise the slab subsystem (call once, after heap_init()). */
 void          slab_init(void);
 
 /* Create a new slab cache. grow_by = objects added per refill. */
