@@ -251,21 +251,40 @@ CFLAGS64  = -ffreestanding -nostdlib -nostdinc -m64 \
             -mno-red-zone -mno-mmx -mno-sse -mgeneral-regs-only \
             -fno-pic -fno-stack-protector -Wall -Wextra -O2
 
+# entry.o MUST be first so _start64 sits at the kernel load address.
+B64_OBJS = build/b64/entry.o   \
+           build/b64/kmain.o   \
+           build/b64/serial.o  \
+           build/b64/gdt.o     build/b64/gdt_asm.o \
+           build/b64/idt.o     build/b64/idt_load.o \
+           build/b64/isr.o     build/b64/isr_asm.o
+
 build/boot64_mbr.bin: src/boot64/boot.asm
 	@$(call MKDIRP,build)
 	$(AS) -f bin $< -o $@
 
-build/b64_entry.o: src/boot64/entry.asm
-	@$(call MKDIRP,build)
-	$(AS) -f elf64 $< -o $@
-
-build/b64_kmain.o: src/boot64/kmain.c
-	@$(call MKDIRP,build)
+# C sources
+build/b64/%.o: src/boot64/%.c
+	@$(call MKDIRP,build/b64)
 	$(CC64) $(CFLAGS64) -c $< -o $@
 
-build/b64_kernel.bin: build/b64_entry.o build/b64_kmain.o src/boot64/kernel.ld
-	$(LD64) -T src/boot64/kernel.ld -nostdlib -o build/b64_kernel.elf \
-	    build/b64_entry.o build/b64_kmain.o
+# ASM sources (entry/idt_load use the base name; gdt/isr get an _asm suffix
+# to avoid colliding with their C counterparts).
+build/b64/entry.o: src/boot64/entry.asm
+	@$(call MKDIRP,build/b64)
+	$(AS) -f elf64 $< -o $@
+build/b64/idt_load.o: src/boot64/idt_load.asm
+	@$(call MKDIRP,build/b64)
+	$(AS) -f elf64 $< -o $@
+build/b64/gdt_asm.o: src/boot64/gdt.asm
+	@$(call MKDIRP,build/b64)
+	$(AS) -f elf64 $< -o $@
+build/b64/isr_asm.o: src/boot64/isr.asm
+	@$(call MKDIRP,build/b64)
+	$(AS) -f elf64 $< -o $@
+
+build/b64_kernel.bin: $(B64_OBJS) src/boot64/kernel.ld
+	$(LD64) -T src/boot64/kernel.ld -nostdlib -o build/b64_kernel.elf $(B64_OBJS)
 	$(OBJCOPY64) -O binary build/b64_kernel.elf $@
 
 build/boot64.img: build/boot64_mbr.bin build/b64_kernel.bin

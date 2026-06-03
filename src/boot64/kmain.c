@@ -1,10 +1,14 @@
 /**
  * @file    src/boot64/kmain.c
- * @brief   Minimal 64-bit C kernel — proves the x86_64-elf toolchain,
- *          linking, and the long-mode C calling convention all work.
+ * @brief   64-bit Noxis kernel entry — brings up core subsystems.
  */
-typedef unsigned char  uint8_t;
-typedef unsigned short uint16_t;
+#include "types.h"
+
+void serial_init(void);
+void serial_write(const char* s);
+void serial_hex(uint64_t v);
+void gdt64_init(void);
+void idt64_init(void);
 
 #define VGA ((volatile uint16_t*)0xB8000)
 
@@ -15,12 +19,24 @@ static void puts_at(int row, const char* s, uint8_t attr) {
 }
 
 void kmain64(void) {
-    /* Clear the first few rows. */
-    for (int i = 0; i < 80 * 5; i++) VGA[i] = 0x0700 | ' ';
+    for (int i = 0; i < 80 * 6; i++) VGA[i] = 0x0700 | ' ';
 
-    puts_at(0, "Noxis OS  --  x86_64 long mode", 0x0F);  /* white  */
-    puts_at(1, "64-bit C kernel running.", 0x0A);         /* green  */
-    puts_at(2, "kmain64() reached via SysV ABI call.", 0x0B); /* cyan */
+    serial_init();
+    serial_write("\n[noxis64] kmain64 reached\n");
+
+    puts_at(0, "Noxis OS  --  x86_64 long mode", 0x0F);
+    puts_at(1, "64-bit C kernel running.", 0x0A);
+
+    serial_write("[noxis64] GDT ... ");
+    gdt64_init();
+    serial_write("OK\n");
+
+    serial_write("[noxis64] IDT ... ");
+    idt64_init();
+    serial_write("OK\n");
+
+    puts_at(2, "GDT + IDT loaded (64-bit).", 0x0B);
+    serial_write("[noxis64] core up, halting\n");
 
     for (;;) __asm__ __volatile__("hlt");
 }
