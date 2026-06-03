@@ -80,14 +80,21 @@ $(BOOT_BIN): src/boot/boot.asm
 	@echo AS   $@
 	$(AS) -f bin $< -o $@
 
-# ── Userland ELF64 (embedded into the kernel for now) ────────
-build/hello.o: src/userland64/hello.asm
+# ── Userland ELF64 (C program + crt0, embedded into the kernel) ──
+UCFLAGS = -std=c11 -ffreestanding -nostdlib -nostdinc -m64 \
+          -fno-pic -fno-stack-protector -Wall -Wextra -O2
+
+build/u_crt0.o: src/noxlib64/crt0.asm
 	@$(call MKDIRP,build)
 	$(AS) -f elf64 $< -o $@
 
-build/hello.elf: build/hello.o src/userland64/user.ld
+build/u_hello.o: src/userland64/hello.c
+	@$(call MKDIRP,build)
+	$(CC) $(UCFLAGS) -c $< -o $@
+
+build/hello.elf: build/u_crt0.o build/u_hello.o src/userland64/user.ld
 	@echo LD   $@
-	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/hello.o
+	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/u_crt0.o build/u_hello.o
 
 # The blob incbin's build/hello.elf, so it must exist first.
 build/userland64/hello_blob.o: src/userland64/hello_blob.asm build/hello.elf

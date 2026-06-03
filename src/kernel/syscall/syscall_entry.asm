@@ -22,17 +22,30 @@ syscall_entry:
     push rcx                          ; save user RIP (clobbered by call)
     push r11                          ; save user RFLAGS
 
-    ; Reshuffle: num=rax, a1=rdi, a2=rsi, a3=rdx → C(rdi,rsi,rdx,rcx)
-    mov  r8, rdi
-    mov  r9, rsi
-    mov  r10, rdx
+    ; The syscall ABI preserves all regs except RAX/RCX/R11, so save the
+    ; user's RDI/RSI/RDX/R8/R9/R10 and restore them before returning.
+    push rdi
+    push rsi
+    push rdx
+    push r8
+    push r9
+    push r10
+
+    ; Reshuffle: num=rax, a1=rdi, a2=rsi, a3=rdx → C(rdi,rsi,rdx,rcx).
+    ; Done in an order that never overwrites a value before it is used.
+    mov  rcx, rdx                     ; arg3 = a3
+    mov  rdx, rsi                     ; arg2 = a2
+    mov  rsi, rdi                     ; arg1 = a1
     mov  rdi, rax                     ; arg0 = number
-    mov  rsi, r8                      ; arg1
-    mov  rdx, r9                      ; arg2
-    mov  rcx, r10                     ; arg3
 
-    call syscall_dispatch             ; result in RAX
+    call syscall_dispatch             ; result in RAX (returned to user)
 
+    pop  r10
+    pop  r9
+    pop  r8
+    pop  rdx
+    pop  rsi
+    pop  rdi
     pop  r11                          ; restore user RFLAGS
     pop  rcx                          ; restore user RIP
     mov  rsp, [rel g_user_rsp]        ; restore user RSP
