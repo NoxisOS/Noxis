@@ -19,11 +19,15 @@ typedef long           ssize_t;
 #define SYS_CLOSE    8
 #define SYS_LSEEK    9
 #define SYS_READDIR  10
+#define SYS_DUP      11
+#define SYS_DUP2     12
+#define SYS_PIPE     13
 
 #define O_RDONLY  0x00
 #define O_WRONLY  0x01
 #define O_RDWR    0x02
 #define O_CREAT   0x40
+#define O_TRUNC   0x200
 
 #define SEEK_SET  0
 #define SEEK_CUR  1
@@ -68,6 +72,9 @@ static inline long lseek(int fd, long off, int whence) {
 static inline long readdir(long idx, char* namebuf) {
     return _syscall3(SYS_READDIR, idx, (long)namebuf, 0);
 }
+static inline long dup(int fd)            { return _syscall3(SYS_DUP, fd, 0, 0); }
+static inline long dup2(int o, int n)     { return _syscall3(SYS_DUP2, o, n, 0); }
+static inline long pipe(int fds[2])       { return _syscall3(SYS_PIPE, (long)fds, 0, 0); }
 
 static inline size_t strlen(const char* s) {
     size_t n = 0; while (s[n]) n++; return n;

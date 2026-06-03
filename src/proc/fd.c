@@ -21,6 +21,7 @@ int32_t kbd_poll(void);
 #define O_WRONLY  0x01
 #define O_RDWR    0x02
 #define O_CREAT   0x40
+#define O_TRUNC   0x200
 
 /* lseek() whence. */
 #define SEEK_SET  0
@@ -37,6 +38,7 @@ int64_t sys_open(const uint8_t* path, int flags) {
     vfs_file_t* f = vfs_lookup(path);
     if (!f && (flags & O_CREAT)) f = vfs_creat(path);
     if (!f) return -1;
+    if (flags & O_TRUNC) f->size = 0;
 
     process_t* p = scheduler_current();
     for (int fd = 3; fd < PROC_MAX_FDS; fd++) {
@@ -55,6 +57,24 @@ int64_t sys_close(int fd) {
     if (!e) return -1;
     e->kind = FD_CLOSED; e->file = NULL; e->offset = 0;
     return 0;
+}
+
+int64_t sys_dup(int fd) {
+    fd_t* e = fd_get(fd);
+    if (!e) return -1;
+    process_t* p = scheduler_current();
+    for (int i = 0; i < PROC_MAX_FDS; i++)
+        if (p->fds[i].kind == FD_CLOSED) { p->fds[i] = *e; return i; }
+    return -1;
+}
+
+int64_t sys_dup2(int oldfd, int newfd) {
+    fd_t* e = fd_get(oldfd);
+    if (!e) return -1;
+    if (newfd < 0 || newfd >= PROC_MAX_FDS) return -1;
+    if (oldfd == newfd) return newfd;
+    scheduler_current()->fds[newfd] = *e;
+    return newfd;
 }
 
 int64_t sys_lseek(int fd, int64_t off, int whence) {

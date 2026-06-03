@@ -26,6 +26,8 @@ int64_t  sys_readdir(uint64_t idx, uint8_t* namebuf);
 /* file descriptors live in proc/fd.c. */
 int64_t  sys_open(const uint8_t* path, int flags);
 int64_t  sys_close(int fd);
+int64_t  sys_dup(int fd);
+int64_t  sys_dup2(int oldfd, int newfd);
 int64_t  sys_lseek(int fd, int64_t off, int whence);
 int64_t  sys_read(int fd, uint8_t* buf, uint64_t len);
 int64_t  sys_write(int fd, const uint8_t* buf, uint64_t len);
@@ -66,6 +68,7 @@ enum {
     SYS_EXIT = 0, SYS_WRITE = 1, SYS_READ = 2,
     SYS_FORK = 3, SYS_EXEC = 4, SYS_GETPID = 5, SYS_WAITPID = 6,
     SYS_OPEN = 7, SYS_CLOSE = 8, SYS_LSEEK = 9, SYS_READDIR = 10,
+    SYS_DUP = 11, SYS_DUP2 = 12, SYS_PIPE = 13,
 };
 
 void syscall_dispatch(syscall_frame_t* f) {
@@ -88,6 +91,8 @@ void syscall_dispatch(syscall_frame_t* f) {
                                   (int64_t)f->rsi, (int)f->rdx);            return;
     case SYS_READDIR: f->rax = (uint64_t)sys_readdir(f->rdi,
                                   (uint8_t*)f->rsi);                       return;
+    case SYS_DUP:     f->rax = (uint64_t)sys_dup((int)f->rdi);              return;
+    case SYS_DUP2:    f->rax = (uint64_t)sys_dup2((int)f->rdi, (int)f->rsi); return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }
