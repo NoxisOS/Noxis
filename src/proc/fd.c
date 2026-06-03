@@ -109,12 +109,17 @@ int64_t sys_read(int fd, uint8_t* buf, uint64_t len) {
     fd_t* e = fd_get(fd);
     if (!e) return -1;
 
-    if (e->kind == FD_CON_IN) {        /* line-buffered keyboard read */
+    if (e->kind == FD_CON_IN) {        /* canonical line discipline */
         uint64_t got = 0;
         while (got < len) {
             int32_t c;
             __asm__ __volatile__("sti");
             while ((c = kbd_poll()) < 0) __asm__ __volatile__("hlt");
+
+            if (c == '\b' || c == 0x7F) {        /* backspace: erase a char */
+                if (got > 0) { got--; vga_put_char('\b'); vga_put_char(' '); vga_put_char('\b'); }
+                continue;
+            }
             if (c == '\r') c = '\n';
             buf[got++] = (uint8_t)c;
             vga_put_char((uint8_t)c);
