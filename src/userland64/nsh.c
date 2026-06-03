@@ -102,6 +102,8 @@ int main(int argc, char** argv) {
     { char* l[] = { "ls.elf", 0 }; char* r[] = { "cat.elf", 0 }; run_pipe(l, r); }
     /* signal demo */
     { char* a[] = { "sigtest.elf", 0 }; run(a, 0, 0, 0); }
+    /* process listing (/proc-style) */
+    { char* a[] = { "ps.elf", 0 }; run(a, 0, 0, 0); }
 
     char  line[256];
     char* av[MAX_ARGS];

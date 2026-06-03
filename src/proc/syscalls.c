@@ -137,6 +137,19 @@ uint64_t sys_getpid(void) { return scheduler_current()->pid; }
 
 /* Copy the name of the idx-th VFS entry into namebuf (<=32). Returns 1 if it
    exists, 0 past the end — lets userland `ls` enumerate the directory. */
+/* procinfo(idx, buf): fill { int64 pid; int64 state; char name[32] } for the
+   idx-th process. Returns 1 if it exists, 0 past the end — the /proc payoff. */
+int64_t sys_procinfo(uint64_t idx, uint8_t* buf) {
+    process_t* p = scheduler_at((uint32_t)idx);
+    if (!p) return 0;
+    int64_t*  q = (int64_t*)buf;
+    q[0] = (int64_t)p->pid;
+    q[1] = (int64_t)p->state;
+    uint8_t* nm = buf + 16;
+    int i = 0; for (; p->name[i] && i < 31; i++) nm[i] = p->name[i]; nm[i] = 0;
+    return 1;
+}
+
 int64_t sys_readdir(uint64_t idx, uint8_t* namebuf) {
     if (idx >= vfs_count()) return 0;
     vfs_file_t* f = vfs_entry((uint32_t)idx);
@@ -153,8 +166,9 @@ int64_t sys_waitpid(int64_t pid, int* status) {
         process_t* z = scheduler_reap(parent, pid);
         if (z) {
             if (status) *status = z->exit_code;
-            z->parent = NULL;          /* mark reaped (won't match again) */
-            return (int64_t)z->pid;
+            int64_t cpid = (int64_t)z->pid;
+            scheduler_remove(z);       /* drop from the global list */
+            return cpid;
         }
         scheduler_yield();             /* let the child run, then re-check */
     }

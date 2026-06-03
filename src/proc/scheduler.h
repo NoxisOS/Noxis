@@ -16,7 +16,9 @@ os_status_t scheduler_init(void);
 void        scheduler_add(process_t* proc);
 void        scheduler_register(process_t* proc);     /* track + make runnable */
 process_t*  scheduler_find(uint64_t pid);
+process_t*  scheduler_at(uint32_t idx);
 process_t*  scheduler_reap(process_t* parent, int64_t pid);
+void        scheduler_remove(process_t* proc);
 void        scheduler_exit(int code);                /* terminate current     */
 os_status_t scheduler_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority);
 process_t*  scheduler_current(void);

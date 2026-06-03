@@ -52,6 +52,22 @@ process_t* scheduler_find(uint64_t pid) {
     return NULL;
 }
 
+/* Return the idx-th process in the global list (for ps/procinfo), or NULL. */
+process_t* scheduler_at(uint32_t idx) {
+    for (process_t* p = g_all_head; p; p = p->all_next)
+        if (idx-- == 0) return p;
+    return NULL;
+}
+
+/* Unlink a (dead) process from the global list so ps stops showing it. */
+void scheduler_remove(process_t* p) {
+    process_t** pp = &g_all_head;
+    while (*pp) {
+        if (*pp == p) { *pp = p->all_next; return; }
+        pp = &(*pp)->all_next;
+    }
+}
+
 /* Terminate the current process: record its code, mark it a zombie (so yield
    won't requeue it), and switch away for good. */
 void scheduler_exit(int code) {

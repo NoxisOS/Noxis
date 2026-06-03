@@ -24,6 +24,7 @@ typedef long           ssize_t;
 #define SYS_PIPE     13
 #define SYS_KILL     14
 #define SYS_SIGNAL   15
+#define SYS_PROCINFO 16
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -85,6 +86,10 @@ static inline long pipe(int fds[2])       { return _syscall3(SYS_PIPE, (long)fds
 static inline long kill(long pid, int sig){ return _syscall3(SYS_KILL, pid, sig, 0); }
 static inline long signal(int sig, void (*h)(int)) {
     return _syscall3(SYS_SIGNAL, sig, (long)h, 0);
+}
+typedef struct { long pid; long state; char name[32]; } procinfo_t;
+static inline long procinfo(long idx, procinfo_t* pi) {
+    return _syscall3(SYS_PROCINFO, idx, (long)pi, 0);
 }
 
 static inline size_t strlen(const char* s) {

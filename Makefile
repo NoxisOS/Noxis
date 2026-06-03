@@ -27,7 +27,7 @@ else
     MAKE_BOOTIMG = dd if=/dev/zero of=$(DISK_IMG) bs=512 count=2048 status=none && \
                    dd if=$(BOOT_BIN) of=$(DISK_IMG) conv=notrunc status=none && \
                    dd if=$(KERNEL_BIN) of=$(DISK_IMG) bs=512 seek=1 conv=notrunc status=none
-    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img nsh.elf:build/nsh.elf hello.elf:build/hello.elf child.elf:build/child.elf echo.elf:build/echo.elf cat.elf:build/cat.elf ls.elf:build/ls.elf sigtest.elf:build/sigtest.elf motd.txt:src/userland64/motd.txt
+    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img nsh.elf:build/nsh.elf hello.elf:build/hello.elf child.elf:build/child.elf echo.elf:build/echo.elf cat.elf:build/cat.elf ls.elf:build/ls.elf sigtest.elf:build/sigtest.elf ps.elf:build/ps.elf motd.txt:src/userland64/motd.txt
 endif
 
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
@@ -128,7 +128,7 @@ build/%.elf: build/u_crt0.o build/u_%.o src/userland64/user.ld
 
 # All userland programs shipped on the NoxFS disk.
 USER_ELFS = build/nsh.elf build/hello.elf build/child.elf \
-            build/echo.elf build/cat.elf build/ls.elf build/sigtest.elf
+            build/echo.elf build/cat.elf build/ls.elf build/sigtest.elf build/ps.elf
 
 # The blob incbin's build/hello.elf, so it must exist first.
 build/userland64/hello_blob.o: src/userland64/hello_blob.asm build/hello.elf
