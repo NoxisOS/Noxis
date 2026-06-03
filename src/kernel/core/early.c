@@ -12,6 +12,7 @@
 #include <drivers/vga.h>
 #include <drivers/kbd.h>
 #include <drivers/keymap.h>
+#include <drivers/ata.h>
 #include <kernel/hal/gdt.h>
 #include <kernel/hal/pic.h>
 #include <kernel/hal/fpu.h>
@@ -74,6 +75,21 @@ void kernel_main(void) {
     kfree(a);
     serial_write((const uint8_t*)"[noxis64] heap test ");
     serial_write((const uint8_t*)(a ? "PASS\n" : "FAIL\n"));
+
+    /* ── ATA disk: read sector 0 (boot sector), check 0xAA55 ──── */
+    serial_write((const uint8_t*)"[noxis64] ATA ... ");
+    ata_init(ATA_PRIMARY, ATA_MASTER);
+    {
+        static uint16_t sec[256];
+        if (ata_read(ATA_PRIMARY, ATA_MASTER, 0, 1, sec) == OS_OK) {
+            uint8_t* b = (uint8_t*)sec;
+            serial_write((const uint8_t*)(b[510] == 0x55 && b[511] == 0xAA
+                ? "OK (read sector 0, 0xAA55 found)\n"
+                : "read ok but no boot signature\n"));
+        } else {
+            serial_write((const uint8_t*)"FAIL (ata_read)\n");
+        }
+    }
 
     /* ── Timer + keyboard + interrupts ────────────────────────── */
     serial_write((const uint8_t*)"[noxis64] PIT ... ");

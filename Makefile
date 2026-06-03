@@ -31,6 +31,8 @@ KERNEL_C_OBJS = \
   build/drivers/vga.o       \
   build/drivers/kbd.o       \
   build/drivers/keymap.o    \
+  build/drivers/ata.o       \
+  build/drivers/block/block.o \
   build/kernel/hal/gdt.o    \
   build/kernel/hal/pic.o    \
   build/kernel/hal/fpu.o    \

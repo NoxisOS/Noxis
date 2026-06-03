@@ -20,13 +20,13 @@
    preserves the caller's interrupt state — critical because blk_rw runs
    during early boot (vfs_init) when interrupts are still globally disabled
    and must stay that way until kernel_main calls cpu_sti(). */
-static inline uint32_t _irq_save(void) {
-    uint32_t flags;
-    __asm__ __volatile__("pushf\n\t pop %0\n\t cli" : "=r"(flags) :: "memory");
+static inline uint64_t _irq_save(void) {
+    uint64_t flags;
+    __asm__ __volatile__("pushfq\n\t pop %0\n\t cli" : "=r"(flags) :: "memory");
     return flags;
 }
-static inline void _irq_restore(uint32_t flags) {
-    __asm__ __volatile__("push %0\n\t popf" :: "r"(flags) : "memory", "cc");
+static inline void _irq_restore(uint64_t flags) {
+    __asm__ __volatile__("push %0\n\t popfq" :: "r"(flags) : "memory", "cc");
 }
 
 /* ── registry + request pool ────────────────────────────────── */
@@ -132,7 +132,7 @@ os_status_t blk_rw(int devid, uint32_t lba, uint32_t count,
     if (dev->sectors && (lba + count > dev->sectors))
         return OS_ERR_RANGE;
 
-    uint32_t flags = _irq_save();
+    uint64_t flags = _irq_save();
     blk_request_t* req = _request_alloc();
     if (!req) { _irq_restore(flags); return OS_ERR_BUSY; }
 
