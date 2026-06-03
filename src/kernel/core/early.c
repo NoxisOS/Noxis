@@ -155,14 +155,21 @@ void kernel_main(void) {
     /* User stack page, mapped into the private address space. */
     vmm_map_page_into(uas, USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
 
+    /* Spawn the user as a scheduled process and hand it the CPU. The scheduler
+       switches CR3 to its address space, the kernel-thread trampoline drops to
+       ring 3 (user_thread_main → enter_ring3). The boot context becomes idle. */
+    serial_write((const uint8_t*)"[noxis64] spawning user process + yielding\n");
+    scheduler_init();
+    process_t* up = proc_spawn_user((const uint8_t*)"hello", uas,
+                                    entry, USTACK_VA + 0x1000, 1);
+    scheduler_add(up);
+
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"exec ELF64 ring-3 program (private AS)...\n");
+    vga_write((const uint8_t*)"exec ELF64 ring-3 program (scheduled, private AS)...\n");
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-    serial_write((const uint8_t*)"[noxis64] switching to user AS + entering ring 3\n");
 
     cpu_sti();
-    vmm_switch(uas);                       /* PML4[0] now the private user half */
-    enter_ring3(entry, USTACK_VA + 0x1000);
+    scheduler_yield();                     /* switch into the user process */
 
-    for (;;) __asm__ __volatile__("hlt");        /* unreachable */
+    for (;;) __asm__ __volatile__("hlt");  /* idle once the user yields/exits */
 }

@@ -3,12 +3,21 @@
  * @brief   Process creation (x86-64 kernel threads).
  */
 #include <proc/process.h>
+#include <proc/scheduler.h>
 #include <mm/virt/heap.h>
 #include <common/types.h>
 
 extern void thread_trampoline(void);   /* kthread_switch.asm */
+extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
 
 static uint64_t g_next_pid = 1;
+
+/* Kernel-thread entry for user processes: the scheduler has already switched
+   CR3 to this process's address space, so just drop to ring 3. */
+static void user_thread_main(void) {
+    process_t* p = scheduler_current();
+    enter_ring3(p->uentry, p->ursp);
+}
 
 process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority) {
     process_t* p = (process_t*)kmalloc(sizeof(process_t));
@@ -40,5 +49,17 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     *--sp = 0;                            /* r15 */
     p->kctx_rsp = (uint64_t)sp;
 
+    return p;
+}
+
+process_t* proc_spawn_user(const uint8_t* name, uint64_t pml4,
+                           uint64_t uentry, uint64_t ursp, uint32_t priority) {
+    /* Reuse the kernel-thread builder; its trampoline will land in
+       user_thread_main, which reads uentry/ursp and drops to ring 3. */
+    process_t* p = proc_spawn(name, user_thread_main, priority);
+    if (!p) return NULL;
+    p->pml4   = pml4;
+    p->uentry = uentry;
+    p->ursp   = ursp;
     return p;
 }
