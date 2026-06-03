@@ -128,9 +128,17 @@ void kernel_main(void) {
     syscall_init();
     serial_write((const uint8_t*)"OK\n");
 
-    /* Load the embedded ELF64 user program. */
-    serial_write((const uint8_t*)"[noxis64] ELF64 load ... ");
-    uint64_t entry = elf64_load(hello_elf_start);
+    /* Load hello.elf from the NoxFS disk (fall back to the embedded copy). */
+    serial_write((const uint8_t*)"[noxis64] exec /hello.elf from disk ... ");
+    uint64_t entry = 0;
+    vfs_file_t* prog = vfs_lookup((const uint8_t*)"hello.elf");
+    if (prog && prog->data) {
+        entry = elf64_load(prog->data);
+        serial_write((const uint8_t*)"(from NoxFS) ");
+    } else {
+        entry = elf64_load(hello_elf_start);
+        serial_write((const uint8_t*)"(embedded fallback) ");
+    }
     serial_write((const uint8_t*)"entry="); serial_write_hex64(entry);
     serial_write((const uint8_t*)"\n");
 

@@ -6,14 +6,29 @@
 # are being ported back in phase by phase.
 # ─────────────────────────────────────────────────────────────
 
-TOOLS64 = D:/Program Files/x86_64-elf-tools-windows/bin
-CC      = "$(TOOLS64)/x86_64-elf-gcc"
-LD      = "$(TOOLS64)/x86_64-elf-ld"
-OBJCOPY = "$(TOOLS64)/x86_64-elf-objcopy"
 AS      = nasm
-QEMU    = "D:\Program Files\qemu\qemu-system-x86_64"
 
-MKDIRP  = if not exist $(subst /,\,$1) mkdir $(subst /,\,$1)
+ifeq ($(OS),Windows_NT)
+    TOOLS64 = D:/Program Files/x86_64-elf-tools-windows/bin
+    CC      = "$(TOOLS64)/x86_64-elf-gcc"
+    LD      = "$(TOOLS64)/x86_64-elf-ld"
+    OBJCOPY = "$(TOOLS64)/x86_64-elf-objcopy"
+    QEMU    = "D:\Program Files\qemu\qemu-system-x86_64"
+    MKDIRP  = if not exist $(subst /,\,$1) mkdir $(subst /,\,$1)
+    MAKE_BOOTIMG = powershell -NoProfile -ExecutionPolicy Bypass -Command "$$b=[IO.File]::ReadAllBytes('build/boot.bin'); $$k=[IO.File]::ReadAllBytes('build/kernel.bin'); $$img=New-Object byte[] (512*2048); [Array]::Copy($$b,0,$$img,0,512); [System.Buffer]::BlockCopy($$k,0,$$img,512,$$k.Length); [IO.File]::WriteAllBytes('build/noxis.img',$$img)"
+    MAKE_NOXFS   = powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_disk.ps1
+else
+    SHELL   = /bin/sh
+    CC      = x86_64-elf-gcc
+    LD      = x86_64-elf-ld
+    OBJCOPY = x86_64-elf-objcopy
+    QEMU    = qemu-system-x86_64
+    MKDIRP  = mkdir -p $1
+    MAKE_BOOTIMG = dd if=/dev/zero of=$(DISK_IMG) bs=512 count=2048 status=none && \
+                   dd if=$(BOOT_BIN) of=$(DISK_IMG) conv=notrunc status=none && \
+                   dd if=$(KERNEL_BIN) of=$(DISK_IMG) bs=512 seek=1 conv=notrunc status=none
+    MAKE_NOXFS   = tools/linux/build_disk.sh build/disk.img hello.elf:build/hello.elf
+endif
 
 # ── Kernel C flags (freestanding, no red zone, no SSE) ───────
 CFLAGS  = -std=c11 -ffreestanding -nostdlib -nostdinc \
@@ -121,12 +136,12 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 # ── Disk image: sector 0 = boot, sector 1+ = kernel ──────────
 $(DISK_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	@echo BUILD $@
-	powershell -NoProfile -ExecutionPolicy Bypass -Command "$$b=[IO.File]::ReadAllBytes('build/boot.bin'); $$k=[IO.File]::ReadAllBytes('build/kernel.bin'); $$img=New-Object byte[] (512*2048); [Array]::Copy($$b,0,$$img,0,512); [System.Buffer]::BlockCopy($$k,0,$$img,512,$$k.Length); [IO.File]::WriteAllBytes('build/noxis.img',$$img)"
+	$(MAKE_BOOTIMG)
 
 # NoxFS disk image (hdb = primary slave) built from build/hello.elf.
-$(NOXFS_IMG): build/hello.elf tools/windows/build_disk.ps1
+$(NOXFS_IMG): build/hello.elf tools/windows/build_disk.ps1 tools/linux/build_disk.sh
 	@echo BUILD $@
-	powershell -NoProfile -ExecutionPolicy Bypass -File tools/windows/build_disk.ps1
+	$(MAKE_NOXFS)
 
 run: $(DISK_IMG) $(NOXFS_IMG)
 	@echo RUN  QEMU x86_64
