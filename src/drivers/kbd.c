@@ -5,12 +5,21 @@
  * @date    2026-05-30
  */
 #include <drivers/kbd.h>
-#include <drivers/tty/tty.h>
 #include <drivers/keymap.h>
 #include <kernel/isr/isr.h>
 #include <kernel/hal/ports.h>
 #include <kernel/hal/pic.h>
 #include <common/types.h>
+
+/* Simple input ring buffer (TTY/scheduler will replace this once ported). */
+#define KBD_BUF 256
+static volatile uint8_t  g_buf[KBD_BUF];
+static volatile uint32_t g_head, g_tail;
+
+static void _buf_push(uint8_t c) {
+    uint32_t n = (g_head + 1) % KBD_BUF;
+    if (n != g_tail) { g_buf[g_head] = c; g_head = n; }
+}
 
 /* ── PS/2 port constants ────────────────────────────────────── */
 #define KBD_DATA        0x60
@@ -72,7 +81,7 @@ static void _kbd_isr(isr_frame_t* frame) {
         else if (c >= 'A' && c <= 'Z') c = (uint8_t)(c & 0x1F);
     }
 
-    tty_input(c);
+    _buf_push(c);
 }
 
 /* ── public functions ──────────────────────────────────────── */
@@ -91,5 +100,15 @@ os_status_t kbd_init(void) {
     return OS_OK;
 }
 
-int32_t kbd_poll(void) { return -1; }
-uint8_t kbd_getchar(void) { return 0; }
+int32_t kbd_poll(void) {
+    if (g_tail == g_head) return -1;
+    uint8_t c = g_buf[g_tail];
+    g_tail = (g_tail + 1) % KBD_BUF;
+    return (int32_t)c;
+}
+
+uint8_t kbd_getchar(void) {
+    int32_t c;
+    while ((c = kbd_poll()) < 0) __asm__ __volatile__("hlt");
+    return (uint8_t)c;
+}

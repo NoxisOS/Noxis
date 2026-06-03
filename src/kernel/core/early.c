@@ -9,6 +9,9 @@
 #include <common/types.h>
 #include <drivers/serial.h>
 #include <drivers/pit.h>
+#include <drivers/vga.h>
+#include <drivers/kbd.h>
+#include <drivers/keymap.h>
 #include <kernel/hal/gdt.h>
 #include <kernel/hal/pic.h>
 #include <kernel/hal/ports.h>
@@ -19,19 +22,17 @@
 
 void serial_write_hex64(uint64_t v);
 
-#define VGA ((volatile uint16_t*)0xB8000)
-
-static void puts_at(int row, const char* s, uint8_t attr) {
-    volatile uint16_t* p = VGA + row * 80;
-    for (int i = 0; s[i]; i++) p[i] = ((uint16_t)attr << 8) | (uint8_t)s[i];
-}
+int32_t kbd_poll(void);
+os_status_t kbd_init(void);
 
 void kernel_main(void) {
-    for (int i = 0; i < 80 * 6; i++) VGA[i] = 0x0700 | ' ';
+    vga_init();
+    vga_clear();
 
     serial_init();
     serial_write((const uint8_t*)"\n[noxis64] kernel_main reached\n");
-    puts_at(0, "Noxis OS  --  x86_64", 0x0F);
+    vga_set_color(VGA_WHITE, VGA_BLACK);
+    vga_write((const uint8_t*)"Noxis OS  --  x86_64\n");
 
     serial_write((const uint8_t*)"[noxis64] GDT ... ");
     gdt_init();
@@ -62,19 +63,32 @@ void kernel_main(void) {
     serial_write((const uint8_t*)"[noxis64] heap test ");
     serial_write((const uint8_t*)(a ? "PASS\n" : "FAIL\n"));
 
-    /* ── Timer + interrupts ───────────────────────────────────── */
+    /* ── Timer + keyboard + interrupts ────────────────────────── */
     serial_write((const uint8_t*)"[noxis64] PIT ... ");
-    pit_init(1000);                  /* 1 ms tick */
-    cpu_sti();                       /* enable interrupts */
+    pit_init(1000);
     serial_write((const uint8_t*)"OK\n");
 
-    pit_sleep_ms(50);
-    serial_write((const uint8_t*)"[noxis64] uptime after 50ms sleep=");
-    serial_write_hex64(pit_uptime_ms());
-    serial_write((const uint8_t*)" ticks\n");
+    serial_write((const uint8_t*)"[noxis64] KEYMAP ... ");
+    keymap_init();
+    serial_write((const uint8_t*)"OK\n");
 
-    puts_at(1, "core up: GDT IDT PIC PMM VMM HEAP PIT", 0x0A);
-    serial_write((const uint8_t*)"[noxis64] core up, idle\n");
+    serial_write((const uint8_t*)"[noxis64] KBD ... ");
+    kbd_init();
+    serial_write((const uint8_t*)"OK\n");
 
-    for (;;) __asm__ __volatile__("hlt");
+    cpu_sti();
+
+    vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
+    vga_write((const uint8_t*)"core up: GDT IDT PIC PMM VMM HEAP PIT KBD\n");
+    vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
+    vga_write((const uint8_t*)"type something (keyboard echo):\n");
+    serial_write((const uint8_t*)"[noxis64] core up, keyboard echo loop\n");
+
+    /* Interactive echo loop — proves keyboard IRQ + VGA output. */
+    for (;;) {
+        int32_t c = kbd_poll();
+        if (c < 0) { __asm__ __volatile__("hlt"); continue; }
+        if (c == '\b') vga_backspace();
+        else           vga_put_char((uint8_t)c);
+    }
 }
