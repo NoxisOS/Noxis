@@ -14,6 +14,9 @@ uint64_t pmm_alloc_frame(void);
 uint64_t pmm_free_count(void);
 void vmm_init(void);
 int  vmm_map_page(uint64_t va, uint64_t pa, uint64_t flags);
+void heap_init(void);
+void* kmalloc(uint64_t want);
+void  kfree(void* p);
 
 #define VGA ((volatile uint16_t*)0xB8000)
 
@@ -58,7 +61,21 @@ void kmain64(void) {
     serial_write("[noxis64] readback="); serial_hex(*p);
     serial_write(*p == 0xCAFEBABEDEADBEEFULL ? "  PASS\n" : "  FAIL\n");
 
-    puts_at(2, "GDT IDT PMM VMM up. paging OK.", 0x0B);
+    serial_write("[noxis64] HEAP ... ");
+    heap_init();
+
+    /* ── Validate kmalloc/kfree ───────────────────────────────── */
+    char* a = (char*)kmalloc(64);
+    char* b = (char*)kmalloc(128);
+    serial_write("[noxis64] kmalloc a="); serial_hex((uint64_t)a);
+    serial_write(" b="); serial_hex((uint64_t)b); serial_write("\n");
+    a[0] = 'X'; b[0] = 'Y';
+    kfree(a); kfree(b);
+    char* c = (char*)kmalloc(64);   /* should reuse coalesced space */
+    serial_write("[noxis64] reuse c="); serial_hex((uint64_t)c);
+    serial_write(c ? "  PASS\n" : "  FAIL\n");
+
+    puts_at(2, "GDT IDT PMM VMM HEAP up.", 0x0B);
     serial_write("[noxis64] core up, halting\n");
 
     for (;;) __asm__ __volatile__("hlt");

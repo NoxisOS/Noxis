@@ -33,16 +33,37 @@ prints 3 coloured lines to VGA. Toolchain: `x86_64-elf-gcc 15.2.0`,
 
 ---
 
+## ✅ Phase 3 — GDT/IDT/ISR 64-bit (DONE)
+
+- `gdt.c` + `gdt.asm` — 64-bit GDT (kernel/user code+data) + TSS with RSP0/IST1
+- `idt.c` + `idt_load.asm` — 256 × 16-byte gates
+- `isr.asm` — 32 exception stubs (normalised frame: dummy error code where
+  the CPU pushes none), common dispatcher, `iretq`
+- `isr.c` — C dispatcher, names + CR2, prints to serial
+- `serial.c` — COM1 debug channel
+
+Verified: `int3` → handler prints `EXCEPTION 0x3 Breakpoint`, halts cleanly.
+
+## ✅ Phase 4 — PMM + VMM (DONE)
+
+- `pmm.c` — bitmap frame allocator (assumes 128 MB; reserves first 2 MB)
+- `vmm.c` — builds a fresh PML4, identity-maps 128 MB with 2 MB pages,
+  `vmm_map_page()` for 4 KB pages with on-demand table allocation
+- Boot sector now identity-maps the **first 1 GB** (512 × 2 MB) so the PMM's
+  early allocations are addressable while the kernel builds its own tables
+
+Verified: alloc frame → map at VA 1 GB → write/read `0xCAFEBABEDEADBEEF` → PASS.
+
+---
+
 ## Remaining phases
 
 | Phase | Scope | Key changes |
 |---|---|---|
-| **3** | GDT/IDT/ISR 64-bit | 16-byte IDT gates, `iretq`, new interrupt frame (`rip/rsp/ss` always pushed), TSS with IST |
-| **4** | Memory | PMM ~unchanged; VMM rewritten to 4-level (PML4/PDPT/PD/PT); higher-half at `0xFFFFFFFF80000000` |
-| **5** | Heap/slab/arena | Mostly `uint32_t`→`size_t`/`uint64_t`, pointer-size fixes |
-| **6** | Syscalls | `sysenter`→`syscall`/`sysret` (MSR LSTAR/STAR/SFMASK); System V AMD64 ABI args (RDI/RSI/RDX/R10/R8/R9); rewrite all noxlib asm stubs |
+| **5** | Heap/slab/arena | `kmalloc`/`kfree` over mapped memory; `uint32_t`→`uint64_t` |
+| **6** | Syscalls | `syscall`/`sysret` (MSR LSTAR/STAR/SFMASK); SysV ABI args (RDI/RSI/RDX/R10/R8/R9); rewrite noxlib asm stubs |
 | **7** | Processes | 64-bit context switch, ELF64 loader, ring-3 via `sysret`/`iretq` |
-| **8** | NoxFS | On-disk format: decide which fields grow to 64-bit; update the disk builders |
+| **8** | NoxFS | On-disk format; update the disk builders |
 | **9** | Userland | Recompile nsh + noxlib for x86_64 |
 
 ---

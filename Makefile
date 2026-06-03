@@ -258,7 +258,8 @@ B64_OBJS = build/b64/entry.o   \
            build/b64/gdt.o     build/b64/gdt_asm.o \
            build/b64/idt.o     build/b64/idt_load.o \
            build/b64/isr.o     build/b64/isr_asm.o \
-           build/b64/pmm.o     build/b64/vmm.o
+           build/b64/pmm.o     build/b64/vmm.o \
+           build/b64/heap.o
 
 build/boot64_mbr.bin: src/boot64/boot.asm
 	@$(call MKDIRP,build)
