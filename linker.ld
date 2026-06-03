@@ -1,35 +1,27 @@
 /* ─────────────────────────────────────────────────────────────
- * linker.ld — Linker script for the Noxis kernel
+ * linker.ld — Noxis x86_64 kernel link script.
  *
- * Links the kernel at physical address 0x100000 (1 MB).
- * The bootloader loads the flat binary image here.
- *
- * Entry point: _start (in kernel_entry.asm)
+ * Links the kernel flat at physical 0x100000 (1 MB), identity-mapped
+ * by the long-mode boot sector.  Higher-half relocation is a later
+ * refinement.  Entry: _start (kernel_entry.asm, 64-bit).
  * ─────────────────────────────────────────────────────────── */
 
+OUTPUT_FORMAT(elf64-x86-64)
 ENTRY(_start)
 
 SECTIONS
 {
-    . = 0xC0100000;
+    . = 0x10000;
 
-    /* ── Entry point (must be first in binary) ──────────── */
+    /* Entry stub must sit first in the binary. */
     .text BLOCK(4K) : {
         KEEP(*(.text.entry))
         *(.text*)
     }
 
-    /* ── Read-only data ────────────────────────────────── */
-    .rodata : {
-        *(.rodata*)
-    }
+    .rodata : { *(.rodata*) }
+    .data   : { *(.data*) }
 
-    /* ── Initialized data ──────────────────────────────── */
-    .data : {
-        *(.data*)
-    }
-
-    /* ── BSS (uninitialized data) ──────────────────────── */
     .bss : {
         _bss_start = .;
         *(COMMON)
@@ -37,10 +29,8 @@ SECTIONS
         _bss_end = .;
     }
 
-    /* ── Kernel end marker ─────────────────────────────── */
     _kernel_end = .;
 
-    /* ── Discard unnecessary sections ──────────────────── */
     /DISCARD/ : {
         *(.comment)
         *(.eh_frame)
