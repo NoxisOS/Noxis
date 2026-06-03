@@ -28,10 +28,10 @@ int32_t kbd_poll(void);
 os_status_t kbd_init(void);
 os_status_t syscall_init(void);
 extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
-extern uint8_t user_test_start[], user_test_end[];
+uint64_t elf64_load(const uint8_t* img);
+extern uint8_t hello_elf_start[], hello_elf_end[];
 
-#define UCODE_VA   0x40000000ULL
-#define USTACK_VA  0x40010000ULL
+#define USTACK_VA  0x50000000ULL   /* user stack page (outside identity map) */
 
 void kernel_main(void) {
     vga_init();
@@ -93,22 +93,22 @@ void kernel_main(void) {
     syscall_init();
     serial_write((const uint8_t*)"OK\n");
 
-    /* Map a user code page + user stack page (outside the identity map). */
-    vmm_map_page(UCODE_VA,  pmm_alloc_frame(), PAGE_RW | PAGE_USER);
+    /* Load the embedded ELF64 user program. */
+    serial_write((const uint8_t*)"[noxis64] ELF64 load ... ");
+    uint64_t entry = elf64_load(hello_elf_start);
+    serial_write((const uint8_t*)"entry="); serial_write_hex64(entry);
+    serial_write((const uint8_t*)"\n");
+
+    /* User stack page. */
     vmm_map_page(USTACK_VA, pmm_alloc_frame(), PAGE_RW | PAGE_USER);
 
-    /* Copy the ring-3 test program into the user code page. */
-    uint8_t* dst = (uint8_t*)UCODE_VA;
-    uint64_t n = (uint64_t)(user_test_end - user_test_start);
-    for (uint64_t i = 0; i < n; i++) dst[i] = user_test_start[i];
-
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_write((const uint8_t*)"entering ring 3...\n");
+    vga_write((const uint8_t*)"exec ELF64 ring-3 program...\n");
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
     serial_write((const uint8_t*)"[noxis64] entering ring 3\n");
 
     cpu_sti();
-    enter_ring3(UCODE_VA, USTACK_VA + 0x1000);   /* stack top */
+    enter_ring3(entry, USTACK_VA + 0x1000);
 
     for (;;) __asm__ __volatile__("hlt");        /* unreachable */
 }

@@ -1,106 +1,65 @@
 /**
  * @file    proc/elf.c
- * @brief   ELF32 loader — minimal: only PT_LOAD, no relocations,
- *          no dynamic linking, no security checks. Maps every loaded
- *          page as user RW so the kernel can copy bytes into them.
- * @author  Noxis Team
- * @date    2026-05-30
+ * @brief   ELF64 loader — minimal: PT_LOAD segments only, no relocations.
+ *
+ * Maps each loadable segment (USER|RW) into the current address space,
+ * copies file data, zero-fills BSS, and returns the entry point.
  */
-#include <proc/elf.h>
+#include <common/types.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
-#include <mm/virt/paging.h>
-#include <common/types.h>
+#include <drivers/serial.h>
 
-/* ── ELF32 structures (subset) ──────────────────────────────── */
-
-#define EI_MAG0  0
-#define EI_MAG1  1
-#define EI_MAG2  2
-#define EI_MAG3  3
-#define ELFMAG0  0x7F
-#define ELFMAG1  'E'
-#define ELFMAG2  'L'
-#define ELFMAG3  'F'
-
-#define ET_EXEC  2
-#define EM_386   3
-#define PT_LOAD  1
+void serial_write_hex64(uint64_t v);
 
 typedef struct __attribute__((packed)) {
     uint8_t  e_ident[16];
-    uint16_t e_type;
-    uint16_t e_machine;
+    uint16_t e_type, e_machine;
     uint32_t e_version;
-    uint32_t e_entry;
-    uint32_t e_phoff;
-    uint32_t e_shoff;
+    uint64_t e_entry, e_phoff, e_shoff;
     uint32_t e_flags;
-    uint16_t e_ehsize;
-    uint16_t e_phentsize;
-    uint16_t e_phnum;
-    uint16_t e_shentsize;
-    uint16_t e_shnum;
-    uint16_t e_shstrndx;
-} elf32_ehdr_t;
+    uint16_t e_ehsize, e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx;
+} elf64_ehdr;
 
 typedef struct __attribute__((packed)) {
-    uint32_t p_type;
-    uint32_t p_offset;
-    uint32_t p_vaddr;
-    uint32_t p_paddr;
-    uint32_t p_filesz;
-    uint32_t p_memsz;
-    uint32_t p_flags;
-    uint32_t p_align;
-} elf32_phdr_t;
+    uint32_t p_type, p_flags;
+    uint64_t p_offset, p_vaddr, p_paddr, p_filesz, p_memsz, p_align;
+} elf64_phdr;
 
-/* ── public ─────────────────────────────────────────────────── */
+#define PT_LOAD  1
 
-os_status_t elf_load(const uint8_t* elf, uint32_t size,
-                     uint32_t* entry_out, uint32_t* brk_out) {
-    if (!elf || !entry_out) return OS_ERR_NULL;
-    uint32_t prog_end = 0;
-    if (size < sizeof(elf32_ehdr_t)) return OS_ERR_INVALID;
-
-    const elf32_ehdr_t* eh = (const elf32_ehdr_t*)elf;
-    if (eh->e_ident[EI_MAG0] != ELFMAG0 ||
-        eh->e_ident[EI_MAG1] != ELFMAG1 ||
-        eh->e_ident[EI_MAG2] != ELFMAG2 ||
-        eh->e_ident[EI_MAG3] != ELFMAG3) return OS_ERR_INVALID;
-    if (eh->e_machine != EM_386) return OS_ERR_INVALID;
-    if (eh->e_phoff + eh->e_phnum * sizeof(elf32_phdr_t) > size) return OS_ERR_INVALID;
-
-    const elf32_phdr_t* phdrs = (const elf32_phdr_t*)(elf + eh->e_phoff);
-
-    for (uint32_t i = 0; i < eh->e_phnum; i++) {
-        const elf32_phdr_t* ph = &phdrs[i];
-        if (ph->p_type != PT_LOAD) continue;
-        if (ph->p_memsz < ph->p_filesz) return OS_ERR_INVALID;
-        if (ph->p_offset + ph->p_filesz > size) return OS_ERR_INVALID;
-
-        uint32_t vstart = PAGE_ALIGN_DOWN(ph->p_vaddr);
-        uint32_t vend   = PAGE_ALIGN_UP(ph->p_vaddr + ph->p_memsz);
-        if (vend > prog_end) prog_end = vend;
-
-        /* Map every page in the segment, zero-fill, then copy file data. */
-        for (uint32_t v = vstart; v < vend; v += PAGE_SIZE) {
-            uint32_t phys;
-            if (pmm_alloc_frame(&phys) != OS_OK) return OS_ERR_OOM;
-            if (vmm_map_page(v, phys,
-                             PAGE_PRESENT | PAGE_RW | PAGE_USER) != OS_OK) {
-                return OS_ERR_IO;
-            }
-            volatile uint8_t* p = (volatile uint8_t*)v;
-            for (uint32_t j = 0; j < PAGE_SIZE; j++) p[j] = 0;
-        }
-
-        const uint8_t*    src = elf + ph->p_offset;
-        volatile uint8_t* dst = (volatile uint8_t*)ph->p_vaddr;
-        for (uint32_t j = 0; j < ph->p_filesz; j++) dst[j] = src[j];
+/* Load an in-memory ELF64 image. Returns the entry VA, or 0 on error. */
+uint64_t elf64_load(const uint8_t* img) {
+    const elf64_ehdr* eh = (const elf64_ehdr*)img;
+    if (eh->e_ident[0] != 0x7F || eh->e_ident[1] != 'E' ||
+        eh->e_ident[2] != 'L'  || eh->e_ident[3] != 'F') {
+        serial_write((const uint8_t*)"[noxis64] elf: bad magic\n");
+        return 0;
+    }
+    if (eh->e_ident[4] != 2) {   /* ELFCLASS64 */
+        serial_write((const uint8_t*)"[noxis64] elf: not 64-bit\n");
+        return 0;
     }
 
-    *entry_out = eh->e_entry;
-    if (brk_out) *brk_out = prog_end;
-    return OS_OK;
+    const elf64_phdr* ph = (const elf64_phdr*)(img + eh->e_phoff);
+    for (uint16_t i = 0; i < eh->e_phnum; i++) {
+        if (ph[i].p_type != PT_LOAD) continue;
+
+        uint64_t va    = ph[i].p_vaddr;
+        uint64_t vstart = va & ~0xFFFULL;
+        uint64_t vend   = (va + ph[i].p_memsz + 0xFFF) & ~0xFFFULL;
+
+        for (uint64_t p = vstart; p < vend; p += 0x1000) {
+            uint64_t fr = pmm_alloc_frame();
+            if (!fr) return 0;
+            vmm_map_page(p, fr, PAGE_RW | PAGE_USER);
+        }
+
+        const uint8_t* src = img + ph[i].p_offset;
+        uint8_t* dst = (uint8_t*)va;
+        for (uint64_t b = 0; b < ph[i].p_filesz; b++) dst[b] = src[b];
+        for (uint64_t b = ph[i].p_filesz; b < ph[i].p_memsz; b++) dst[b] = 0;
+    }
+
+    return eh->e_entry;
 }

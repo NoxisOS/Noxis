@@ -40,6 +40,7 @@ KERNEL_C_OBJS = \
   build/mm/virt/heap.o      \
   build/proc/process.o      \
   build/proc/scheduler.o    \
+  build/proc/elf.o          \
   build/kernel/syscall/syscall64.o
 
 KERNEL_ASM_OBJS = \
@@ -49,7 +50,8 @@ KERNEL_ASM_OBJS = \
   build/kernel/isr/isr_stubs.o   \
   build/proc/kthread_switch.o    \
   build/proc/user_enter.o        \
-  build/kernel/syscall/syscall_entry.o
+  build/kernel/syscall/syscall_entry.o \
+  build/userland64/hello_blob.o
 
 KERNEL_OBJS = $(KERNEL_C_OBJS) $(KERNEL_ASM_OBJS)
 
@@ -77,6 +79,20 @@ $(BOOT_BIN): src/boot/boot.asm
 	@$(call MKDIRP,build)
 	@echo AS   $@
 	$(AS) -f bin $< -o $@
+
+# ── Userland ELF64 (embedded into the kernel for now) ────────
+build/hello.o: src/userland64/hello.asm
+	@$(call MKDIRP,build)
+	$(AS) -f elf64 $< -o $@
+
+build/hello.elf: build/hello.o src/userland64/user.ld
+	@echo LD   $@
+	$(LD) -T src/userland64/user.ld -nostdlib -o $@ build/hello.o
+
+# The blob incbin's build/hello.elf, so it must exist first.
+build/userland64/hello_blob.o: src/userland64/hello_blob.asm build/hello.elf
+	@$(call MKDIRP,build/userland64)
+	$(AS) -f elf64 $< -o $@
 
 # ── Kernel link + flatten ─────────────────────────────────────
 $(KERNEL_ELF): $(KERNEL_OBJS) linker.ld
