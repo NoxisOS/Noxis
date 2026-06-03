@@ -43,6 +43,10 @@ KERNEL_C_OBJS = \
   build/proc/process.o      \
   build/proc/scheduler.o    \
   build/proc/elf.o          \
+  build/fs/noxfs/buffer.o   \
+  build/fs/noxfs/noxfs.o    \
+  build/fs/vfs/ramfs.o      \
+  build/fs/vfs/vfs.o        \
   build/kernel/syscall/syscall64.o
 
 KERNEL_ASM_OBJS = \

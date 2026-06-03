@@ -13,6 +13,7 @@
 #include <drivers/kbd.h>
 #include <drivers/keymap.h>
 #include <drivers/ata.h>
+#include <fs/vfs/vfs.h>
 #include <kernel/hal/gdt.h>
 #include <kernel/hal/pic.h>
 #include <kernel/hal/fpu.h>
@@ -90,6 +91,13 @@ void kernel_main(void) {
             serial_write((const uint8_t*)"FAIL (ata_read)\n");
         }
     }
+
+    /* ── VFS (NoxFS on disk, falls back to ramfs) ─────────────── */
+    serial_write((const uint8_t*)"[noxis64] VFS ... ");
+    vfs_init();
+    serial_write((const uint8_t*)"OK (files=");
+    serial_write_hex64(vfs_count());
+    serial_write((const uint8_t*)")\n");
 
     /* ── Timer + keyboard + interrupts ────────────────────────── */
     serial_write((const uint8_t*)"[noxis64] PIT ... ");
