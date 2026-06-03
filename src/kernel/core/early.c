@@ -8,7 +8,10 @@
  */
 #include <common/types.h>
 #include <drivers/serial.h>
+#include <drivers/pit.h>
 #include <kernel/hal/gdt.h>
+#include <kernel/hal/pic.h>
+#include <kernel/hal/ports.h>
 #include <kernel/isr/isr.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
@@ -38,6 +41,10 @@ void kernel_main(void) {
     isr_init();
     serial_write((const uint8_t*)"OK\n");
 
+    serial_write((const uint8_t*)"[noxis64] PIC ... ");
+    pic_remap();
+    serial_write((const uint8_t*)"OK\n");
+
     pmm_init(128ULL * 1024 * 1024);
     vmm_init();
     heap_init();
@@ -55,8 +62,19 @@ void kernel_main(void) {
     serial_write((const uint8_t*)"[noxis64] heap test ");
     serial_write((const uint8_t*)(a ? "PASS\n" : "FAIL\n"));
 
-    puts_at(1, "core up: GDT IDT PMM VMM HEAP", 0x0A);
-    serial_write((const uint8_t*)"[noxis64] core up, halting\n");
+    /* ── Timer + interrupts ───────────────────────────────────── */
+    serial_write((const uint8_t*)"[noxis64] PIT ... ");
+    pit_init(1000);                  /* 1 ms tick */
+    cpu_sti();                       /* enable interrupts */
+    serial_write((const uint8_t*)"OK\n");
+
+    pit_sleep_ms(50);
+    serial_write((const uint8_t*)"[noxis64] uptime after 50ms sleep=");
+    serial_write_hex64(pit_uptime_ms());
+    serial_write((const uint8_t*)" ticks\n");
+
+    puts_at(1, "core up: GDT IDT PIC PMM VMM HEAP PIT", 0x0A);
+    serial_write((const uint8_t*)"[noxis64] core up, idle\n");
 
     for (;;) __asm__ __volatile__("hlt");
 }

@@ -27,7 +27,9 @@ DEPFLAGS = -MMD -MP
 KERNEL_C_OBJS = \
   build/kernel/core/early.o \
   build/drivers/serial.o    \
+  build/drivers/pit.o       \
   build/kernel/hal/gdt.o    \
+  build/kernel/hal/pic.o    \
   build/kernel/isr/isr.o    \
   build/mm/phys/pmm.o       \
   build/mm/virt/vmm.o       \

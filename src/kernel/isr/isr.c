@@ -3,13 +3,14 @@
  * @brief   64-bit ISR dispatcher — routes exceptions/IRQs to handlers.
  */
 #include <kernel/isr/isr.h>
+#include <kernel/hal/pic.h>
 #include <drivers/serial.h>
 
 void serial_write_hex64(uint64_t v);
 
 static isr_handler_t g_handlers[ISR_MAX_HANDLERS];
 
-extern void* isr_stub_table[];   /* isr_stubs.asm: 32 exception stubs */
+extern void* isr_stub_table[];   /* isr_stubs.asm: 48 stubs (32 exc + 16 IRQ) */
 
 /* IDT (256 × 16-byte gates). */
 struct __attribute__((packed)) idt_entry {
@@ -50,7 +51,8 @@ static const char* const _names[32] = {
 void isr_init(void) {
     for (int i = 0; i < ISR_MAX_HANDLERS; i++) g_handlers[i] = (isr_handler_t)0;
     for (int i = 0; i < 256; i++) set_gate(i, (void*)0, 0);
-    for (int i = 0; i < 32; i++) set_gate(i, isr_stub_table[i], 0x8E);
+    /* 32 CPU exceptions + 16 IRQ stubs (vectors 0..47). */
+    for (int i = 0; i < 48; i++) set_gate(i, isr_stub_table[i], 0x8E);
 
     struct idt_ptr p = { sizeof(g_idt) - 1, (uint64_t)g_idt };
     idt64_load(&p);
@@ -65,6 +67,13 @@ os_status_t isr_register_handler(uint8_t vector, isr_handler_t handler) {
 void isr_handler(isr_frame_t* frame) {
     if (!frame) return;
     uint64_t vec = frame->vector;
+
+    /* Hardware IRQs (32..47): dispatch then acknowledge the PIC. */
+    if (vec >= 32 && vec < 48) {
+        if (g_handlers[vec]) g_handlers[vec](frame);
+        pic_send_eoi((uint8_t)(vec - 32));
+        return;
+    }
 
     if (vec < ISR_MAX_HANDLERS && g_handlers[vec]) {
         g_handlers[vec](frame);

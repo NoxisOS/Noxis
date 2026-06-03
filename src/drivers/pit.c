@@ -1,60 +1,49 @@
 /**
  * @file    drivers/pit.c
- * @brief   PIT timer — IRQ0 handler, tick counting, sleep
- * @author  Noxis Team
- * @date    2026-05-29
+ * @brief   PIT (8253/8254) timer — IRQ0 tick counting (x86-64).
+ *
+ * NOTE: scheduler_tick() will be re-wired here once the scheduler is
+ * ported back in.  For now the handler just advances the tick counter.
  */
 #include <drivers/pit.h>
 #include <kernel/isr/isr.h>
 #include <kernel/hal/ports.h>
 #include <kernel/hal/pic.h>
-#include <proc/scheduler.h>
 #include <common/types.h>
 
-/* ── PIT port constants ─────────────────────────────────────── */
 #define PIT_CHANNEL0  0x40
 #define PIT_CMD       0x43
 
-/* ── file-scope state ──────────────────────────────────────── */
 static volatile uint32_t g_ticks;
 
-/* ── ISR handler ───────────────────────────────────────────── */
 static void _pit_isr(isr_frame_t* frame) {
+    (void)frame;
     g_ticks++;
-    scheduler_tick(frame);
 }
-
-/* ── public functions ──────────────────────────────────────── */
 
 os_status_t pit_init(uint32_t hz) {
     if (hz == 0 || hz > PIT_BASE_FREQ) return OS_ERR_INVALID;
 
     uint32_t divisor = PIT_BASE_FREQ / hz;
     if (divisor > 65535) divisor = 65535;
-    if (divisor < 1)    divisor = 1;
+    if (divisor < 1)     divisor = 1;
 
     g_ticks = 0;
 
-    /* Register ISR for IRQ0 (vector 0x20) */
-    os_status_t status = isr_register_handler(0x20, _pit_isr);
-    if (status != OS_OK) return status;
+    os_status_t st = isr_register_handler(0x20, _pit_isr);   /* IRQ0 → vector 32 */
+    if (st != OS_OK) return st;
 
-    /* Set PIT to rate generator mode */
-    port_byte_out(PIT_CMD, 0x36);          /* channel 0, lobyte/hibyte, rate gen, binary */
+    port_byte_out(PIT_CMD, 0x36);
     port_byte_out(PIT_CHANNEL0, (uint8_t)(divisor & 0xFF));
     port_byte_out(PIT_CHANNEL0, (uint8_t)((divisor >> 8) & 0xFF));
 
-    /* Unmask IRQ0 */
     pic_unmask(0);
-
     return OS_OK;
 }
 
 void pit_sleep_ms(uint32_t ms) {
     uint32_t target = g_ticks + ms;
-    while (g_ticks < target);
+    while (g_ticks < target) __asm__ __volatile__("hlt");
 }
 
-uint32_t pit_uptime_ms(void) {
-    return g_ticks;
-}
+uint32_t pit_uptime_ms(void) { return g_ticks; }

@@ -56,6 +56,24 @@ ISR_NOERR 29
 ISR_NOERR 30
 ISR_NOERR 31
 
+; IRQ stubs (remapped to vectors 32..47 by the PIC)
+ISR_NOERR 32
+ISR_NOERR 33
+ISR_NOERR 34
+ISR_NOERR 35
+ISR_NOERR 36
+ISR_NOERR 37
+ISR_NOERR 38
+ISR_NOERR 39
+ISR_NOERR 40
+ISR_NOERR 41
+ISR_NOERR 42
+ISR_NOERR 43
+ISR_NOERR 44
+ISR_NOERR 45
+ISR_NOERR 46
+ISR_NOERR 47
+
 isr_common:
     ; Save GP registers (rax first … r15 last) so RSP points at the
     ; isr_frame_t (r15 at lowest address).
@@ -102,7 +120,7 @@ section .data
 align 8
 isr_stub_table:
 %assign i 0
-%rep 32
+%rep 48
     dq isr_stub_ %+ i
 %assign i i+1
 %endrep
