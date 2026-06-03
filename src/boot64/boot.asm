@@ -43,14 +43,25 @@ start:
     int  0x13
     jc   disk_err
 
-    ; ── Page tables: PML4 → PDPT → PD (2 MB page at 0) ───────
+    ; ── Page tables: PML4 → PDPT → PD ─────────────────────────
     mov  edi, PML4
     xor  eax, eax
     mov  ecx, 0x3000 / 4
     rep  stosd
     mov  dword [PML4], PDPT | 0x3
     mov  dword [PDPT], PD   | 0x3
-    mov  dword [PD],   0x0  | 0x83
+
+    ; Fill the whole PD: 512 × 2 MB pages → identity-map first 1 GB.
+    ; This keeps all of low RAM (where the PMM allocates) addressable
+    ; while the kernel builds its own page tables.
+    mov  edi, PD
+    mov  eax, 0x83                     ; phys 0, present | rw | PS
+    mov  ecx, 512
+.fill_pd:
+    mov  [edi], eax
+    add  eax, 0x200000                 ; next 2 MB frame
+    add  edi, 8                        ; next PD entry (8 bytes)
+    loop .fill_pd
 
     lgdt [gdt_desc]
 
