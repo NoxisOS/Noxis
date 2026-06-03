@@ -120,6 +120,37 @@ int vmm_map_page(uint64_t va, uint64_t pa, uint64_t flags) {
     return vmm_map_page_into(g_kernel_pml4, va, pa, flags);
 }
 
+/* Copy the entire user half (PML4[0] subtree) of src into dst, allocating
+   fresh frames and duplicating page contents through the physmap. Intermediate
+   tables are recreated by vmm_map_page_into. Returns 0 on success. */
+int vmm_copy_user_space(uint64_t dst_pml4, uint64_t src_pml4) {
+    uint64_t* spml4 = as_table(src_pml4);
+    if (!(spml4[0] & PAGE_PRESENT)) return 0;        /* nothing mapped */
+    uint64_t* spdpt = as_table(spml4[0] & ~0xFFFULL);
+
+    for (uint64_t i3 = 0; i3 < ENTRIES; i3++) {
+        if (!(spdpt[i3] & PAGE_PRESENT)) continue;
+        uint64_t* spd = as_table(spdpt[i3] & ~0xFFFULL);
+        for (uint64_t i2 = 0; i2 < ENTRIES; i2++) {
+            if (!(spd[i2] & PAGE_PRESENT) || (spd[i2] & PAGE_PS)) continue;
+            uint64_t* spt = as_table(spd[i2] & ~0xFFFULL);
+            for (uint64_t i1 = 0; i1 < ENTRIES; i1++) {
+                if (!(spt[i1] & PAGE_PRESENT)) continue;
+                uint64_t va    = (i3 << 30) | (i2 << 21) | (i1 << 12);
+                uint64_t sphys = spt[i1] & ~0xFFFULL;
+                uint64_t flags = spt[i1] & 0xFFF;
+                uint64_t dphys = pmm_alloc_frame();
+                if (!dphys) return -1;
+                uint8_t* s = (uint8_t*)(PHYSMAP_BASE + sphys);
+                uint8_t* d = (uint8_t*)(PHYSMAP_BASE + dphys);
+                for (int b = 0; b < 4096; b++) d[b] = s[b];
+                vmm_map_page_into(dst_pml4, va, dphys, flags);
+            }
+        }
+    }
+    return 0;
+}
+
 /* Create a new address space: private user half, shared physmap + kernel. */
 uint64_t vmm_create_address_space(void) {
     uint64_t pml4_phys = pmm_alloc_frame();

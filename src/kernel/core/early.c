@@ -177,10 +177,10 @@ void kernel_main(void) {
     scheduler_init();
     process_t* up = proc_spawn_user((const uint8_t*)"hello", uas,
                                     entry, USTACK_VA + 0x1000, 1);
-    scheduler_add(up);
+    scheduler_register(up);
 
     /* A background ring-0 kernel thread, scheduled alongside the ring-3 user. */
-    scheduler_add(proc_spawn((const uint8_t*)"heartbeat", heartbeat, 1));
+    scheduler_register(proc_spawn((const uint8_t*)"heartbeat", heartbeat, 1));
 
     /* Preemptive multitasking: let the PIT drive the scheduler. A ring-3
        process is now preempted by the timer (frame on its kernel stack). */

@@ -9,6 +9,7 @@
 #include <proc/process.h>
 #include <mm/virt/vmm.h>
 #include <kernel/hal/gdt.h>
+#include <kernel/syscall/syscall64.h>
 #include <common/types.h>
 
 extern void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);
@@ -16,6 +17,7 @@ extern void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);
 process_t* g_current;
 process_t* g_ready_head;
 static process_t* g_ready_tail;
+static process_t* g_all_head;      /* every live process (for waitpid)   */
 static process_t  g_idle;          /* the bootstrap context becomes idle */
 
 os_status_t scheduler_init(void) {
@@ -35,6 +37,39 @@ void scheduler_add(process_t* p) {
     if (g_ready_tail) g_ready_tail->next = p;
     else              g_ready_head = p;
     g_ready_tail = p;
+}
+
+/* Register a brand-new process: track it globally and make it runnable. */
+void scheduler_register(process_t* p) {
+    p->all_next = g_all_head;
+    g_all_head  = p;
+    scheduler_add(p);
+}
+
+process_t* scheduler_find(uint64_t pid) {
+    for (process_t* p = g_all_head; p; p = p->all_next)
+        if (p->pid == pid) return p;
+    return NULL;
+}
+
+/* Terminate the current process: record its code, mark it a zombie (so yield
+   won't requeue it), and switch away for good. */
+void scheduler_exit(int code) {
+    g_current->exit_code = code;
+    g_current->state     = PROC_ZOMBIE;
+    scheduler_yield();                 /* never returns to this context */
+    for (;;) __asm__ __volatile__("cli; hlt");
+}
+
+/* Reap a finished child: scan zombies parented by `parent`, matching `pid`
+   when pid > 0.  Returns the child (still in the list) or NULL if none yet. */
+process_t* scheduler_reap(process_t* parent, int64_t pid) {
+    for (process_t* p = g_all_head; p; p = p->all_next) {
+        if (p->state != PROC_ZOMBIE || p->parent != parent) continue;
+        if (pid > 0 && p->pid != (uint64_t)pid) continue;
+        return p;
+    }
+    return NULL;
 }
 
 os_status_t scheduler_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority) {
@@ -70,9 +105,10 @@ void scheduler_yield(void) {
     if (next->pml4 != prev->pml4)
         vmm_switch(next->pml4 ? next->pml4 : vmm_kernel_pml4());
 
-    /* Point TSS.rsp0 at the next thread's kernel stack so a ring-3 → ring-0
-       transition (interrupt/syscall) lands on the right stack. */
-    if (next->kstack_top) gdt_set_kernel_stack(next->kstack_top);
+    /* Point TSS.rsp0 (interrupts) and g_cur_kstack (syscalls) at the next
+       thread's kernel stack so a ring-3 → ring-0 transition lands correctly. */
+    if (next->kstack_top) { gdt_set_kernel_stack(next->kstack_top);
+                            g_cur_kstack = next->kstack_top; }
 
     kthread_switch(&prev->kctx_rsp, next->kctx_rsp);
 }

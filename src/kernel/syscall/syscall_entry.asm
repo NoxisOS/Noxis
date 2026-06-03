@@ -1,52 +1,68 @@
 ; ─────────────────────────────────────────────────────────────
 ; kernel/syscall/syscall_entry.asm — SYSCALL instruction entry (x86-64).
 ;
-; On SYSCALL the CPU sets RCX=return RIP, R11=RFLAGS, CS/SS from STAR,
-; but does NOT switch RSP.  We save the user RSP, switch to a kernel
-; stack, reshuffle the syscall args into the SysV C ABI, call the C
-; dispatcher, then SYSRET back to ring 3.
+; On SYSCALL the CPU sets RCX=return RIP, R11=RFLAGS, CS/SS from STAR, but
+; does NOT switch RSP.  We save the user RSP, switch to the *current process's*
+; kernel stack (g_cur_kstack, also TSS.rsp0), build a full syscall_frame_t so
+; fork() can clone the caller's context, call the C dispatcher, then SYSRET
+; back to ring 3.
 ;
 ; Syscall ABI:  RAX=number, args in RDI, RSI, RDX.
-; C dispatcher: syscall_dispatch(num, a1, a2, a3) → RDI,RSI,RDX,RCX.
+; syscall_frame_t field order (low→high addr) = push order below, reversed.
 ; ─────────────────────────────────────────────────────────────
 [BITS 64]
 global syscall_entry
+global fork_ret_trampoline
 extern syscall_dispatch
-extern g_kernel_rsp
+extern g_cur_kstack
 extern g_user_rsp
 
 syscall_entry:
-    mov  [rel g_user_rsp], rsp        ; save user RSP
-    mov  rsp, [rel g_kernel_rsp]      ; switch to kernel stack
+    mov  [rel g_user_rsp], rsp        ; stash user RSP (scratch global)
+    mov  rsp, [rel g_cur_kstack]      ; switch to this process's kernel stack
 
-    push rcx                          ; save user RIP (clobbered by call)
-    push r11                          ; save user RFLAGS
-
-    ; The syscall ABI preserves all regs except RAX/RCX/R11, so save the
-    ; user's RDI/RSI/RDX/R8/R9/R10 and restore them before returning.
-    push rdi
-    push rsi
-    push rdx
-    push r8
+    ; Build syscall_frame_t (rax pushed last → lowest address → first field).
+    push qword [rel g_user_rsp]       ; ursp
+    push r11                          ; rflags
+    push rcx                          ; rip
+    push r15
+    push r14
+    push r13
+    push r12
+    push rbp
+    push rbx
     push r9
+    push r8
     push r10
+    push rdx
+    push rsi
+    push rdi
+    push rax
 
-    ; Reshuffle: num=rax, a1=rdi, a2=rsi, a3=rdx → C(rdi,rsi,rdx,rcx).
-    ; Done in an order that never overwrites a value before it is used.
-    mov  rcx, rdx                     ; arg3 = a3
-    mov  rdx, rsi                     ; arg2 = a2
-    mov  rsi, rdi                     ; arg1 = a1
-    mov  rdi, rax                     ; arg0 = number
+    mov  rdi, rsp                     ; arg0 = syscall_frame_t*
+    call syscall_dispatch             ; dispatcher writes the result to f->rax
 
-    call syscall_dispatch             ; result in RAX (returned to user)
-
-    pop  r10
-    pop  r9
-    pop  r8
-    pop  rdx
-    pop  rsi
+    ; ── Shared ring-3 return path (fork child re-enters here) ──
+.return:
+    pop  rax
     pop  rdi
-    pop  r11                          ; restore user RFLAGS
-    pop  rcx                          ; restore user RIP
-    mov  rsp, [rel g_user_rsp]        ; restore user RSP
+    pop  rsi
+    pop  rdx
+    pop  r10
+    pop  r8
+    pop  r9
+    pop  rbx
+    pop  rbp
+    pop  r12
+    pop  r13
+    pop  r14
+    pop  r15
+    pop  rcx                          ; user RIP
+    pop  r11                          ; user RFLAGS
+    mov  rsp, [rsp]                   ; RSP slot → user RSP
     o64 sysret                        ; back to ring 3 (CS/SS from STAR)
+
+; A forked child starts here: the scheduler switched CR3 + kernel stack to the
+; child, kthread_switch `ret`d here with RSP pointing at the cloned frame.
+fork_ret_trampoline:
+    jmp  syscall_entry.return

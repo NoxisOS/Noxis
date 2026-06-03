@@ -19,7 +19,7 @@ static void user_thread_main(void) {
     enter_ring3(p->uentry, p->ursp);
 }
 
-process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority) {
+process_t* proc_alloc(const uint8_t* name) {
     process_t* p = (process_t*)kmalloc(sizeof(process_t));
     if (!p) return NULL;
 
@@ -29,13 +29,26 @@ process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priorit
     p->pid   = g_next_pid++;
     p->state = PROC_READY;
     p->quantum_remaining = PROC_QUANTUM;
-    p->priority    = priority;
+    p->priority    = 1;
     p->kstack_base = stack;
     p->kstack_top  = stack + PROC_KSTACK_SIZE;
-    p->pml4  = 0;                /* kernel address space by default */
-    p->next  = NULL;
+    p->pml4   = 0;               /* kernel address space by default */
+    p->uentry = 0;
+    p->ursp   = 0;
+    p->parent = NULL;
+    p->exit_code = 0;
+    p->kctx_rsp  = 0;
+    p->next   = NULL;
     for (int i = 0; i < PROC_NAME_MAX - 1 && name[i]; i++) p->name[i] = name[i];
     p->name[PROC_NAME_MAX - 1] = 0;
+    return p;
+}
+
+process_t* proc_spawn(const uint8_t* name, void (*entry)(void), uint32_t priority) {
+    process_t* p = proc_alloc(name);
+    if (!p) return NULL;
+    p->priority = priority;
+    uint64_t stack = p->kstack_base;
 
     /* Build the initial kernel stack. kthread_switch restores callee-saved
        regs then `ret`s: we land in thread_trampoline with RBX = real entry.

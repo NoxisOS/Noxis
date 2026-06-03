@@ -32,4 +32,7 @@ void vmm_switch(uint64_t pml4_phys);
    Returns the new PML4 physical address, or 0 on failure. */
 uint64_t vmm_create_address_space(void);
 
+/* Deep-copy the user half (PML4[0]) of src_pml4 into dst_pml4. Returns 0 ok. */
+int vmm_copy_user_space(uint64_t dst_pml4, uint64_t src_pml4);
+
 #endif /* MM_VMM_H */
