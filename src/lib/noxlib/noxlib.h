@@ -169,6 +169,10 @@ static inline const char* strstr(const char* h, const char* n) {
 static inline int strcmp(const char* a, const char* b) {
     while (*a && *a==*b){a++;b++;} return (int)(unsigned char)*a-(int)(unsigned char)*b;
 }
+static inline int strncmp(const char* a, const char* b, size_t n) {
+    for(size_t i=0;i<n;i++){if(a[i]!=b[i])return(int)(unsigned char)a[i]-(int)(unsigned char)b[i];if(!a[i])return 0;}
+    return 0;
+}
 static inline void puts(const char* s) { write(1, s, strlen(s)); }
 static inline void puti(long v) {
     char buf[24]; int i=sizeof(buf);
