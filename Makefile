@@ -121,7 +121,7 @@ build/u_crt0.o: src/lib/noxlib/crt0.asm
 
 # Userland programs: one per src/bin/<name>/<name>.c. Rules are generated per
 # program so each links crt0 + its object against the shared user.ld.
-PROGS     = nsh ls echo cat ps mkdir rm mv cp touch wc head tail grep sort seq true false
+PROGS     = nsh ls echo cat ps mkdir rm mv cp touch wc head tail grep sort seq true false test
 USER_ELFS = $(addprefix build/,$(addsuffix .elf,$(PROGS)))
 
 define PROG_RULE

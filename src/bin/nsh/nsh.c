@@ -94,11 +94,43 @@ static void _exec_search(char** argv) {
     }
 }
 
-/* ── $VAR expansion ──────────────────────────────────────────────────── */
+/* ── $VAR expansion and $(cmd) command substitution ─────────────────── */
+static int exec1(char* raw);  /* forward declaration */
+
 static void expand_vars(const char* in, char* out, int outsz) {
     int i = 0, o = 0;
     while (in[i] && o < outsz - 1) {
-        if (in[i] == '$') {
+
+        /* $( … ) : command substitution */
+        if (in[i] == '$' && in[i+1] == '(') {
+            i += 2;
+            char cmd[SB_LINE]; int ci = 0, depth = 1;
+            while (in[i] && ci < SB_LINE-1) {
+                if      (in[i] == '(') depth++;
+                else if (in[i] == ')') { if (!--depth) { i++; break; } }
+                if (depth > 0) cmd[ci++] = in[i];
+                i++;
+            }
+            cmd[ci] = 0;
+
+            int pfd[2]; pipe(pfd);
+            long pid = fork();
+            if (pid == 0) {
+                close(pfd[0]); dup2(pfd[1], 1); close(pfd[1]);
+                exit(exec1(cmd));
+            }
+            close(pfd[1]);
+            char cap[SB_LINE]; int cn = 0; char c;
+            while (cn < SB_LINE-1 && read(pfd[0], &c, 1) == 1)
+                cap[cn++] = (c=='\n'||c=='\r') ? ' ' : c;
+            close(pfd[0]);
+            int st = 0; waitpid(pid, &st);
+            while (cn > 0 && cap[cn-1] == ' ') cn--;
+            for (int j = 0; j < cn && o < outsz-1; j++) out[o++] = cap[j];
+        }
+
+        /* $VARNAME : variable substitution */
+        else if (in[i] == '$' && in[i+1]) {
             i++;
             char vn[32]; int vl = 0;
             while (in[i] && (in[i]=='_' || (in[i]>='a'&&in[i]<='z')
@@ -110,7 +142,9 @@ static void expand_vars(const char* in, char* out, int outsz) {
                 const char* val = getenv(vn);
                 if (val) while (*val && o < outsz-1) out[o++] = *val++;
             }
-        } else { out[o++] = in[i++]; }
+        }
+
+        else { out[o++] = in[i++]; }
     }
     out[o] = 0;
 }

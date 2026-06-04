@@ -173,6 +173,22 @@ static inline int strncmp(const char* a, const char* b, size_t n) {
     for(size_t i=0;i<n;i++){if(a[i]!=b[i])return(int)(unsigned char)a[i]-(int)(unsigned char)b[i];if(!a[i])return 0;}
     return 0;
 }
+static inline long strtol(const char* s, char** end, int base) {
+    while(*s==' '||*s=='\t')s++;
+    long neg=0,v=0; if(*s=='-'){neg=1;s++;}else if(*s=='+')s++;
+    if(base==0){if(*s=='0'&&(s[1]=='x'||s[1]=='X')){base=16;s+=2;}else if(*s=='0'){base=8;s++;}else base=10;}
+    for(;*s;s++){int d;if(*s>='0'&&*s<='9')d=*s-'0';else if(*s>='a'&&*s<='f')d=*s-'a'+10;else if(*s>='A'&&*s<='F')d=*s-'A'+10;else break;if(d>=base)break;v=v*base+d;}
+    if(end)*(const char**)end=(const char*)s; return neg?-v:v;
+}
+/* Character classification */
+static inline int isdigit(int c) { return c>='0'&&c<='9'; }
+static inline int isalpha(int c) { return (c>='a'&&c<='z')||(c>='A'&&c<='Z'); }
+static inline int isalnum(int c) { return isdigit(c)||isalpha(c); }
+static inline int isspace(int c) { return c==' '||c=='\t'||c=='\n'||c=='\r'; }
+static inline int isupper(int c) { return c>='A'&&c<='Z'; }
+static inline int islower(int c) { return c>='a'&&c<='z'; }
+static inline int toupper(int c) { return islower(c)?c-32:c; }
+static inline int tolower(int c) { return isupper(c)?c+32:c; }
 static inline void puts(const char* s) { write(1, s, strlen(s)); }
 static inline void puti(long v) {
     char buf[24]; int i=sizeof(buf);
