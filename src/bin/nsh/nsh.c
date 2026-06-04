@@ -38,6 +38,18 @@ static int parse(char* line, char** argv, char** infile,
     return n;
 }
 
+/* Try execv(argv[0]); if it fails and argv[0] has no '.', also try argv[0]+".elf". */
+static void _exec(char** argv) {
+    execv(argv[0], argv);
+    int has_dot = 0;
+    for (const char* p = argv[0]; *p; p++) if (*p == '.') { has_dot = 1; break; }
+    if (!has_dot) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "%s.elf", argv[0]);
+        execv(buf, argv);
+    }
+}
+
 /* Run "left | right": connect left's stdout to right's stdin via a pipe. */
 static void run_pipe(char** lav, char** rav) {
     int fds[2];
@@ -46,12 +58,12 @@ static void run_pipe(char** lav, char** rav) {
     long p1 = fork();
     if (p1 == 0) {
         dup2(fds[1], 1); close(fds[0]); close(fds[1]);
-        execv(lav[0], lav); puts(lav[0]); puts(": not found\n"); exit(127);
+        _exec(lav); puts(lav[0]); puts(": not found\n"); exit(127);
     }
     long p2 = fork();
     if (p2 == 0) {
         dup2(fds[0], 0); close(fds[0]); close(fds[1]);
-        execv(rav[0], rav); puts(rav[0]); puts(": not found\n"); exit(127);
+        _exec(rav); puts(rav[0]); puts(": not found\n"); exit(127);
     }
     close(fds[0]); close(fds[1]);
     int st = 0;
@@ -82,7 +94,7 @@ static void run(char** argv, char* infile, char* outfile, int append) {
             if (fd < 0) { puts("nsh: cannot create "); puts(outfile); puts("\n"); exit(1); }
             dup2((int)fd, 1); close((int)fd);
         }
-        execv(argv[0], argv);
+        _exec(argv);
         puts(argv[0]); puts(": command not found\n");
         exit(127);
     }
@@ -132,10 +144,20 @@ int main(int argc, char** argv) {
             if (chdir(dest) < 0) { puts("nsh: cd: "); puts(dest); puts(": not found\n"); }
             continue;
         }
+        if (strcmp(av[0], "pwd") == 0) { puts(_cwd); puts("\n"); continue; }
+        if (strcmp(av[0], "time") == 0) {
+            if (ac < 2) { puts("usage: time <cmd>\n"); continue; }
+            unsigned long t0 = uptime_ms();
+            run(av + 1, in, out, app);
+            printf("real\t%lums\n", uptime_ms() - t0);
+            continue;
+        }
         if (strcmp(av[0], "help") == 0) {
-            puts("builtins: exit, cd, help\n");
-            puts("external: ls.elf echo.elf cat.elf ps.elf\n");
+            puts("builtins: cd, pwd, time, exit, help\n");
+            puts("programs: ls, cat, echo, ps, wc, head, grep, mkdir, rm, mv\n");
+            puts("  (also works with or without .elf extension)\n");
             puts("redirection: cmd > file, cmd >> file, cmd < file\n");
+            puts("pipeline:    cmd1 | cmd2\n");
             continue;
         }
         run(av, in, out, app);

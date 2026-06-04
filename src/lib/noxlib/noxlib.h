@@ -37,6 +37,7 @@ typedef long           ssize_t;
 #define SYS_TCGETATTR 26
 #define SYS_TCSETATTR 27
 #define SYS_SLEEP     28
+#define SYS_UPTIME    29
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -152,6 +153,15 @@ static inline long rename(const char* old, const char* newp) {
 
 /* ── String helpers ─────────────────────────────────────────────────────── */
 static inline size_t strlen(const char* s) { size_t n=0; while(s[n])n++; return n; }
+static inline int atoi(const char* s) {
+    int v=0,neg=0; if(*s=='-'){neg=1;s++;} else if(*s=='+')s++;
+    while(*s>='0'&&*s<='9') v=v*10+(*s++-'0'); return neg?-v:v;
+}
+static inline const char* strstr(const char* h, const char* n) {
+    if(!*n)return h;
+    for(;*h;h++){const char*hh=h,*nn=n;while(*nn&&*hh==*nn){hh++;nn++;}if(!*nn)return h;}
+    return(const char*)0;
+}
 static inline int strcmp(const char* a, const char* b) {
     while (*a && *a==*b){a++;b++;} return (int)(unsigned char)*a-(int)(unsigned char)*b;
 }
@@ -180,6 +190,9 @@ static inline int memcmp(const void* a, const void* b, size_t n) {
 /* ── Sleep ──────────────────────────────────────────────────────────────── */
 static inline void sleep_ms(unsigned long ms) { _syscall3(SYS_SLEEP,(long)ms,0,0); }
 static inline unsigned int sleep(unsigned int sec) { sleep_ms((unsigned long)sec*1000UL); return 0; }
+static inline unsigned long uptime_ms(void) {
+    return (unsigned long)_syscall3(SYS_UPTIME,0,0,0);
+}
 
 /* ── printf / sprintf / fprintf ─────────────────────────────────────────── */
 typedef __builtin_va_list _va_list;

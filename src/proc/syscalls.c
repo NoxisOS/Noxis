@@ -161,6 +161,9 @@ void sys_sleep(uint32_t ms) {
     while (pit_uptime_ms() < wake) scheduler_yield();
 }
 
+/* uptime(): return milliseconds since boot. */
+uint64_t sys_uptime(void) { return (uint64_t)pit_uptime_ms(); }
+
 /* tcgetattr / tcsetattr — copy the global console termios to/from userland.
  * `fd` is accepted for API compatibility but only the console (fd 0) is
  * meaningful; all terminal fds share the same global state. */
