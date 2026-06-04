@@ -10,6 +10,7 @@
 #include <mm/virt/heap.h>
 #include <mm/virt/uvm.h>
 #include <fs/vfs/vfs.h>
+#include <fs/noxfs/noxfs.h>
 #include <common/types.h>
 
 void serial_write(const uint8_t* s);
@@ -177,6 +178,42 @@ int64_t sys_brk(uint64_t addr) {
 
 /* ── Path helpers ──────────────────────────────────────────────────────── */
 
+/* Split path into parent directory + final component.
+ *   "foo"        → parent="."  name="foo"
+ *   "a/b/c"      → parent="a/b"  name="c"
+ *   "/a/b"       → parent="/"  name="b"
+ *   "/foo"       → parent="/"  name="foo"
+ */
+static void path_split(const uint8_t* path,
+                        uint8_t parent[128], uint8_t name[32]) {
+    int len = 0;
+    while (path[len]) len++;
+
+    int slash = -1;
+    for (int i = len - 1; i >= 0; i--) {
+        if (path[i] == '/') { slash = i; break; }
+    }
+
+    if (slash < 0) {
+        parent[0] = '.'; parent[1] = 0;
+        int i = 0;
+        while (i < 31 && path[i]) { name[i] = path[i]; i++; }
+        name[i] = 0;
+    } else if (slash == 0) {
+        parent[0] = '/'; parent[1] = 0;
+        int i = 0;
+        while (i < 31 && path[slash + 1 + i]) { name[i] = path[slash+1+i]; i++; }
+        name[i] = 0;
+    } else {
+        int i = 0;
+        while (i < 127 && i < slash) { parent[i] = path[i]; i++; }
+        parent[i] = 0;
+        i = 0;
+        while (i < 31 && path[slash + 1 + i]) { name[i] = path[slash+1+i]; i++; }
+        name[i] = 0;
+    }
+}
+
 /* Resolve `rel` against `base` into `dst` (max dst_size bytes), normalising
  * `.` / `..` and double slashes.  Result always starts with `/`. */
 static void path_resolve_str(uint8_t* dst, uint32_t dst_size,
@@ -251,6 +288,57 @@ int64_t sys_getcwd(uint8_t* buf, uint64_t size) {
     while (i < size - 1 && p->cwd_path[i]) { buf[i] = p->cwd_path[i]; i++; }
     buf[i] = 0;
     return (int64_t)i;
+}
+
+/* stat buffer layout (16 bytes, mirrors nox_stat_t in noxlib.h). */
+typedef struct { uint32_t ino; uint16_t mode; uint16_t _p; uint32_t size; uint32_t _p2; } nox_stat_t;
+
+int64_t sys_mkdir(const uint8_t* path) {
+    if (!path || !path[0]) return -1;
+    process_t* p = scheduler_current();
+    uint8_t par[128], name[32];
+    path_split(path, par, name);
+    uint32_t par_ino = vfs_resolve_ino(p->cwd_ino, par);
+    if (par_ino == (uint32_t)-1 || !vfs_is_dir(par_ino)) return -1;
+    return (noxfs_mkdir(par_ino, name) == (uint32_t)-1) ? -1 : 0;
+}
+
+int64_t sys_unlink(const uint8_t* path) {
+    if (!path || !path[0]) return -1;
+    process_t* p = scheduler_current();
+    uint8_t par[128], name[32];
+    path_split(path, par, name);
+    uint32_t par_ino = vfs_resolve_ino(p->cwd_ino, par);
+    if (par_ino == (uint32_t)-1) return -1;
+    /* Try file first, then empty directory */
+    if (noxfs_unlink(par_ino, name) == OS_OK) return 0;
+    return (noxfs_rmdir(par_ino, name) == OS_OK) ? 0 : -1;
+}
+
+int64_t sys_stat(const uint8_t* path, nox_stat_t* buf) {
+    if (!path || !buf) return -1;
+    process_t* p = scheduler_current();
+    uint32_t ino = vfs_resolve_ino(p->cwd_ino, path);
+    if (ino == (uint32_t)-1) return -1;
+    vfs_file_t st;
+    if (noxfs_stat(ino, &st) != OS_OK) return -1;
+    buf->ino  = ino;
+    buf->mode = (uint16_t)st.capacity;   /* noxfs_stat stores mode in capacity */
+    buf->size = st.size;
+    buf->_p   = 0; buf->_p2 = 0;
+    return 0;
+}
+
+int64_t sys_rename(const uint8_t* old_path, const uint8_t* new_path) {
+    if (!old_path || !new_path) return -1;
+    process_t* p = scheduler_current();
+    uint8_t opar[128], oname[32], npar[128], nname[32];
+    path_split(old_path, opar, oname);
+    path_split(new_path, npar, nname);
+    uint32_t oino = vfs_resolve_ino(p->cwd_ino, opar);
+    uint32_t nino = vfs_resolve_ino(p->cwd_ino, npar);
+    if (oino == (uint32_t)-1 || nino == (uint32_t)-1) return -1;
+    return (noxfs_rename(oino, oname, nino, nname) == OS_OK) ? 0 : -1;
 }
 
 int64_t sys_getdents(const uint8_t* path, uint8_t* buf, uint64_t len) {

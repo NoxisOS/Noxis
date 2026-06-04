@@ -30,6 +30,10 @@ typedef long           ssize_t;
 #define SYS_GETCWD   19
 #define SYS_GETDENTS 20
 #define SYS_BRK      21
+#define SYS_MKDIR    22
+#define SYS_UNLINK   23
+#define SYS_STAT     24
+#define SYS_RENAME   25
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -143,6 +147,34 @@ static inline void puti(long v) {
     do { buf[--i] = (char)('0' + (u % 10)); u /= 10; } while (u);
     if (v < 0) buf[--i] = '-';
     write(1, &buf[i], strlen(&buf[i]));
+}
+
+/* ── Filesystem helpers ──────────────────────────────────────────────────── */
+
+/* stat_t: 16 bytes, mirrors nox_stat_t in the kernel.
+ * mode bits: 0x8000 = regular file, 0x4000 = directory. */
+typedef struct {
+    unsigned int   ino;
+    unsigned short mode;
+    unsigned short _pad;
+    unsigned int   size;
+    unsigned int   _pad2;
+} stat_t;
+
+#define S_ISREG(m)  (((m) & 0x8000u) != 0)
+#define S_ISDIR(m)  (((m) & 0x4000u) != 0)
+
+static inline long mkdir(const char* path) {
+    return _syscall3(SYS_MKDIR, (long)path, 0, 0);
+}
+static inline long unlink(const char* path) {
+    return _syscall3(SYS_UNLINK, (long)path, 0, 0);
+}
+static inline long stat(const char* path, stat_t* buf) {
+    return _syscall3(SYS_STAT, (long)path, (long)buf, 0);
+}
+static inline long rename(const char* old, const char* newp) {
+    return _syscall3(SYS_RENAME, (long)old, (long)newp, 0);
 }
 
 /* ── Memory helpers ──────────────────────────────────────────────────────── */

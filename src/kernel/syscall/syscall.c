@@ -29,6 +29,10 @@ int64_t  sys_kill(int64_t pid, int sig);
 void     sys_setfg(uint64_t pid);
 int64_t  sys_chdir(const uint8_t* path);
 int64_t  sys_brk(uint64_t addr);
+int64_t  sys_mkdir(const uint8_t* path);
+int64_t  sys_unlink(const uint8_t* path);
+int64_t  sys_stat(const uint8_t* path, void* buf);
+int64_t  sys_rename(const uint8_t* old_path, const uint8_t* new_path);
 int64_t  sys_getcwd(uint8_t* buf, uint64_t size);
 int64_t  sys_getdents(const uint8_t* path, uint8_t* buf, uint64_t len);
 void     deliver_signals(syscall_frame_t* f);
@@ -83,6 +87,7 @@ enum {
     SYS_SETFG = 17,
     SYS_CHDIR = 18, SYS_GETCWD = 19, SYS_GETDENTS = 20,
     SYS_BRK = 21,
+    SYS_MKDIR = 22, SYS_UNLINK = 23, SYS_STAT = 24, SYS_RENAME = 25,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -117,6 +122,12 @@ static void do_syscall(syscall_frame_t* f) {
     case SYS_GETDENTS:f->rax = (uint64_t)sys_getdents((const uint8_t*)f->rdi,
                                   (uint8_t*)f->rsi, f->rdx);               return;
     case SYS_BRK:     f->rax = (uint64_t)sys_brk(f->rdi);                  return;
+    case SYS_MKDIR:   f->rax = (uint64_t)sys_mkdir((const uint8_t*)f->rdi); return;
+    case SYS_UNLINK:  f->rax = (uint64_t)sys_unlink((const uint8_t*)f->rdi); return;
+    case SYS_STAT:    f->rax = (uint64_t)sys_stat((const uint8_t*)f->rdi,
+                                  (void*)f->rsi);                            return;
+    case SYS_RENAME:  f->rax = (uint64_t)sys_rename((const uint8_t*)f->rdi,
+                                  (const uint8_t*)f->rsi);                  return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }
