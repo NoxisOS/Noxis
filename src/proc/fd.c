@@ -9,6 +9,7 @@
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <fs/vfs/vfs.h>
+#include <drivers/tty.h>
 #include <common/types.h>
 
 void    vga_write_buf(const uint8_t* buf, uint32_t len);
@@ -110,22 +111,48 @@ int64_t sys_read(int fd, uint8_t* buf, uint64_t len) {
     fd_t* e = fd_get(fd);
     if (!e) return -1;
 
-    if (e->kind == FD_CON_IN) {        /* canonical line discipline */
+    if (e->kind == FD_CON_IN) {
         uint64_t got = 0;
-        while (got < len) {
-            int32_t c;
-            __asm__ __volatile__("sti");
-            while ((c = kbd_poll()) < 0) __asm__ __volatile__("hlt");
 
-            if (c == '\b' || c == 0x7F) {        /* backspace: erase a char */
-                if (got > 0) { got--; vga_put_char('\b'); vga_put_char(' '); vga_put_char('\b'); }
-                continue;
+        if (tty_canonical()) {
+            /* ── Canonical (line-buffered) mode ── */
+            while (got < len) {
+                int32_t c;
+                __asm__ __volatile__("sti");
+                while ((c = kbd_poll()) < 0) __asm__ __volatile__("hlt");
+
+                if (c == '\b' || c == 0x7F) {
+                    if (got > 0) {
+                        got--;
+                        if (tty_echo())
+                            { vga_put_char('\b'); vga_put_char(' '); vga_put_char('\b'); }
+                    }
+                    continue;
+                }
+                if (c == '\r') c = '\n';
+                if (tty_echo()) vga_put_char((uint8_t)c);
+                buf[got++] = (uint8_t)c;
+                if (c == '\n') break;
             }
-            if (c == '\r') c = '\n';
-            buf[got++] = (uint8_t)c;
-            vga_put_char((uint8_t)c);
-            if (c == '\n') break;
+        } else {
+            /* ── Raw mode: deliver chars immediately ── */
+            uint8_t vmin = g_termios.c_cc[TTY_VMIN];
+            if (!vmin) vmin = 1;
+
+            __asm__ __volatile__("sti");
+            while (got < len) {
+                int32_t c = kbd_poll();
+                if (c < 0) {
+                    if (got >= vmin) break;   /* enough chars: return now */
+                    __asm__ __volatile__("hlt");
+                    continue;
+                }
+                if (tty_echo()) vga_put_char((uint8_t)c);
+                buf[got++] = (uint8_t)c;
+                if (got >= vmin) break;
+            }
         }
+
         __asm__ __volatile__("cli");
         return (int64_t)got;
     }

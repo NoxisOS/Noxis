@@ -23,6 +23,7 @@
 #include <mm/virt/vmm.h>
 #include <mm/virt/heap.h>
 #include <mm/virt/uvm.h>
+#include <drivers/tty.h>
 #include <mm/slab.h>
 #include <proc/scheduler.h>
 
@@ -141,6 +142,8 @@ void kernel_main(void) {
     serial_write((const uint8_t*)"[noxis64] KBD ... ");
     kbd_init();
     serial_write((const uint8_t*)"OK\n");
+
+    tty_init();
 
     /* ── Syscalls + ring 3 test ───────────────────────────────── */
     serial_write((const uint8_t*)"[noxis64] SYSCALL ... ");

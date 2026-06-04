@@ -30,10 +30,12 @@ typedef long           ssize_t;
 #define SYS_GETCWD   19
 #define SYS_GETDENTS 20
 #define SYS_BRK      21
-#define SYS_MKDIR    22
-#define SYS_UNLINK   23
-#define SYS_STAT     24
-#define SYS_RENAME   25
+#define SYS_MKDIR      22
+#define SYS_UNLINK     23
+#define SYS_STAT       24
+#define SYS_RENAME     25
+#define SYS_TCGETATTR  26
+#define SYS_TCSETATTR  27
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -147,6 +149,35 @@ static inline void puti(long v) {
     do { buf[--i] = (char)('0' + (u % 10)); u /= 10; } while (u);
     if (v < 0) buf[--i] = '-';
     write(1, &buf[i], strlen(&buf[i]));
+}
+
+/* ── Terminal (termios) ──────────────────────────────────────────────────── */
+
+/* c_lflag bits */
+#define ISIG    0x0001u   /* generate SIGINT on Ctrl-C          */
+#define ICANON  0x0002u   /* canonical (line-buffered) mode      */
+#define ECHO    0x0008u   /* echo typed characters               */
+#define ECHOE   0x0010u   /* echo erase as BS-SP-BS              */
+
+/* c_cc indices */
+#define VMIN   0
+#define VTIME  1
+
+/* tcsetattr `when` values (only TCSANOW is implemented) */
+#define TCSANOW   0
+#define TCSADRAIN 1
+#define TCSAFLUSH 2
+
+typedef struct {
+    unsigned int  c_lflag;
+    unsigned char c_cc[8];
+} termios_t;
+
+static inline long tcgetattr(int fd, termios_t* t) {
+    return _syscall3(SYS_TCGETATTR, (long)fd, (long)t, 0);
+}
+static inline long tcsetattr(int fd, int when, const termios_t* t) {
+    return _syscall3(SYS_TCSETATTR, (long)fd, (long)t, (long)when);
 }
 
 /* ── Filesystem helpers ──────────────────────────────────────────────────── */

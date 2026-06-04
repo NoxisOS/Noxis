@@ -29,6 +29,8 @@ int64_t  sys_kill(int64_t pid, int sig);
 void     sys_setfg(uint64_t pid);
 int64_t  sys_chdir(const uint8_t* path);
 int64_t  sys_brk(uint64_t addr);
+int64_t  sys_tcgetattr(int fd, void* out);
+int64_t  sys_tcsetattr(int fd, int when, const void* in);
 int64_t  sys_mkdir(const uint8_t* path);
 int64_t  sys_unlink(const uint8_t* path);
 int64_t  sys_stat(const uint8_t* path, void* buf);
@@ -88,6 +90,7 @@ enum {
     SYS_CHDIR = 18, SYS_GETCWD = 19, SYS_GETDENTS = 20,
     SYS_BRK = 21,
     SYS_MKDIR = 22, SYS_UNLINK = 23, SYS_STAT = 24, SYS_RENAME = 25,
+    SYS_TCGETATTR = 26, SYS_TCSETATTR = 27,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -126,8 +129,12 @@ static void do_syscall(syscall_frame_t* f) {
     case SYS_UNLINK:  f->rax = (uint64_t)sys_unlink((const uint8_t*)f->rdi); return;
     case SYS_STAT:    f->rax = (uint64_t)sys_stat((const uint8_t*)f->rdi,
                                   (void*)f->rsi);                            return;
-    case SYS_RENAME:  f->rax = (uint64_t)sys_rename((const uint8_t*)f->rdi,
-                                  (const uint8_t*)f->rsi);                  return;
+    case SYS_RENAME:    f->rax = (uint64_t)sys_rename((const uint8_t*)f->rdi,
+                                    (const uint8_t*)f->rsi);                return;
+    case SYS_TCGETATTR: f->rax = (uint64_t)sys_tcgetattr((int)f->rdi,
+                                    (void*)f->rsi);                         return;
+    case SYS_TCSETATTR: f->rax = (uint64_t)sys_tcsetattr((int)f->rdi,
+                                    (int)f->rdx, (const void*)f->rsi);      return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

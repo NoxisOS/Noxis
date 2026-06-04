@@ -64,6 +64,7 @@ KERNEL_C_OBJS = \
   build/proc/pipe.o         \
   build/proc/signal.o       \
   build/proc/elf.o          \
+  build/drivers/tty.o       \
   build/fs/noxfs/buffer.o   \
   build/fs/noxfs/noxfs.o    \
   build/fs/procfs/procfs.o  \

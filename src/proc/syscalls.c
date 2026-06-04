@@ -11,6 +11,7 @@
 #include <mm/virt/uvm.h>
 #include <fs/vfs/vfs.h>
 #include <fs/noxfs/noxfs.h>
+#include <drivers/tty.h>
 #include <common/types.h>
 
 void serial_write(const uint8_t* s);
@@ -152,6 +153,22 @@ uint64_t sys_getpid(void) { return scheduler_current()->pid; }
 
 /* setfg(pid): mark pid as the foreground process (receives Ctrl-C SIGINT). */
 void sys_setfg(uint64_t pid) { scheduler_set_fg(pid); }
+
+/* tcgetattr / tcsetattr — copy the global console termios to/from userland.
+ * `fd` is accepted for API compatibility but only the console (fd 0) is
+ * meaningful; all terminal fds share the same global state. */
+int64_t sys_tcgetattr(int fd, ktermios_t* out) {
+    (void)fd;
+    if (!out) return -1;
+    *out = g_termios;
+    return 0;
+}
+int64_t sys_tcsetattr(int fd, int when, const ktermios_t* in) {
+    (void)fd; (void)when;
+    if (!in) return -1;
+    g_termios = *in;
+    return 0;
+}
 
 /* brk(addr): set the program break to addr (grows the heap).
  * addr == 0 → return current break without changing it.
