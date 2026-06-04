@@ -22,6 +22,7 @@
 #include <mm/phys/pmm.h>
 #include <mm/virt/vmm.h>
 #include <mm/virt/heap.h>
+#include <mm/virt/uvm.h>
 #include <mm/slab.h>
 #include <proc/scheduler.h>
 
@@ -34,7 +35,6 @@ extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
 uint64_t elf64_load(const uint8_t* img);
 uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
 
-#define USTACK_VA  0x50000000ULL   /* user stack page (outside identity map) */
 
 /* Background kernel thread: prints once a second to prove that the timer
    preempts the ring-3 process and the scheduler interleaves both. */
@@ -167,11 +167,11 @@ void kernel_main(void) {
     /* User stack page, mapped into the private address space.  Seed a minimal
        argv stack (argc=0, NULL) so crt0 reads a valid frame at rsp. */
     uint64_t ustk = pmm_alloc_frame();
-    vmm_map_page_into(uas, USTACK_VA, ustk, PAGE_RW | PAGE_USER);
-    uint64_t* utop = (uint64_t*)(0xFFFF800000000000ULL + ustk + 0x1000);
+    vmm_map_page_into(uas, USTACK_BASE, ustk, PAGE_RW | PAGE_USER);
+    uint64_t* utop = (uint64_t*)(PHYSMAP_BASE + ustk + 0x1000);
     utop[-1] = 0;            /* argv[0] = NULL */
     utop[-2] = 0;            /* argc    = 0    */
-    uint64_t ursp = USTACK_VA + 0x1000 - 16;
+    uint64_t ursp = USTACK_TOP - 16;
 
     /* Spawn the user as a scheduled process and hand it the CPU. The scheduler
        switches CR3 to its address space, the kernel-thread trampoline drops to
@@ -180,6 +180,7 @@ void kernel_main(void) {
     scheduler_init();
     process_t* up = proc_spawn_user((const uint8_t*)"nsh", uas,
                                     entry, ursp, 1);
+    up->stack_low = USTACK_BASE;       /* one page mapped; rest demand-paged */
     scheduler_register(up);
 
     /* A background ring-0 kernel thread, scheduled alongside the ring-3 user. */

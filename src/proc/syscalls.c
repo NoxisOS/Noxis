@@ -8,6 +8,7 @@
 #include <mm/virt/vmm.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/heap.h>
+#include <mm/virt/uvm.h>
 #include <fs/vfs/vfs.h>
 #include <common/types.h>
 
@@ -18,8 +19,7 @@ void pipe_addref(int kind, void* file);
 void pipe_close(int kind, void* file);
 static int fd_is_pipe(int k) { return k == FD_PIPE_R || k == FD_PIPE_W; }
 
-#define USTACK_VA     0x50000000ULL
-#define PHYSMAP_BASE  0xFFFF800000000000ULL
+/* Stack layout comes from uvm.h (USTACK_BASE / USTACK_TOP / USTACK_LIMIT). */
 #define MAX_ARGS      16
 
 static uint64_t kstrlen(const uint8_t* s) { uint64_t n = 0; while (s[n]) n++; return n; }
@@ -38,8 +38,9 @@ int64_t sys_fork(syscall_frame_t* f) {
 
     process_t* child = proc_alloc(parent->name);
     if (!child) return -1;
-    child->pml4   = child_pml4;
-    child->parent = parent;
+    child->pml4      = child_pml4;
+    child->parent    = parent;
+    child->stack_low = parent->stack_low;  /* child inherits parent's stack depth */
     for (int i = 0; i < PROC_MAX_FDS; i++) {
         child->fds[i] = parent->fds[i];
         if (fd_is_pipe(child->fds[i].kind))      /* extra reference per end */
@@ -87,13 +88,13 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
 
     uint64_t stk = pmm_alloc_frame();
     if (!stk) return -1;
-    vmm_map_page_into(nas, USTACK_VA, stk, PAGE_RW | PAGE_USER);
+    vmm_map_page_into(nas, USTACK_BASE, stk, PAGE_RW | PAGE_USER);
 
     /* Build the argv stack into the new page through the physmap (the physmap
        is shared, so argv from the *current* AS is still readable here — we have
        not switched CR3 yet). Layout at rsp: argc, argv[0..argc-1], NULL, strings. */
-    uint8_t*  page = (uint8_t*)(PHYSMAP_BASE + stk);   /* kernel view of the page */
-    uint64_t  off  = 0x1000;                            /* offset within the page  */
+    uint8_t*  page = (uint8_t*)(PHYSMAP_BASE + stk);
+    uint64_t  off  = 0x1000;
     uint64_t  argv_uva[MAX_ARGS];
     int       argc = 0;
     if (argv) for (; argc < MAX_ARGS && argv[argc]; argc++) { /* count */ }
@@ -102,7 +103,7 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
         uint64_t len = kstrlen(argv[i]) + 1;
         off -= len;
         for (uint64_t b = 0; b < len; b++) page[off + b] = argv[i][b];
-        argv_uva[i] = USTACK_VA + off;
+        argv_uva[i] = USTACK_BASE + off;
     }
     off &= ~7ULL;                                       /* align */
     off -= 8; *(uint64_t*)(page + off) = 0;             /* argv[argc] = NULL */
@@ -115,8 +116,9 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
     vmm_switch(nas);                   /* kernel half is shared, frame stays valid */
     vmm_free_user_space(old_pml4);     /* reclaim old pages now that we've switched */
 
+    cur->stack_low = USTACK_BASE;      /* one page mapped; rest demand-paged */
     f->rip    = entry;
-    f->ursp   = USTACK_VA + off;
+    f->ursp   = USTACK_BASE + off;
     f->rflags = 0x202;                 /* IF=1 */
     f->rax    = 0;
     return 0;

@@ -32,9 +32,10 @@ process_t* proc_alloc(const uint8_t* name) {
     p->priority    = 1;
     p->kstack_base = stack;
     p->kstack_top  = stack + PROC_KSTACK_SIZE;
-    p->pml4   = 0;               /* kernel address space by default */
-    p->uentry = 0;
-    p->ursp   = 0;
+    p->pml4      = 0;            /* kernel address space by default */
+    p->uentry    = 0;
+    p->ursp      = 0;
+    p->stack_low = 0;           /* set by exec/fork when AS is built */
     p->parent = NULL;
     p->exit_code = 0;
     p->kctx_rsp  = 0;

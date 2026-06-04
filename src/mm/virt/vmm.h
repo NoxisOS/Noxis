@@ -9,6 +9,8 @@
 #include <common/types.h>
 #include <common/status.h>
 
+#define PHYSMAP_BASE  0xFFFF800000000000ULL  /* all RAM mapped here */
+
 #define PAGE_PRESENT  0x1
 #define PAGE_RW       0x2
 #define PAGE_USER     0x4

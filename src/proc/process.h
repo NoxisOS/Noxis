@@ -49,6 +49,7 @@ typedef struct process {
     uint64_t         pml4;           /* address space (0 = kernel AS) */
     uint64_t         uentry;          /* ring-3 entry point (user procs) */
     uint64_t         ursp;            /* initial ring-3 stack pointer    */
+    uint64_t         stack_low;       /* lowest mapped stack VA (grows down on #PF) */
     struct process*  parent;          /* creator (for waitpid)           */
     int32_t          exit_code;       /* set on exit, read by waitpid    */
     uint32_t         quantum_remaining;

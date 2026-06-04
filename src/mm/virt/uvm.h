@@ -14,20 +14,20 @@
 #ifndef MM_VIRT_UVM_H
 #define MM_VIRT_UVM_H
 
-#include <mm/virt/paging.h>
+/* User stack: one page is mapped eagerly by exec; the rest grow on demand.
+ *
+ *   0x50000000  ← USTACK_BASE  (lowest page mapped initially)
+ *   0x50001000  ← USTACK_TOP   (initial RSP = TOP - 16)
+ *
+ * The stack grows DOWN.  On every not-present write below USTACK_BASE the
+ * page-fault handler maps a new page, down to USTACK_LIMIT (64 pages = 256 KB).
+ */
+#define USTACK_BASE   0x50000000ULL          /* VA of the eagerly-mapped page  */
+#define USTACK_TOP    (USTACK_BASE + 0x1000ULL)  /* initial RSP anchor         */
+#define USTACK_PAGES  64ULL                  /* maximum stack pages            */
+#define USTACK_LIMIT  (USTACK_BASE - (USTACK_PAGES - 1ULL) * 0x1000ULL)
 
-/* Highest user-stack address (exclusive): initial ESP starts here. */
-#define USER_STACK_TOP    0xB0001000u
-
-/* The single page mapped eagerly by exec_run — [USER_STACK_INIT, TOP). */
-#define USER_STACK_INIT   0xB0000000u
-
-/* Maximum stack size in pages (256 KB) and the resulting low limit. */
-#define USER_STACK_PAGES  64u
-#define USER_STACK_LIMIT  (USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE)
-
-/* Heap (brk) grows UP from the end of the ELF image; the break may not
-   pass this ceiling (well below the stack region). */
-#define USER_HEAP_MAX     0xA0000000u
+/* Heap (brk) grows UP from the end of the ELF image. */
+#define USER_HEAP_MAX  0x40000000ULL
 
 #endif /* MM_VIRT_UVM_H */

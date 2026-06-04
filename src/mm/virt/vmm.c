@@ -11,9 +11,11 @@
  * can be fully private to each user process.
  */
 #include <mm/virt/vmm.h>
+#include <mm/virt/uvm.h>
 #include <mm/phys/pmm.h>
 #include <drivers/serial.h>
 #include <kernel/isr/isr.h>
+#include <proc/scheduler.h>
 
 void serial_write_hex64(uint64_t v);
 
@@ -21,7 +23,6 @@ void serial_write_hex64(uint64_t v);
 #define ENTRIES        512
 #define MAP_2M         (2ULL * 1024 * 1024)
 #define IDENTITY_MB    128
-#define PHYSMAP_BASE   0xFFFF800000000000ULL
 #define PML4_PHYSMAP   256
 #define PML4_KERNEL    511
 
@@ -253,21 +254,45 @@ void vmm_page_fault_handler(isr_frame_t* frame) {
 
     uint64_t ec = frame->error_code;
 
-    /* Only handle write faults on present pages in a user address space. */
+    /* ── Demand-paged stack growth ──────────────────────────────────────────
+     * Condition: not-present fault (P=0, bit 0 clear) in user space, VA falls
+     * between the current stack low and the hard stack limit.
+     * We allocate a zeroed frame, map it, and lower stack_low.
+     */
+    if (!(ec & 0x1) && cr3 && cr3 != g_kernel_pml4) {
+        process_t* cur = scheduler_current();
+        uint64_t page_va = va & ~0xFFFULL;
+        if (cur && cur->stack_low > USTACK_LIMIT && page_va < cur->stack_low
+                && page_va >= USTACK_LIMIT) {
+            uint64_t frame = pmm_alloc_frame();
+            if (!frame) {
+                serial_write((const uint8_t*)"\n[noxis64] OOM on stack growth\n");
+                goto panic;
+            }
+            /* Zero the new stack page (C assumes zero-initialised stack frames). */
+            uint8_t* p = (uint8_t*)(PHYSMAP_BASE + frame);
+            for (int i = 0; i < 4096; i++) p[i] = 0;
+            vmm_map_page_into(cr3, page_va, frame, PAGE_RW | PAGE_USER);
+            cur->stack_low = page_va;
+            return;
+        }
+    }
+
+    /* ── CoW fault: write to a present-but-read-only CoW page ──────────── */
     if ((ec & 0x3) == 0x3 && cr3 && cr3 != g_kernel_pml4) {
         /* Walk the page tables for this VA. */
         uint64_t i4 = (va >> 39) & 0x1FF, i3 = (va >> 30) & 0x1FF;
         uint64_t i2 = (va >> 21) & 0x1FF, i1 = (va >> 12) & 0x1FF;
 
         uint64_t* pml4 = as_table(cr3);
-        if (!(pml4[i4] & PAGE_PRESENT)) goto not_cow;
+        if (!(pml4[i4] & PAGE_PRESENT)) goto panic;
         uint64_t* pdpt = as_table(pml4[i4] & ~0xFFFULL);
-        if (!(pdpt[i3] & PAGE_PRESENT)) goto not_cow;
+        if (!(pdpt[i3] & PAGE_PRESENT)) goto panic;
         uint64_t* pd   = as_table(pdpt[i3] & ~0xFFFULL);
-        if (!(pd[i2] & PAGE_PRESENT) || (pd[i2] & PAGE_PS)) goto not_cow;
+        if (!(pd[i2] & PAGE_PRESENT) || (pd[i2] & PAGE_PS)) goto panic;
         uint64_t* pt   = as_table(pd[i2] & ~0xFFFULL);
         uint64_t  pte  = pt[i1];
-        if (!(pte & PAGE_PRESENT) || !(pte & PAGE_COW)) goto not_cow;
+        if (!(pte & PAGE_PRESENT) || !(pte & PAGE_COW)) goto panic;
 
         uint64_t old_phys = pte & ~0xFFFULL;
         uint64_t flags    = (pte & 0xFFF) & ~PAGE_COW;   /* strip CoW bit */
@@ -278,7 +303,7 @@ void vmm_page_fault_handler(isr_frame_t* frame) {
         } else {
             /* Shared — allocate a private copy. */
             uint64_t new_phys = pmm_alloc_frame();
-            if (!new_phys) goto not_cow;   /* OOM → treat as fatal */
+            if (!new_phys) goto panic;   /* OOM → treat as fatal */
             uint8_t* src = (uint8_t*)(PHYSMAP_BASE + old_phys);
             uint8_t* dst = (uint8_t*)(PHYSMAP_BASE + new_phys);
             for (int b = 0; b < 4096; b++) dst[b] = src[b];
@@ -289,7 +314,7 @@ void vmm_page_fault_handler(isr_frame_t* frame) {
         return;   /* resume the faulting instruction */
     }
 
-not_cow:
+panic:
     serial_write((const uint8_t*)"\n[noxis64] PAGE FAULT  err=");
     serial_write_hex64(ec);
     serial_write((const uint8_t*)"  cr2="); serial_write_hex64(va);
