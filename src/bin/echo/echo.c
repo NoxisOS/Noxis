@@ -1,8 +1,8 @@
 /**
- * @file    src/userland/echo.c
+ * @file    src/bin/echo/echo.c
  * @brief   echo — prints its arguments separated by spaces.
  */
-#include "../noxlib/noxlib.h"
+#include "../../lib/noxlib/noxlib.h"
 
 int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {

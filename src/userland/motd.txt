@@ -1,2 +1,0 @@
-Welcome to Noxis OS (x86_64).
-This text was read from /motd.txt through open()/read()/close().

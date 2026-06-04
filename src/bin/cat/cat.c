@@ -1,8 +1,8 @@
 /**
- * @file    src/userland/cat.c
+ * @file    src/bin/cat/cat.c
  * @brief   cat — prints the contents of the file named in argv[1].
  */
-#include "../noxlib/noxlib.h"
+#include "../../lib/noxlib/noxlib.h"
 
 int main(int argc, char** argv) {
     char b[256];

@@ -1,5 +1,5 @@
 /**
- * @file    src/noxlib/noxlib.h
+ * @file    src/lib/noxlib/noxlib.h
  * @brief   Minimal 64-bit userland C runtime (syscall wrappers + helpers).
  */
 #ifndef NOXLIB_H

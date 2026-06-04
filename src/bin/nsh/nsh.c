@@ -1,11 +1,11 @@
 /**
- * @file    src/userland/nsh.c
+ * @file    src/bin/nsh/nsh.c
  * @brief   Noxis shell — reads a line, tokenizes it, fork+execs the command.
  *
  * Built-ins: exit, help.  Everything else is launched as an external program
- * (e.g. "ls.elf", "echo.elf hi", "cat.elf motd.txt").
+ * (e.g. "ls.elf", "echo.elf hi", "cat.elf out.txt").
  */
-#include "../noxlib/noxlib.h"
+#include "../../lib/noxlib/noxlib.h"
 
 #define MAX_ARGS 32
 
@@ -92,19 +92,6 @@ int main(int argc, char** argv) {
     (void)argc; (void)argv;
     puts("\nnsh \xe2\x80\x94 Noxis shell (ring 3). builtins: exit, help.\n");
 
-    /* Startup self-test so behaviour is visible without keyboard input,
-       including a redirection: write echo output to a file, then cat it. */
-    { char* a[] = { "ls.elf", 0 };                            run(a, 0, 0, 0); }
-    { char* a[] = { "echo.elf", "hello", "from", "nsh", 0 };   run(a, 0, 0, 0); }
-    { char* a[] = { "echo.elf", "written", "via", ">", 0 };    run(a, 0, "out.txt", 0); }
-    { char* a[] = { "cat.elf", "out.txt", 0 };                 run(a, 0, 0, 0); }
-    /* pipe demo: ls.elf | cat.elf */
-    { char* l[] = { "ls.elf", 0 }; char* r[] = { "cat.elf", 0 }; run_pipe(l, r); }
-    /* signal demo */
-    { char* a[] = { "sigtest.elf", 0 }; run(a, 0, 0, 0); }
-    /* process listing (/proc-style) */
-    { char* a[] = { "ps.elf", 0 }; run(a, 0, 0, 0); }
-
     char  line[256];
     char* av[MAX_ARGS];
     char* rav[MAX_ARGS];
@@ -129,7 +116,7 @@ int main(int argc, char** argv) {
         if (ac == 0) continue;
         if (strcmp(av[0], "exit") == 0) { puts("bye!\n"); return 0; }
         if (strcmp(av[0], "help") == 0) {
-            puts("builtins: exit, help. external: ls.elf echo.elf cat.elf\n");
+            puts("builtins: exit, help. external: ls.elf echo.elf cat.elf ps.elf\n");
             puts("redirection: cmd > file, cmd >> file, cmd < file\n");
             continue;
         }

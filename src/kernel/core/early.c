@@ -33,7 +33,6 @@ os_status_t syscall_init(void);
 extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
 uint64_t elf64_load(const uint8_t* img);
 uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
-extern uint8_t hello_elf_start[], hello_elf_end[];
 
 #define USTACK_VA  0x50000000ULL   /* user stack page (outside identity map) */
 
@@ -153,18 +152,14 @@ void kernel_main(void) {
     uint64_t uas = vmm_create_address_space();
     serial_write_hex64(uas); serial_write((const uint8_t*)"\n");
 
-    /* Load the init program (nsh.elf) from the NoxFS disk; fall back to the
-       embedded hello.elf if the shell is missing. */
+    /* Load the init program (nsh.elf) from the NoxFS disk. */
     serial_write((const uint8_t*)"[noxis64] exec /nsh.elf from disk ... ");
-    uint64_t entry = 0;
     vfs_file_t* prog = vfs_lookup((const uint8_t*)"nsh.elf");
-    if (prog && prog->data) {
-        entry = elf64_load_into(uas, prog->data);
-        serial_write((const uint8_t*)"(from NoxFS) ");
-    } else {
-        entry = elf64_load_into(uas, hello_elf_start);
-        serial_write((const uint8_t*)"(embedded fallback) ");
+    if (!prog || !prog->data) {
+        serial_write((const uint8_t*)"FAIL (nsh.elf not found)\n");
+        for (;;) __asm__ __volatile__("cli; hlt");
     }
+    uint64_t entry = elf64_load_into(uas, prog->data);
     serial_write((const uint8_t*)"entry="); serial_write_hex64(entry);
     serial_write((const uint8_t*)"\n");
 
