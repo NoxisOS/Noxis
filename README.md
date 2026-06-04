@@ -5,17 +5,18 @@
 <br/>
 
 <h1>Noxis OS</h1>
-<p><strong>A 32-bit hobby kernel built from scratch</strong></p>
+<p><strong>A 64-bit hobby kernel built from scratch</strong></p>
 
 <p>
-<a href="docs/ARCHITECTURE.md"><strong>Architecture</strong></a> ·
-<a href="docs/MEMORY_LAYOUT.md"><strong>Memory Layout</strong></a> ·
-<a href="docs/CONVENTIONS.md"><strong>Conventions</strong></a>
+<a href="../../wiki/Architecture-Overview"><strong>Architecture</strong></a> ·
+<a href="../../wiki/Memory-Management"><strong>Memory</strong></a> ·
+<a href="../../wiki/Syscall-Reference"><strong>Syscalls</strong></a> ·
+<a href="../../wiki"><strong>Wiki</strong></a>
 </p>
 
 <div>
 <img src="https://img.shields.io/badge/Language-C11%20%2B%20NASM-blue?style=for-the-badge&logo=c" alt="Language"/>
-<img src="https://img.shields.io/badge/Architecture-x86%2032--bit-orange?style=for-the-badge&logo=intel" alt="Architecture"/>
+<img src="https://img.shields.io/badge/Architecture-x86__64-orange?style=for-the-badge&logo=intel" alt="Architecture"/>
 <img src="https://img.shields.io/badge/Kernel-Monolithic-green?style=for-the-badge" alt="Kernel Type"/>
 <img src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey?style=for-the-badge" alt="License"/>
 </div>
@@ -24,28 +25,28 @@
 
 ---
 
-> No external libraries. No GRUB. No shortcuts.  
-> Every byte — from the MBR to the shell — written by hand.
+> No external libraries. No GRUB. No shortcuts.
+> Every byte — from the boot sector to the shell — written by hand.
 
 ---
 
 ## ⚡ Quick Start
 
-Requires an `i686-elf` cross-compiler. See [`.opencode/skills/cross-compiler.md`](.opencode/skills/cross-compiler.md).
+Requires an `x86_64-elf` cross-compiler and NASM + QEMU. See [Cross-Compiler Setup](../../wiki/Cross-Compiler-Setup).
 
 ```bash
-make              # build kernel + userland
+make              # build kernel + userland + disk images
 make run          # QEMU — VGA window + serial on stdout
 make run-headless # QEMU — serial only, no window
-make run-debug    # QEMU + GDB stub on :1234
 ```
 
 ---
 
 ## What is Noxis?
 
-Noxis is a monolithic 32-bit operating system written entirely in **C11** and **NASM assembly** — no libc, no GRUB, no borrowed code.  
-It boots from a custom two-stage MBR bootloader, transitions to protected mode, maps the kernel to the higher half, and launches a Unix-like shell as PID 1.
+Noxis is a monolithic **64-bit** operating system written entirely in **C11** and **NASM assembly** — no libc, no GRUB, no borrowed code.
+
+A hand-written 512-byte boot sector takes the CPU from real mode through protected mode into **x86-64 long mode**, builds 4-level paging, and jumps to a **higher-half kernel**. The kernel brings up the platform, then launches a Unix-like shell (`nsh`) as a ring-3 user process. From there you get real **preemptive multitasking** with **per-process address spaces**, `fork`/`exec`/`wait`, pipes, signals, and file descriptors.
 
 ---
 
@@ -53,13 +54,14 @@ It boots from a custom two-stage MBR bootloader, transitions to protected mode, 
 
 | Item | Value |
 |---|---|
-| Language | C11 (freestanding) + NASM x86 |
-| Target | `i686-elf`, 32-bit protected mode + paging |
-| Kernel type | Monolithic, strict layered (no upward deps) |
-| Kernel base | `0xC0100000` (higher-half) |
-| User space | `0x00400000` – `0xBFFFFFFF` (3 GB) |
-| Kernel stack | 8 KB per process |
-| Toolchain | `i686-elf-gcc` + `i686-elf-ld` |
+| Language | C11 (freestanding) + NASM x86-64 |
+| Target | `x86_64-elf`, long mode + 4-level paging |
+| Kernel type | Monolithic, layered |
+| Kernel base | `0xFFFFFFFF80010000` (higher-half) |
+| Physmap | all RAM at `0xFFFF800000000000` |
+| User space | private `PML4[0]` per process |
+| Syscall ABI | `syscall` / `sysret` (SysV-style) |
+| Toolchain | `x86_64-elf-gcc` + `x86_64-elf-ld` + `nasm` |
 
 ---
 
@@ -68,202 +70,178 @@ It boots from a custom two-stage MBR bootloader, transitions to protected mode, 
 <details open>
 <summary><strong>🥾 Boot</strong></summary>
 
-- Custom two-stage bootloader (MBR + Stage 2) in NASM — no GRUB
-- A20 line enable, real mode → protected mode transition
-- Kernel loaded at 1 MB, higher-half mapped to `0xC0000000`
-- Serial boot log on COM1 (`-serial stdio`) for headless debugging
+- Hand-written 512-byte boot sector in NASM — no GRUB
+- A20 enable, real mode → protected mode → **long mode**
+- Builds initial 4-level page tables (identity + higher-half), loads the kernel via INT 13h LBA
+- Low→high trampoline into the higher-half kernel; serial boot log on COM1
 
 </details>
 
 <details open>
 <summary><strong>🔧 HAL</strong></summary>
 
-- GDT with kernel/user segments + TSS for ring-0 stack switching
-- IDT — 256 gates: exceptions (0–31), IRQs (32–47), syscall `int 0x80` (128)
-- 8259A PIC remapped to IRQ 32–47
-- PIT channel 0 at 1 kHz — `pit_uptime_ms()`, preemption clock
-- x87 FPU with lazy context switching (`#NM` fault-driven save/restore)
+- 64-bit **GDT** (kernel/user code+data) + **TSS** (`rsp0` for ring-3 → ring-0)
+- 64-bit **IDT** — 16-byte gates, 32 exceptions + 16 IRQs
+- 8259A **PIC** remapped to vectors 32–47 (EOI before dispatch)
+- **PIT** channel 0 at 1 kHz — uptime + preemption clock
+- **x87 / SSE** brought up (CR0/CR4)
 
 </details>
 
 <details open>
 <summary><strong>🧠 Memory Management</strong></summary>
 
-- **PMM** — bitmap allocator over all detected RAM
-- **VMM** — two-level page directory/table, recursive mapping
-- **Demand paging** — `#PF` handler grows user stack and heap on first touch
-- **Copy-on-write fork** — pages shared read-only, private copy on first write
-- **Kernel heap** — first-fit `kmalloc`/`kfree` with coalescing at `0xC0400000`
-- **Slab caches** — typed pools for `process_t`, `pipe_t` — O(1) alloc/free, use-after-free detection (`0xDEADC0DE` poison)
-- **Per-process arenas** — bump allocator tied to process lifetime, `O(1)` alloc, freed in one shot on exit
-- **Tagged allocations** — every heap allocation attributed to a subsystem; `memstat` prints per-module breakdown
-
-Live memory heatmap — `cat /proc/memmap` renders the PMM bitmap as a 64×16 colour grid:
-
-```
-dim grey = free   red = kernel   green = user   magenta = CoW shared
-```
+- **PMM** — bitmap frame allocator over detected RAM
+- **VMM** — 4-level paging (PML4/PDPT/PD/PT), 2 MB pages for the maps
+- **Physmap** — all physical RAM mapped at `0xFFFF800000000000`, so the kernel reaches any frame without a low identity map
+- **Per-process address spaces** — `PML4[0]` is private per process; physmap (`[256]`) and kernel (`[511]`) are shared
+- **Kernel heap** — first-fit `kmalloc`/`kfree` with coalescing, living behind the physmap
+- **Slab** + per-process **arena** allocators
 
 </details>
 
 <details open>
 <summary><strong>💽 Drivers</strong></summary>
 
-- VGA 80×25 text mode — putchar, scrolling, 16 colours, CP437
-- PS/2 keyboard — scancode → ASCII, buffered input
-- 16550 UART serial (COM1) — polling TX, kernel debug output
-- ATA PIO — sector read/write for the disk filesystem
+- VGA 80×25 text mode — putchar, scrolling, 16 colours, CP437 (reached via the physmap)
+- PS/2 keyboard — scancode → ASCII, ring buffer, **canonical line editing** (echo + backspace)
+- 16550 UART serial (COM1) — kernel debug log
+- ATA PIO — sector read/write
 - Generic block device layer + buffer cache
-- **TTY** — canonical/raw mode, echo, line editing, Ctrl+C / Ctrl+D
 
 </details>
 
 <details open>
 <summary><strong>📂 Filesystem</strong></summary>
 
-- **VFS** — unified fd interface: `open` / `read` / `write` / `close` / `lseek` / `stat`
-- **NoxFS v2** — inode-based on-disk FS with `mkdir`, `readdir`, `stat`, `unlink`, `rename`
-- **SynFS** — synthetic procfs/devtmpfs-style backend, content generated live:
-
-| Path | Content |
-|---|---|
-| `/proc/meminfo` | Physical + heap memory breakdown |
-| `/proc/slab` | Slab cache live/free/peak counts |
-| `/proc/sched` | Process table (pid, state, name) |
-| `/proc/uptime` | Seconds since boot |
-| `/proc/memmap` | Physical memory heatmap |
-| `/dev/null` `/dev/zero` `/dev/random` | Classic devices |
-| `/dev/keymap` | Write to switch keyboard layout |
-
-- **Pipes** — anonymous, blocking, refcounted, inherited by `fork`
+- **VFS** — file abstraction backing the fd layer
+- **NoxFS** — inode-based on-disk filesystem (superblock, bitmaps, inode table, directory entries); read **and** write
+- **Per-process fd table** — `open` / `close` / `read` / `write` / `lseek` / `dup` / `dup2`, with stdin/stdout/stderr wired to the console
+- **Pipes** — anonymous, blocking, refcounted, inherited across `fork`
 
 </details>
 
 <details open>
 <summary><strong>⚙️ Processes & Scheduling</strong></summary>
 
-- `fork` — full address-space copy via `vmm_fork_pd` + CoW
-- `execve` — load flat ELF32 into a fresh address space
-- `exit` / `waitpid` — zombie collection, exit code, SIGCHLD, WNOHANG
-- **Round-robin preemptive scheduler** — PIT IRQ0, configurable quantum
-- Ring-3 user mode — `iret` into CPL=3 with isolated address space
+- `fork` — full copy of the user address space; child resumes with `rax = 0`
+- `exec` — load an ELF64 into a fresh address space, with `argv` on the user stack
+- `exit` / `waitpid` — zombie collection + exit status; `getpid`
+- **Preemptive round-robin scheduler** — PIT-driven, switches CR3 + `TSS.rsp0` per process
+- Ring-3 user mode in **isolated address spaces**; ring-0 kernel threads run alongside
+- `ps` lists live processes via a `procinfo` syscall
 
 </details>
 
 <details open>
 <summary><strong>📡 Signals</strong></summary>
 
-| Signal | Status |
-|---|---|
-| `SIGINT` (Ctrl+C) | ✅ kills foreground child, shell survives |
-| `SIGTERM` `SIGKILL` `SIGSEGV` `SIGILL` `SIGFPE` `SIGBUS` `SIGABRT` | ✅ default action (terminate) |
-| `SIGCHLD` | ✅ sent to parent on child exit |
-| Custom handlers via `signal()` / `sigaction()` | ✅ full save/restore via `sig_ucontext_t` |
-| `sigreturn` trampoline | ✅ restores all registers + EFLAGS |
-| `sigprocmask` | ✅ |
-| Process groups / job control | ❌ not yet |
+- `signal(sig, handler)` installs a user handler (inherited across `fork`)
+- `kill(pid, sig)` marks a signal pending; delivered at the target's next syscall return
+- User handlers run on the user stack (original RIP pushed so the handler `ret`s back), signo in `rdi`
+- Default action terminates the process for `SIGINT` / `SIGTERM` / `SIGKILL`
 
 </details>
 
 <details open>
 <summary><strong>🔌 Syscall Interface</strong></summary>
 
-Both `int 0x80` and `sysenter`/`sysexit` fast path supported — **30 syscalls**:
+`syscall` / `sysret` fast path (SysV-style: `rax` = number, args in `rdi`, `rsi`, `rdx`). The entry stub captures the full user register frame so `fork` can clone it.
 
 | # | Name | # | Name | # | Name |
 |---|---|---|---|---|---|
-| 0 | `exit` | 10 | `sigaction` | 20 | `brk` |
-| 1 | `write` | 11 | `kill` | 21 | `getppid` |
-| 2 | `read` | 12 | `getpid` | 22 | `getuid` |
-| 3 | `open` | 13 | `ioctl` | 23 | `time` |
-| 4 | `close` | 14 | `mkdir` | 24 | `dup2` |
-| 5 | `fork` | 15 | `chdir` | 25 | `sleep` |
-| 6 | `waitpid` | 16 | `getdents` | 26 | `sigreturn` |
-| 7 | `creat` | 17 | `stat` | 27 | `sigprocmask` |
-| 8 | `pipe` | 18 | `lseek` | 28 | `unlink` |
-| 9 | `dup` | 19 | `execve` | 29 | `rename` |
+| 0 | `exit` | 6 | `waitpid` | 12 | `dup2` |
+| 1 | `write` | 7 | `open` | 13 | `pipe` |
+| 2 | `read` | 8 | `close` | 14 | `kill` |
+| 3 | `fork` | 9 | `lseek` | 15 | `signal` |
+| 4 | `exec` | 10 | `readdir` | 16 | `procinfo` |
+| 5 | `getpid` | 11 | `dup` | | |
 
 </details>
 
 <details open>
 <summary><strong>🐚 nsh — The Shell</strong></summary>
 
-There is no in-kernel shell. `nsh` is a ring-3 user process launched by the kernel as PID 1.
+There is no in-kernel shell. `nsh` is a ring-3 user process launched by the kernel as the init program. It tokenizes a line and `fork`+`exec`s external programs.
 
 ```
-nsh / > ls
-  /etc/
-  /proc/
-  /dev/
-  nsh.elf
-  ctest.elf
+nsh$ ls.elf
+nsh.elf
+hello.elf
+echo.elf
+cat.elf
+ls.elf
+ps.elf
+motd.txt
 
-nsh / > cat /proc/sched
-PID  STATE    NAME
-1    running  nsh.elf
-
-nsh / > echo hello | cat
-hello
+nsh$ ls.elf | cat.elf
+nsh$ echo.elf written to a file > out.txt
+nsh$ cat.elf out.txt
+written to a file
 ```
 
-Features:
-- Pipelines: `cmd1 | cmd2 | cmd3`
+- Pipelines: `cmd1 | cmd2`
 - Redirections: `>`, `>>`, `<`
-- Background jobs: `cmd &`
-- `$?` expansion
-- Tab completion
-- Builtins: `cd`, `pwd`, `ls`, `cat`, `rm`, `cp`, `mv`, `mkdir`, `echo`, `clear`, `keymap`, `exit`, `help`
+- Built-ins: `exit`, `help`
+- External programs on the NoxFS disk: `ls`, `echo`, `cat`, `ps`, `sigtest`, `hello`
 
 </details>
 
 <details open>
 <summary><strong>📦 noxlib — User-space C Runtime</strong></summary>
 
-A minimal libc written from scratch, linked into every userland ELF:
+A minimal runtime linked into every userland ELF (`src/noxlib/`):
 
-- `crt0.asm` — `_start` → `main()` → `exit()`
-- `stdio.h` — `printf`, `snprintf`, `vprintf`, `puts`, `putchar`, `fgets`
-- `stdlib.h` — `malloc`/`free`, `exit`, `atoi`, `strtol`
-- `string.h` — `strlen`, `strcpy`, `strcmp`, `memcpy`, `memset`…
-- `signal.h` — `signal()`, `raise()`, `sigprocmask()`
-- `unistd.h` — all 30 syscall wrappers
+- `crt0.asm` — `_start` reads `argc`/`argv` off the stack, calls `main`, then `exit`s with its return value
+- Inline syscall wrappers: `write`, `read`, `open`, `close`, `lseek`, `dup`/`dup2`, `pipe`, `fork`, `execv`, `waitpid`, `getpid`, `kill`, `signal`, `readdir`, `procinfo`
+- Helpers: `puts`, `puti`, `strlen`, `strcmp`
 
 </details>
 
 ---
 
-## Kernel Panic
-
-When the kernel hits an unrecoverable error it displays a full crash screen:
+## Project layout
 
 ```
-*** KERNEL PANIC ***
-
-  Page Fault (kernel mode)
-
-  EAX=0x00000000  ECX=0x00000000  EDX=0x00000000
-  EBX=0x00000000  ESI=0x00000000  EDI=0x00000000
-  EBP=0xC03FFEF0  ESP=0xC03FFE80
-  EIP=0xC0101234  ERR=0x00000002  CR2=0xDEADBEEF
-  VEC=14
-
-Stack trace:
-  #0  0xC010ABCD
-  #1  0xC010EF01
-
-System halted. Please reboot.
+src/
+├── boot/        boot sector + low→high kernel entry
+├── kernel/
+│   ├── core/    kernel_main bring-up
+│   ├── hal/     gdt, idt, pic, fpu
+│   ├── isr/     interrupt stubs + dispatcher
+│   └── syscall/ syscall/sysret entry + dispatcher
+├── mm/          pmm, vmm (physmap + address spaces), heap, slab, arena
+├── proc/        process, scheduler, fork/exec/wait, fd table, pipes, signals, ELF loader
+├── drivers/     vga, kbd, serial, pit, ata, block, keymap
+├── fs/          noxfs (on-disk) + vfs + buffer cache
+├── noxlib/      user-space C runtime (crt0 + syscall wrappers)
+└── userland/    nsh + coreutils (ls, echo, cat, ps, …)
 ```
+
+---
+
+## Status
+
+This is the **x86-64 port**. The foundation — long mode, higher-half kernel, per-process address spaces, preemptive scheduling, `fork`/`exec`/`wait`, fd table, pipes, signals, and a fork/exec shell — is in place and boots to an interactive prompt.
+
+Not yet ported / planned: copy-on-write fork, demand paging, a mounted synthetic FS (`/proc`, `/dev` as paths), full `termios` (raw mode, `Ctrl-C` → `SIGINT`), `cd`/cwd + path resolution, and reclaiming a dead process's memory.
 
 ---
 
 ## Documentation
 
-| Document | Purpose |
+The full documentation lives in the [**Wiki**](../../wiki):
+
+| Page | Purpose |
 |---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Subsystem map, dependency graph |
-| [`docs/MEMORY_LAYOUT.md`](docs/MEMORY_LAYOUT.md) | Physical + virtual memory maps |
-| [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | Coding style |
-| [`docs/COMMIT_CONVENTIONS.md`](docs/COMMIT_CONVENTIONS.md) | Git commit format |
+| [Architecture Overview](../../wiki/Architecture-Overview) | Subsystem map |
+| [Boot Process](../../wiki/Boot-Process) | Real → long mode, higher half |
+| [Memory Management](../../wiki/Memory-Management) | PMM, VMM, physmap, heap |
+| [Processes and Scheduling](../../wiki/Processes-and-Scheduling) | fork/exec/wait, scheduler |
+| [Syscall Reference](../../wiki/Syscall-Reference) | The full syscall table |
+| [Filesystem](../../wiki/Filesystem) | NoxFS, VFS, fds, pipes |
+| [nsh — The Shell](../../wiki/nsh-—-The-Shell) | Shell usage |
+| [Building from Source](../../wiki/Building-from-Source) | Toolchain + build |
 
 ---
 
