@@ -15,13 +15,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Cache the i686-elf cross-compiler ──────────────────────
+      # ── Cache the x86_64-elf cross-compiler ────────────────────
       - name: Cache cross-compiler
         id: cache-cross
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/cross
-          key: i686-elf-gcc13-binutils241-v1
+          key: x86_64-elf-gcc13-binutils241-v1
 
       # ── Install build dependencies ──────────────────────────────
       - name: Install host dependencies
@@ -32,11 +32,11 @@ jobs:
             libgmp-dev libmpc-dev libmpfr-dev texinfo wget python3
 
       # ── Build the cross-compiler (only when not cached) ─────────
-      - name: Build i686-elf cross-compiler
+      - name: Build x86_64-elf cross-compiler
         if: steps.cache-cross.outputs.cache-hit != 'true'
         run: |
           export PREFIX="${{ github.workspace }}/cross"
-          export TARGET=i686-elf
+          export TARGET=x86_64-elf
           export PATH="$PREFIX/bin:$PATH"
           mkdir -p "$PREFIX"
 
@@ -53,7 +53,7 @@ jobs:
           make install
           cd /tmp
 
-          # gcc 13.2.0 (C only)
+          # gcc 13.2.0 (C only). -mno-red-zone in libgcc to match the kernel ABI.
           wget -q https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz
           tar -xf gcc-13.2.0.tar.xz
           mkdir build-gcc && cd build-gcc
@@ -72,13 +72,13 @@ jobs:
       # ── Verify toolchain ────────────────────────────────────────
       - name: Verify toolchain
         run: |
-          i686-elf-gcc --version
-          i686-elf-ld --version
+          x86_64-elf-gcc --version
+          x86_64-elf-ld --version
           nasm --version
 
-      # ── Make the shell scripts executable ───────────────────────
+      # ── Make the disk builder executable ────────────────────────
       - name: Set script permissions
-        run: chmod +x tools/linux/build_floppy.sh tools/linux/build_disk.sh
+        run: chmod +x tools/linux/build_disk.sh
 
       # ── Build ───────────────────────────────────────────────────
       - name: Build
