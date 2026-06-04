@@ -47,6 +47,11 @@ int64_t sys_fork(syscall_frame_t* f) {
     child->cwd_ino   = parent->cwd_ino;
     child->brk       = parent->brk;
     for (int i = 0; i < 128; i++) child->cwd_path[i] = parent->cwd_path[i];
+    /* Inherit environment */
+    child->envc = parent->envc;
+    for (int i = 0; i < ENV_MAX; i++)
+        for (int j = 0; j < ENV_SLOT; j++)
+            child->env[i][j] = parent->env[i][j];
     for (int i = 0; i < PROC_MAX_FDS; i++) {
         child->fds[i] = parent->fds[i];
         if (fd_is_pipe(child->fds[i].kind))      /* extra reference per end */
@@ -163,6 +168,93 @@ void sys_sleep(uint32_t ms) {
 
 /* uptime(): return milliseconds since boot. */
 uint64_t sys_uptime(void) { return (uint64_t)pit_uptime_ms(); }
+
+/* ── Environment variables ─────────────────────────────────────────────── */
+
+/* getenv(key, buf, bufsz): copy value of KEY into buf.
+ * Returns value length, or -1 if KEY not found. */
+int64_t sys_getenv(const uint8_t* key, uint8_t* buf, uint64_t bufsz) {
+    process_t* p = scheduler_current();
+    int klen = 0; while (key[klen]) klen++;
+    for (int i = 0; i < p->envc; i++) {
+        int ok = 1;
+        for (int j = 0; j < klen; j++)
+            if (p->env[i][j] != (char)key[j]) { ok = 0; break; }
+        if (!ok || p->env[i][klen] != '=') continue;
+        const char* val = p->env[i] + klen + 1;
+        int vlen = 0; while (val[vlen]) vlen++;
+        if (buf && bufsz > 0) {
+            int cp = (vlen < (int)bufsz - 1) ? vlen : (int)bufsz - 1;
+            for (int j = 0; j < cp; j++) buf[j] = (uint8_t)val[j];
+            buf[cp] = 0;
+        }
+        return (int64_t)vlen;
+    }
+    return -1;
+}
+
+/* setenv(key, val): add or overwrite KEY=VAL. Returns 0/-1. */
+int64_t sys_setenv(const uint8_t* key, const uint8_t* val) {
+    process_t* p = scheduler_current();
+    int klen = 0; while (key[klen]) klen++;
+    int vlen = 0; while (val[vlen]) vlen++;
+    if (klen + 1 + vlen + 1 > ENV_SLOT) return -1;
+
+    /* Update existing */
+    for (int i = 0; i < p->envc; i++) {
+        int ok = 1;
+        for (int j = 0; j < klen; j++)
+            if (p->env[i][j] != (char)key[j]) { ok = 0; break; }
+        if (!ok || p->env[i][klen] != '=') continue;
+        for (int j = 0; j < klen; j++) p->env[i][j] = (char)key[j];
+        p->env[i][klen] = '=';
+        for (int j = 0; j <= vlen; j++) p->env[i][klen+1+j] = (char)val[j];
+        return 0;
+    }
+
+    /* Append new */
+    if (p->envc >= ENV_MAX) return -1;
+    char* s = p->env[p->envc];
+    for (int j = 0; j < klen; j++) s[j] = (char)key[j];
+    s[klen] = '=';
+    for (int j = 0; j <= vlen; j++) s[klen+1+j] = (char)val[j];
+    p->envc++;
+    return 0;
+}
+
+/* unsetenv(key): remove KEY if present. Returns 0/-1. */
+int64_t sys_unsetenv(const uint8_t* key) {
+    process_t* p = scheduler_current();
+    int klen = 0; while (key[klen]) klen++;
+    for (int i = 0; i < p->envc; i++) {
+        int ok = 1;
+        for (int j = 0; j < klen; j++)
+            if (p->env[i][j] != (char)key[j]) { ok = 0; break; }
+        if (!ok || p->env[i][klen] != '=') continue;
+        for (int j = i; j < p->envc - 1; j++) {
+            for (int k = 0; k < ENV_SLOT; k++)
+                p->env[j][k] = p->env[j+1][k];
+        }
+        p->envc--;
+        return 0;
+    }
+    return -1;
+}
+
+/* getenv_at(idx, buf, bufsz): return the idx-th "KEY=VAL" string.
+ * Returns length or -1 if out of range.  Used by `env` builtin. */
+int64_t sys_getenv_at(uint64_t idx, uint8_t* buf, uint64_t bufsz) {
+    process_t* p = scheduler_current();
+    if ((int)idx >= p->envc) return -1;
+    const char* s = p->env[idx];
+    int len = 0; while (s[len]) len++;
+    if (buf && bufsz > 0) {
+        int cp = (len < (int)bufsz - 1) ? len : (int)bufsz - 1;
+        for (int i = 0; i < cp; i++) buf[i] = (uint8_t)s[i];
+        buf[cp] = 0;
+    }
+    return (int64_t)len;
+}
 
 /* tcgetattr / tcsetattr — copy the global console termios to/from userland.
  * `fd` is accepted for API compatibility but only the console (fd 0) is

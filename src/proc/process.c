@@ -58,6 +58,8 @@ process_t* proc_alloc(const uint8_t* name) {
 
     p->sig_pending = 0;
     for (int i = 0; i < 32; i++) p->sig_handler[i] = 0;
+    p->envc = 0;
+    for (int i = 0; i < ENV_MAX; i++) p->env[i][0] = 0;
     return p;
 }
 

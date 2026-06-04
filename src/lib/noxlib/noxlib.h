@@ -36,8 +36,12 @@ typedef long           ssize_t;
 #define SYS_RENAME    25
 #define SYS_TCGETATTR 26
 #define SYS_TCSETATTR 27
-#define SYS_SLEEP     28
-#define SYS_UPTIME    29
+#define SYS_SLEEP       28
+#define SYS_UPTIME      29
+#define SYS_GETENV      30
+#define SYS_SETENV      31
+#define SYS_UNSETENV    32
+#define SYS_GETENV_AT   33
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -192,6 +196,32 @@ static inline void sleep_ms(unsigned long ms) { _syscall3(SYS_SLEEP,(long)ms,0,0
 static inline unsigned int sleep(unsigned int sec) { sleep_ms((unsigned long)sec*1000UL); return 0; }
 static inline unsigned long uptime_ms(void) {
     return (unsigned long)_syscall3(SYS_UPTIME,0,0,0);
+}
+
+/* ── Environment variables ───────────────────────────────────────────────── */
+/* getenv(key): return pointer to static buffer, or NULL. */
+static inline const char* getenv(const char* key) {
+    static char _ge[160];
+    if (_syscall3(SYS_GETENV,(long)key,(long)_ge,sizeof(_ge)) >= 0) return _ge;
+    return (const char*)0;
+}
+/* setenv: overwrite=0 keeps existing value. */
+static inline long setenv(const char* key, const char* val, int overwrite) {
+    if (!overwrite) { char _t[8]; if(_syscall3(SYS_GETENV,(long)key,(long)_t,8)>=0)return 0; }
+    return _syscall3(SYS_SETENV,(long)key,(long)val,0);
+}
+static inline long unsetenv(const char* key) {
+    return _syscall3(SYS_UNSETENV,(long)key,0,0);
+}
+/* putenv("KEY=VAL"): parse and call setenv. */
+static inline long putenv(const char* s) {
+    char key[32]; int ki=0;
+    while(s[ki]&&s[ki]!='='&&ki<31){key[ki]=s[ki];ki++;} key[ki]=0;
+    return _syscall3(SYS_SETENV,(long)key,(long)(s[ki]=='='?s+ki+1:""),(long)0);
+}
+/* Iterate over all env vars: getenv_at(idx, buf, bufsz) returns "KEY=VAL" or -1. */
+static inline long getenv_at(long idx, char* buf, long bufsz) {
+    return _syscall3(SYS_GETENV_AT,idx,(long)buf,bufsz);
 }
 
 /* ── printf / sprintf / fprintf ─────────────────────────────────────────── */

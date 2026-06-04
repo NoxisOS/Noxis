@@ -15,14 +15,58 @@
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 
-/* Try execv(argv[0]); if it fails and name has no '.', also try name.elf */
+/* Expand $VAR references in `in` into `out` (outsize bytes). */
+static void expand_vars(const char* in, char* out, int outsize) {
+    int i = 0, o = 0;
+    while (in[i] && o < outsize - 1) {
+        if (in[i] == '$') {
+            i++;
+            char vn[32]; int vl = 0;
+            while (in[i] && (in[i]=='_'||(in[i]>='a'&&in[i]<='z')
+                             ||(in[i]>='A'&&in[i]<='Z')
+                             ||(in[i]>='0'&&in[i]<='9')) && vl < 31)
+                vn[vl++] = in[i++];
+            vn[vl] = 0;
+            if (vl > 0) {
+                const char* val = getenv(vn);
+                if (val) while (*val && o < outsize-1) out[o++] = *val++;
+            }
+        } else {
+            out[o++] = in[i++];
+        }
+    }
+    out[o] = 0;
+}
+
+/*
+ * Try execv(argv[0]); if that fails and name has no slash, also search
+ * PATH (colon-separated) and try both name and name.elf in each dir.
+ */
 static void _exec(char** argv) {
     execv(argv[0], argv);
-    int has_dot = 0;
-    for (const char* p = argv[0]; *p; p++) if (*p == '.') { has_dot = 1; break; }
-    if (!has_dot) {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "%s.elf", argv[0]);
+
+    /* If name contains '/', don't search PATH */
+    int has_slash = 0;
+    for (const char* p = argv[0]; *p; p++) if (*p == '/') { has_slash = 1; break; }
+    if (has_slash) return;
+
+    /* Always try plain .elf suffix first */
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s.elf", argv[0]);
+    execv(buf, argv);
+
+    /* Then search PATH directories */
+    const char* path = getenv("PATH");
+    if (!path) return;
+    const char* p = path;
+    while (*p) {
+        char dir[128]; int dl = 0;
+        while (*p && *p != ':' && dl < 127) dir[dl++] = *p++;
+        dir[dl] = 0; if (*p == ':') p++;
+        if (!dl) continue;
+        snprintf(buf, sizeof(buf), "%s/%s", dir, argv[0]);
+        execv(buf, argv);
+        snprintf(buf, sizeof(buf), "%s/%s.elf", dir, argv[0]);
         execv(buf, argv);
     }
 }
@@ -191,6 +235,11 @@ static char* next_line(int fd, const char* prompt, char* buf, int bufsz) {
 /* ── main ─────────────────────────────────────────────────────────────── */
 
 int main(int argc, char** argv) {
+    /* Set default environment if not already configured. */
+    setenv("PATH", "/", 0);
+    setenv("HOME", "/", 0);
+    setenv("SHELL", "nsh", 0);
+
     int script_fd = -1;
     if (argc > 1) {
         script_fd = (int)open(argv[1], O_RDONLY);
@@ -213,8 +262,12 @@ int main(int argc, char** argv) {
         snprintf(prompt, sizeof(prompt), "nsh:%s$ ", cwd);
 
         /* Get next line */
-        char* result = next_line(script_fd, prompt, line, sizeof(line));
+        char raw[256];
+        char* result = next_line(script_fd, prompt, raw, sizeof(raw));
         if (!result) break;   /* EOF (script done or Ctrl-D) */
+
+        /* Expand $VAR references */
+        expand_vars(raw, line, sizeof(line));
 
         /* Count '|' to decide execution path */
         int pipe_count = 0;
@@ -239,6 +292,31 @@ int main(int argc, char** argv) {
         /* Builtins */
         if (strcmp(av[0], "exit") == 0) { puts("bye!\n"); return 0; }
 
+        if (strcmp(av[0], "export") == 0) {
+            /* export KEY=VAL  or  export KEY (no value → empty string) */
+            for (int i = 1; i < ac; i++) {
+                char key[32]; int ki = 0;
+                while (av[i][ki] && av[i][ki] != '=' && ki < 31) {
+                    key[ki] = av[i][ki]; ki++;
+                }
+                key[ki] = 0;
+                const char* val = (av[i][ki] == '=') ? av[i] + ki + 1 : "";
+                setenv(key, val, 1);
+            }
+            continue;
+        }
+        if (strcmp(av[0], "env") == 0) {
+            char buf[160];
+            for (long idx = 0; getenv_at(idx, buf, sizeof(buf)) >= 0; idx++) {
+                puts(buf); puts("\n");
+            }
+            continue;
+        }
+        if (strcmp(av[0], "unset") == 0) {
+            for (int i = 1; i < ac; i++) unsetenv(av[i]);
+            continue;
+        }
+
         if (strcmp(av[0], "cd") == 0) {
             const char* dest = (ac > 1) ? av[1] : "/";
             if (chdir(dest) < 0) fprintf(2, "nsh: cd: %s: not found\n", dest);
@@ -254,13 +332,14 @@ int main(int argc, char** argv) {
             continue;
         }
         if (strcmp(av[0], "help") == 0) {
-            puts("builtins:  cd, pwd, time, exit, help\n");
-            puts("programs:  ls cat echo ps wc head tail grep sort mkdir rm mv\n");
+            puts("builtins:  cd, pwd, time, exit, export, env, unset, help\n");
+            puts("programs:  ls cat echo ps wc head tail grep sort cp touch mkdir rm mv\n");
             puts("           (works with or without .elf suffix)\n");
             puts("pipelines: cmd1 | cmd2 | cmd3  (up to 8 stages)\n");
             puts("redir:     > file   >> file   < file\n");
             puts("bg:        cmd &\n");
             puts("scripts:   nsh script.sh\n");
+            puts("vars:      export KEY=val   env   unset KEY   $KEY expansion\n");
             continue;
         }
 

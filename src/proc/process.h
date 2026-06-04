@@ -66,6 +66,11 @@ typedef struct process {
     fd_t             fds[PROC_MAX_FDS];/* open file descriptors           */
     uint32_t         sig_pending;     /* bitmask of pending signals      */
     uint64_t         sig_handler[32]; /* user handler VA per signal (0=default) */
+    /* Environment variables stored as "KEY=VALUE" strings. */
+#define ENV_MAX   32
+#define ENV_SLOT  160
+    char env[ENV_MAX][ENV_SLOT];      /* flat env table                  */
+    int  envc;                        /* number of entries               */
 } process_t;
 
 #define SIGINT   2

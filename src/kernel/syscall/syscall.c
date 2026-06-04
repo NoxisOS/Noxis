@@ -33,6 +33,10 @@ int64_t  sys_tcgetattr(int fd, void* out);
 int64_t  sys_tcsetattr(int fd, int when, const void* in);
 void     sys_sleep(uint32_t ms);
 uint64_t sys_uptime(void);
+int64_t  sys_getenv(const uint8_t* key, uint8_t* buf, uint64_t bufsz);
+int64_t  sys_setenv(const uint8_t* key, const uint8_t* val);
+int64_t  sys_unsetenv(const uint8_t* key);
+int64_t  sys_getenv_at(uint64_t idx, uint8_t* buf, uint64_t bufsz);
 int64_t  sys_mkdir(const uint8_t* path);
 int64_t  sys_unlink(const uint8_t* path);
 int64_t  sys_stat(const uint8_t* path, void* buf);
@@ -94,6 +98,7 @@ enum {
     SYS_MKDIR = 22, SYS_UNLINK = 23, SYS_STAT = 24, SYS_RENAME = 25,
     SYS_TCGETATTR = 26, SYS_TCSETATTR = 27,
     SYS_SLEEP = 28, SYS_UPTIME = 29,
+    SYS_GETENV = 30, SYS_SETENV = 31, SYS_UNSETENV = 32, SYS_GETENV_AT = 33,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -140,6 +145,13 @@ static void do_syscall(syscall_frame_t* f) {
                                     (int)f->rdx, (const void*)f->rsi);      return;
     case SYS_SLEEP:     sys_sleep((uint32_t)f->rdi); f->rax = 0;            return;
     case SYS_UPTIME:    f->rax = sys_uptime();                              return;
+    case SYS_GETENV:    f->rax = (uint64_t)sys_getenv((const uint8_t*)f->rdi,
+                                    (uint8_t*)f->rsi, f->rdx);             return;
+    case SYS_SETENV:    f->rax = (uint64_t)sys_setenv((const uint8_t*)f->rdi,
+                                    (const uint8_t*)f->rsi);               return;
+    case SYS_UNSETENV:  f->rax = (uint64_t)sys_unsetenv((const uint8_t*)f->rdi); return;
+    case SYS_GETENV_AT: f->rax = (uint64_t)sys_getenv_at(f->rdi,
+                                    (uint8_t*)f->rsi, f->rdx);             return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }
