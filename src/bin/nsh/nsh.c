@@ -5,7 +5,7 @@
  * Built-ins: exit, help.  Everything else is launched as an external program
  * (e.g. "ls.elf", "echo.elf hi", "cat.elf out.txt").
  */
-#include "../../lib/noxlib/noxlib.h"
+#include <lib/noxlib/noxlib.h>
 
 #define MAX_ARGS 32
 

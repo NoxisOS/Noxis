@@ -5,10 +5,11 @@
 # Usage:
 #   tools/linux/build_disk.sh <out> [name:path ...]
 #
+# The file list is passed by the Makefile (MAKE_NOXFS); this script is generic.
 # Example:
 #   tools/linux/build_disk.sh build/disk.img \
-#       ctest.elf:build/ctest.elf            \
-#       nsh.elf:build/nsh.elf
+#       nsh.elf:build/nsh.elf                \
+#       ls.elf:build/ls.elf
 
 set -e
 

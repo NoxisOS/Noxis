@@ -110,7 +110,7 @@ $(BOOT_BIN): src/boot/boot.asm
 
 # ── Userland ELF64 (C program + crt0) ───────────────────────────
 UCFLAGS = -std=c11 -ffreestanding -nostdlib -nostdinc -m64 \
-          -fno-pic -fno-stack-protector -Wall -Wextra -O2
+          -fno-pic -fno-stack-protector -Wall -Wextra -O2 -I src
 
 build/u_crt0.o: src/lib/noxlib/crt0.asm
 	@$(call MKDIRP,build)
