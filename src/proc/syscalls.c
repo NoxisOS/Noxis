@@ -6,7 +6,6 @@
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <mm/virt/vmm.h>
-#include <proc/scheduler.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/heap.h>
 #include <mm/virt/uvm.h>
@@ -41,7 +40,9 @@ int64_t sys_fork(syscall_frame_t* f) {
     if (!child) return -1;
     child->pml4      = child_pml4;
     child->parent    = parent;
-    child->stack_low = parent->stack_low;  /* child inherits parent's stack depth */
+    child->stack_low = parent->stack_low;
+    child->cwd_ino   = parent->cwd_ino;
+    for (int i = 0; i < 128; i++) child->cwd_path[i] = parent->cwd_path[i];
     for (int i = 0; i < PROC_MAX_FDS; i++) {
         child->fds[i] = parent->fds[i];
         if (fd_is_pipe(child->fds[i].kind))      /* extra reference per end */
@@ -117,7 +118,11 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
     vmm_switch(nas);                   /* kernel half is shared, frame stays valid */
     vmm_free_user_space(old_pml4);     /* reclaim old pages now that we've switched */
 
-    cur->stack_low = USTACK_BASE;      /* one page mapped; rest demand-paged */
+    cur->stack_low = USTACK_BASE;
+    if (cur->cwd_ino == 0) {           /* first exec: inherit root as cwd */
+        cur->cwd_ino = vfs_root_ino();
+        cur->cwd_path[0] = '/'; cur->cwd_path[1] = 0;
+    }
     f->rip    = entry;
     f->ursp   = USTACK_BASE + off;
     f->rflags = 0x202;                 /* IF=1 */
@@ -143,6 +148,96 @@ uint64_t sys_getpid(void) { return scheduler_current()->pid; }
 
 /* setfg(pid): mark pid as the foreground process (receives Ctrl-C SIGINT). */
 void sys_setfg(uint64_t pid) { scheduler_set_fg(pid); }
+
+/* ── Path helpers ──────────────────────────────────────────────────────── */
+
+/* Resolve `rel` against `base` into `dst` (max dst_size bytes), normalising
+ * `.` / `..` and double slashes.  Result always starts with `/`. */
+static void path_resolve_str(uint8_t* dst, uint32_t dst_size,
+                              const uint8_t* base, const uint8_t* rel) {
+    uint8_t tmp[256];
+    uint32_t ti = 0;
+
+    if (rel[0] == '/') {
+        while (ti < 255 && rel[ti]) { tmp[ti] = rel[ti]; ti++; }
+    } else {
+        uint32_t bi = 0;
+        while (bi < 255 && base[bi]) { tmp[ti++] = base[bi++]; }
+        if (ti > 0 && tmp[ti - 1] != '/') tmp[ti++] = '/';
+        uint32_t ri = 0;
+        while (ti < 255 && rel[ri]) { tmp[ti++] = rel[ri++]; }
+    }
+    tmp[ti] = 0;
+
+    /* Tokenise into component stack. */
+    uint8_t  comps[16][32];
+    uint32_t clen[16];
+    int      ncomp = 0;
+    uint8_t* p = tmp;
+    while (*p) {
+        while (*p == '/') p++;
+        if (!*p) break;
+        uint8_t* start = p;
+        while (*p && *p != '/') p++;
+        uint32_t len = (uint32_t)(p - start);
+        if (!len) continue;
+        if (len == 1 && start[0] == '.') continue;
+        if (len == 2 && start[0] == '.' && start[1] == '.') {
+            if (ncomp > 0) ncomp--;
+            continue;
+        }
+        if (ncomp < 16 && len < 32) {
+            for (uint32_t i = 0; i < len; i++) comps[ncomp][i] = start[i];
+            comps[ncomp][len] = 0;
+            clen[ncomp] = len;
+            ncomp++;
+        }
+    }
+
+    /* Reconstruct canonical path. */
+    uint32_t di = 0;
+    dst[di++] = '/';
+    for (int i = 0; i < ncomp && di < dst_size - 2; i++) {
+        if (i > 0) dst[di++] = '/';
+        for (uint32_t j = 0; j < clen[i] && di < dst_size - 1; j++)
+            dst[di++] = comps[i][j];
+    }
+    dst[di] = 0;
+}
+
+/* ── cwd syscalls ──────────────────────────────────────────────────────── */
+
+int64_t sys_chdir(const uint8_t* path) {
+    if (!path || !path[0]) return -1;
+    process_t* p = scheduler_current();
+    uint32_t new_ino = vfs_resolve_ino(p->cwd_ino, path);
+    if (new_ino == (uint32_t)-1) return -1;
+    if (!vfs_is_dir(new_ino)) return -1;
+    p->cwd_ino = new_ino;
+    path_resolve_str(p->cwd_path, 128, p->cwd_path, path);
+    return 0;
+}
+
+int64_t sys_getcwd(uint8_t* buf, uint64_t size) {
+    if (!buf || size == 0) return -1;
+    process_t* p = scheduler_current();
+    uint64_t i = 0;
+    while (i < size - 1 && p->cwd_path[i]) { buf[i] = p->cwd_path[i]; i++; }
+    buf[i] = 0;
+    return (int64_t)i;
+}
+
+int64_t sys_getdents(const uint8_t* path, uint8_t* buf, uint64_t len) {
+    if (!buf || len == 0) return -1;
+    process_t* p = scheduler_current();
+    uint32_t dir_ino = vfs_resolve_ino(p->cwd_ino,
+                                       (path && path[0]) ? path
+                                                         : (const uint8_t*)".");
+    if (dir_ino == (uint32_t)-1) return -1;
+    if (!vfs_is_dir(dir_ino)) return -1;
+    uint32_t off = 0;
+    return (int64_t)vfs_getdents(dir_ino, buf, (uint32_t)len, &off);
+}
 
 /* Copy the name of the idx-th VFS entry into namebuf (<=32). Returns 1 if it
    exists, 0 past the end — lets userland `ls` enumerate the directory. */

@@ -27,6 +27,9 @@ int64_t  sys_pipe(int* fd);
 int64_t  sys_signal(int sig, uint64_t handler);
 int64_t  sys_kill(int64_t pid, int sig);
 void     sys_setfg(uint64_t pid);
+int64_t  sys_chdir(const uint8_t* path);
+int64_t  sys_getcwd(uint8_t* buf, uint64_t size);
+int64_t  sys_getdents(const uint8_t* path, uint8_t* buf, uint64_t len);
 void     deliver_signals(syscall_frame_t* f);
 
 /* file descriptors live in proc/fd.c. */
@@ -77,6 +80,7 @@ enum {
     SYS_DUP = 11, SYS_DUP2 = 12, SYS_PIPE = 13,
     SYS_KILL = 14, SYS_SIGNAL = 15, SYS_PROCINFO = 16,
     SYS_SETFG = 17,
+    SYS_CHDIR = 18, SYS_GETCWD = 19, SYS_GETDENTS = 20,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -106,6 +110,10 @@ static void do_syscall(syscall_frame_t* f) {
     case SYS_SIGNAL:  f->rax = (uint64_t)sys_signal((int)f->rdi, f->rsi);   return;
     case SYS_PROCINFO:f->rax = (uint64_t)sys_procinfo(f->rdi, (uint8_t*)f->rsi); return;
     case SYS_SETFG:   sys_setfg(f->rdi); f->rax = 0;                        return;
+    case SYS_CHDIR:   f->rax = (uint64_t)sys_chdir((const uint8_t*)f->rdi); return;
+    case SYS_GETCWD:  f->rax = (uint64_t)sys_getcwd((uint8_t*)f->rdi, f->rsi); return;
+    case SYS_GETDENTS:f->rax = (uint64_t)sys_getdents((const uint8_t*)f->rdi,
+                                  (uint8_t*)f->rsi, f->rdx);               return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

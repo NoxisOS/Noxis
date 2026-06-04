@@ -20,6 +20,11 @@ extern int32_t      noxfs_write(vfs_file_t* f, uint32_t offset,
                                 const uint8_t* data, uint32_t len);
 extern vfs_file_t*  noxfs_creat(const uint8_t* name);
 extern void         noxfs_sync(void);
+extern uint32_t     noxfs_root_ino(void);
+extern uint32_t     noxfs_resolve(uint32_t base_ino, const uint8_t* path);
+extern int32_t      noxfs_getdents(uint32_t dir_ino, uint8_t* buf,
+                                   uint32_t len, uint32_t* off);
+extern os_status_t  noxfs_stat(uint32_t ino, vfs_file_t* out);
 
 static int _use_noxfs;
 
@@ -58,4 +63,45 @@ vfs_file_t* vfs_creat(const uint8_t* name) {
 
 void vfs_sync(void) {
     if (_use_noxfs) noxfs_sync();
+}
+
+uint32_t vfs_root_ino(void) {
+    return _use_noxfs ? noxfs_root_ino() : (uint32_t)0;
+}
+
+uint32_t vfs_resolve_ino(uint32_t cwd_ino, const uint8_t* path) {
+    if (!_use_noxfs) return (uint32_t)-1;
+    return noxfs_resolve(cwd_ino, path);
+}
+
+vfs_file_t* vfs_lookup_at(uint32_t cwd_ino, const uint8_t* path) {
+    if (!_use_noxfs) return vfs_lookup(path);
+    /* Absolute path: delegate to plain lookup for cache hit */
+    if (path[0] == '/') return noxfs_lookup(path);
+    /* Relative: resolve inode first, then build a vfs_file_t via lookup */
+    uint32_t ino = noxfs_resolve(cwd_ino, path);
+    if (ino == (uint32_t)-1) return (vfs_file_t*)0;
+    /* Walk noxfs file table to find by inode */
+    for (uint32_t i = 0; i < noxfs_count(); i++) {
+        vfs_file_t* f = noxfs_entry(i);
+        if (f && f->inode == ino) return f;
+    }
+    /* Not in cache yet — resolve as a path from root for the name */
+    const uint8_t* base = path;
+    for (const uint8_t* p = path; *p; p++)
+        if (*p == '/') base = p + 1;
+    return noxfs_lookup(base);   /* fallback: look up by basename */
+}
+
+int32_t vfs_getdents(uint32_t dir_ino, uint8_t* buf,
+                     uint32_t len, uint32_t* off) {
+    if (!_use_noxfs) return -1;
+    return noxfs_getdents(dir_ino, buf, len, off);
+}
+
+int vfs_is_dir(uint32_t ino) {
+    if (!_use_noxfs) return 0;
+    vfs_file_t st;
+    if (noxfs_stat(ino, &st) != 0) return 0;
+    return (st.capacity & 0x4000u) ? 1 : 0;  /* NOXFS_INO_DIR = 0x4000 */
 }

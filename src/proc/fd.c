@@ -43,7 +43,8 @@ static fd_t* fd_get(int fd) {
 }
 
 int64_t sys_open(const uint8_t* path, int flags) {
-    vfs_file_t* f = vfs_lookup(path);
+    process_t* cur = scheduler_current();
+    vfs_file_t* f = vfs_lookup_at(cur->cwd_ino, path);
     if (!f && (flags & O_CREAT)) f = vfs_creat(path);
     if (!f) return -1;
     if (flags & O_TRUNC) f->size = 0;

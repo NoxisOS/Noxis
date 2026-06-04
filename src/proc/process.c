@@ -36,6 +36,9 @@ process_t* proc_alloc(const uint8_t* name) {
     p->uentry    = 0;
     p->ursp      = 0;
     p->stack_low = 0;           /* set by exec/fork when AS is built */
+    p->cwd_ino   = 0;           /* set to vfs_root_ino() after vfs_init */
+    p->cwd_path[0] = '/'; p->cwd_path[1] = 0;
+    for (int i = 2; i < 128; i++) p->cwd_path[i] = 0;
     p->parent = NULL;
     p->exit_code = 0;
     p->kctx_rsp  = 0;

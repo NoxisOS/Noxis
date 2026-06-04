@@ -34,4 +34,24 @@ vfs_file_t*   vfs_creat(const uint8_t* name);
 /* Flush all dirty metadata to disk. */
 void          vfs_sync(void);
 
+/* ── Path / directory helpers ─────────────────────────────────────────── */
+
+/* Root directory inode (0 if VFS not ready). */
+uint32_t      vfs_root_ino(void);
+
+/* Resolve `path` relative to `cwd_ino`; return target inode or (uint32_t)-1. */
+uint32_t      vfs_resolve_ino(uint32_t cwd_ino, const uint8_t* path);
+
+/* Like vfs_lookup but resolves `path` relative to `cwd_ino`. */
+vfs_file_t*   vfs_lookup_at(uint32_t cwd_ino, const uint8_t* path);
+
+/* Read directory entries from `dir_ino` into `buf` (len bytes).
+   `off` is updated to the next entry's byte offset.  Returns bytes placed
+   in buf, 0 at end of directory, -1 on error. */
+int32_t       vfs_getdents(uint32_t dir_ino, uint8_t* buf,
+                           uint32_t len, uint32_t* off);
+
+/* Return 1 if `ino` is a directory, 0 otherwise. */
+int           vfs_is_dir(uint32_t ino);
+
 #endif /* FS_VFS_H */

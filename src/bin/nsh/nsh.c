@@ -101,7 +101,9 @@ int main(int argc, char** argv) {
     char* rav[MAX_ARGS];
     char* in; char* out; int app;
     for (;;) {
-        puts("nsh$ ");
+        char _cwd[128];
+        getcwd(_cwd, sizeof(_cwd));
+        puts("nsh:"); puts(_cwd); puts("$ ");
         ssize_t n = read(0, line, sizeof(line) - 1);
         if (n <= 0) continue;
         if (line[n - 1] == '\n') n--;
@@ -119,8 +121,14 @@ int main(int argc, char** argv) {
         int ac = parse(line, av, &in, &out, &app);
         if (ac == 0) continue;
         if (strcmp(av[0], "exit") == 0) { puts("bye!\n"); return 0; }
+        if (strcmp(av[0], "cd") == 0) {
+            const char* dest = (ac > 1) ? av[1] : "/";
+            if (chdir(dest) < 0) { puts("nsh: cd: "); puts(dest); puts(": not found\n"); }
+            continue;
+        }
         if (strcmp(av[0], "help") == 0) {
-            puts("builtins: exit, help. external: ls.elf echo.elf cat.elf ps.elf\n");
+            puts("builtins: exit, cd, help\n");
+            puts("external: ls.elf echo.elf cat.elf ps.elf\n");
             puts("redirection: cmd > file, cmd >> file, cmd < file\n");
             continue;
         }

@@ -26,6 +26,9 @@ typedef long           ssize_t;
 #define SYS_SIGNAL   15
 #define SYS_PROCINFO 16
 #define SYS_SETFG    17
+#define SYS_CHDIR    18
+#define SYS_GETCWD   19
+#define SYS_GETDENTS 20
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -95,6 +98,29 @@ static inline long procinfo(long idx, procinfo_t* pi) {
 /* setfg(pid): register pid as the foreground process (Ctrl-C target).
    Pass 0 to clear (no foreground process). */
 static inline void setfg(long pid) { _syscall3(SYS_SETFG, pid, 0, 0); }
+
+static inline long chdir(const char* path) {
+    return _syscall3(SYS_CHDIR, (long)path, 0, 0);
+}
+static inline long getcwd(char* buf, long size) {
+    return _syscall3(SYS_GETCWD, (long)buf, size, 0);
+}
+
+/* Directory entry layout — mirrors noxfs_dirent_t (32 bytes). */
+typedef struct {
+    unsigned int   inode;
+    unsigned short rec_len;
+    unsigned char  name_len;
+    unsigned char  type;    /* 1 = file, 2 = directory */
+    char           name[24];
+} dirent_t;
+
+/* getdents(path, buf, len): fill buf with dirent_t entries from the
+   directory at path (relative to cwd if not absolute).
+   Returns bytes written, 0 at end, -1 on error. */
+static inline long getdents(const char* path, void* buf, long len) {
+    return _syscall3(SYS_GETDENTS, (long)path, (long)buf, len);
+}
 
 static inline size_t strlen(const char* s) {
     size_t n = 0; while (s[n]) n++; return n;

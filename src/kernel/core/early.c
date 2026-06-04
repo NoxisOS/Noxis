@@ -180,7 +180,9 @@ void kernel_main(void) {
     scheduler_init();
     process_t* up = proc_spawn_user((const uint8_t*)"nsh", uas,
                                     entry, ursp, 1);
-    up->stack_low = USTACK_BASE;       /* one page mapped; rest demand-paged */
+    up->stack_low = USTACK_BASE;
+    up->cwd_ino   = vfs_root_ino();    /* nsh starts in the root directory */
+    /* cwd_path already initialised to "/" by proc_alloc */
     scheduler_register(up);
 
     /* A background ring-0 kernel thread, scheduled alongside the ring-3 user. */
