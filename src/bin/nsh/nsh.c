@@ -1,16 +1,38 @@
 /**
  * @file    src/bin/nsh/nsh.c
- * @brief   Noxis shell — reads a line, tokenizes it, fork+execs the command.
+ * @brief   Noxis shell — readline, multi-stage pipes, scripts, background jobs.
  *
- * Built-ins: exit, help.  Everything else is launched as an external program
- * (e.g. "ls.elf", "echo.elf hi", "cat.elf out.txt").
+ * Builtins: cd, pwd, exit, time, help
+ * Features: cmd1 | cmd2 | cmd3  (up to 8 stages)
+ *           cmd &                (background)
+ *           nsh script.sh        (execute script file)
+ *           cmd > file, >> file, < file
  */
 #include <lib/noxlib/noxlib.h>
 
-#define MAX_ARGS 32
+#define MAX_ARGS    32
+#define MAX_STAGES  8
 
-/* Split `line` into argv, pulling out `< in`, `> out`, `>> out` redirections.
-   Returns argc; sets *infile/*outfile (NULL if none) and *append. */
+/* ── Helpers ─────────────────────────────────────────────────────────── */
+
+/* Try execv(argv[0]); if it fails and name has no '.', also try name.elf */
+static void _exec(char** argv) {
+    execv(argv[0], argv);
+    int has_dot = 0;
+    for (const char* p = argv[0]; *p; p++) if (*p == '.') { has_dot = 1; break; }
+    if (!has_dot) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "%s.elf", argv[0]);
+        execv(buf, argv);
+    }
+}
+
+/* ── Parse ────────────────────────────────────────────────────────────── */
+
+/*
+ * Tokenise `line` into argv[].  Pulls out redirections.
+ * Returns argc; sets *infile/*outfile (NULL if none) and *append.
+ */
 static int parse(char* line, char** argv, char** infile,
                  char** outfile, int* append) {
     *infile = *outfile = 0; *append = 0;
@@ -21,7 +43,7 @@ static int parse(char* line, char** argv, char** infile,
         if (!*p) break;
         char* tok = p;
         while (*p && *p != ' ') p++;
-        if (*p) *p++ = 0;                    /* terminate token */
+        if (*p) *p++ = 0;
 
         if (strcmp(tok, "<") == 0) {
             while (*p == ' ') *p++ = 0;
@@ -38,128 +60,213 @@ static int parse(char* line, char** argv, char** infile,
     return n;
 }
 
-/* Try execv(argv[0]); if it fails and argv[0] has no '.', also try argv[0]+".elf". */
-static void _exec(char** argv) {
-    execv(argv[0], argv);
-    int has_dot = 0;
-    for (const char* p = argv[0]; *p; p++) if (*p == '.') { has_dot = 1; break; }
-    if (!has_dot) {
-        char buf[256];
-        snprintf(buf, sizeof(buf), "%s.elf", argv[0]);
-        execv(buf, argv);
-    }
-}
+/* ── Run a single command ─────────────────────────────────────────────── */
 
-/* Run "left | right": connect left's stdout to right's stdin via a pipe. */
-static void run_pipe(char** lav, char** rav) {
-    int fds[2];
-    if (pipe(fds) < 0) { puts("nsh: pipe failed\n"); return; }
-
-    long p1 = fork();
-    if (p1 == 0) {
-        dup2(fds[1], 1); close(fds[0]); close(fds[1]);
-        _exec(lav); puts(lav[0]); puts(": not found\n"); exit(127);
-    }
-    long p2 = fork();
-    if (p2 == 0) {
-        dup2(fds[0], 0); close(fds[0]); close(fds[1]);
-        _exec(rav); puts(rav[0]); puts(": not found\n"); exit(127);
-    }
-    close(fds[0]); close(fds[1]);
-    int st = 0;
-    setfg(p1);
-    waitpid(p1, &st);
-    waitpid(p2, &st);
-    setfg(0);
-}
-
-/* Split `line` on a single '|'; returns the right half (NUL-terminating the
-   left) or NULL if there is no pipe. */
-static char* split_pipe(char* line) {
-    for (char* p = line; *p; p++)
-        if (*p == '|') { *p = 0; return p + 1; }
-    return 0;
-}
-
-static void run(char** argv, char* infile, char* outfile, int append) {
+static void run_one(char** argv, char* infile, char* outfile,
+                    int append, int background) {
     long pid = fork();
     if (pid == 0) {
         if (infile) {
             long fd = open(infile, O_RDONLY);
-            if (fd < 0) { puts("nsh: cannot open "); puts(infile); puts("\n"); exit(1); }
+            if (fd < 0) { fprintf(2, "nsh: cannot open %s\n", infile); exit(1); }
             dup2((int)fd, 0); close((int)fd);
         }
         if (outfile) {
             long fd = open(outfile, O_WRONLY | O_CREAT | (append ? 0 : O_TRUNC));
-            if (fd < 0) { puts("nsh: cannot create "); puts(outfile); puts("\n"); exit(1); }
+            if (fd < 0) { fprintf(2, "nsh: cannot create %s\n", outfile); exit(1); }
             dup2((int)fd, 1); close((int)fd);
         }
         _exec(argv);
-        puts(argv[0]); puts(": command not found\n");
+        fprintf(2, "%s: command not found\n", argv[0]);
         exit(127);
     }
-    int st = 0;
-    setfg(pid);       /* Ctrl-C now routes SIGINT to the child */
-    waitpid(pid, &st);
-    setfg(0);         /* no foreground process while nsh reads the next line */
+    if (background) {
+        printf("[1] %ld\n", pid);
+    } else {
+        int st = 0;
+        setfg(pid);
+        waitpid(pid, &st);
+        setfg(0);
+    }
 }
 
+/* ── Multi-stage pipeline ─────────────────────────────────────────────── */
+
+/*
+ * Split `line` on '|' (up to MAX_STAGES stages), NUL-terminating each.
+ * Returns number of stages; fills stage_starts[].
+ */
+static int split_stages(char* line, char** stage_starts) {
+    int n = 0;
+    stage_starts[n++] = line;
+    for (char* p = line; *p; p++) {
+        if (*p == '|' && n < MAX_STAGES) {
+            *p = 0;
+            stage_starts[n++] = p + 1;
+        }
+    }
+    return n;
+}
+
+static void run_pipeline(char* line) {
+    char* stage_start[MAX_STAGES];
+    int   n = split_stages(line, stage_start);
+
+    /* Parse each stage into its own argv */
+    char* sav[MAX_STAGES][MAX_ARGS];
+    char* dummy_in[MAX_STAGES], *dummy_out[MAX_STAGES];
+    int   dummy_app[MAX_STAGES];
+    for (int i = 0; i < n; i++)
+        parse(stage_start[i], sav[i],
+              &dummy_in[i], &dummy_out[i], &dummy_app[i]);
+
+    /* Create n-1 pipes */
+    int fds[MAX_STAGES - 1][2];
+    for (int i = 0; i < n - 1; i++) pipe(fds[i]);
+
+    /* Fork all children */
+    long pids[MAX_STAGES];
+    for (int i = 0; i < n; i++) {
+        pids[i] = fork();
+        if (pids[i] == 0) {
+            if (i > 0)     dup2(fds[i-1][0], 0);
+            if (i < n - 1) dup2(fds[i][1],   1);
+            for (int j = 0; j < n - 1; j++) {
+                close(fds[j][0]); close(fds[j][1]);
+            }
+            if (sav[i][0]) { _exec(sav[i]); fprintf(2, "%s: not found\n", sav[i][0]); }
+            exit(127);
+        }
+    }
+
+    /* Parent closes all pipe ends */
+    for (int i = 0; i < n - 1; i++) { close(fds[i][0]); close(fds[i][1]); }
+
+    /* Wait for all stages */
+    int st = 0;
+    setfg(pids[0]);
+    for (int i = 0; i < n; i++) waitpid(pids[i], &st);
+    setfg(0);
+}
+
+/* ── Script / interactive line source ────────────────────────────────── */
+
+/*
+ * Read the next non-empty, non-comment line.
+ * fd=-1 → readline (interactive); fd≥0 → read from script file.
+ * Returns NULL on EOF.
+ */
+static char* next_line(int fd, const char* prompt, char* buf, int bufsz) {
+    for (;;) {
+        if (fd < 0) {
+            /* Interactive */
+            char* s = readline(prompt);
+            if (!s) return (char*)0;
+            int n = (int)strlen(s);
+            if (n >= bufsz - 1) n = bufsz - 2;
+            for (int i = 0; i < n; i++) buf[i] = s[i];
+            buf[n] = 0;
+        } else {
+            /* Script file */
+            int n = 0; char c;
+            while (n < bufsz - 1) {
+                if (read(fd, &c, 1) != 1) {
+                    if (n == 0) return (char*)0;  /* EOF */
+                    break;
+                }
+                if (c == '\n') break;
+                if (c != '\r') buf[n++] = c;
+            }
+            buf[n] = 0;
+            /* Strip inline comments */
+            for (int i = 0; buf[i]; i++) if (buf[i] == '#') { buf[i] = 0; break; }
+        }
+        /* Skip blank lines */
+        int blank = 1;
+        for (int i = 0; buf[i]; i++) if (buf[i] != ' ' && buf[i] != '\t') { blank = 0; break; }
+        if (!blank) return buf;
+    }
+}
+
+/* ── main ─────────────────────────────────────────────────────────────── */
+
 int main(int argc, char** argv) {
-    (void)argc; (void)argv;
-    puts("\nnsh \xe2\x80\x94 Noxis shell (ring 3). builtins: exit, help.\n");
+    int script_fd = -1;
+    if (argc > 1) {
+        script_fd = (int)open(argv[1], O_RDONLY);
+        if (script_fd < 0) {
+            fprintf(2, "nsh: %s: cannot open\n", argv[1]);
+            return 1;
+        }
+    } else {
+        puts("\nnsh \xe2\x80\x94 Noxis shell.  type 'help' for info.\n");
+    }
 
     char  line[256];
     char* av[MAX_ARGS];
-    char* rav[MAX_ARGS];
-    char* in; char* out; int app;
+    char* in_f, *out_f; int app;
+
     for (;;) {
-        char _cwd[128];
-        getcwd(_cwd, sizeof(_cwd));
+        /* Build prompt (interactive only) */
+        char cwd[128], prompt[160];
+        getcwd(cwd, sizeof(cwd));
+        snprintf(prompt, sizeof(prompt), "nsh:%s$ ", cwd);
 
-        char prompt[160];
-        snprintf(prompt, sizeof(prompt), "nsh:%s$ ", _cwd);
+        /* Get next line */
+        char* result = next_line(script_fd, prompt, line, sizeof(line));
+        if (!result) break;   /* EOF (script done or Ctrl-D) */
 
-        char* input = readline(prompt);
-        if (!input) continue;
-        int n = (int)strlen(input);
-        if (n == 0) continue;
-        if (n >= (int)sizeof(line) - 1) n = (int)sizeof(line) - 2;
-        for (int _i = 0; _i < n; _i++) line[_i] = input[_i];
-        line[n] = 0;
+        /* Count '|' to decide execution path */
+        int pipe_count = 0;
+        for (char* p = line; *p; p++) if (*p == '|') pipe_count++;
 
-        char* rhs = split_pipe(line);
-        if (rhs) {                           /* a single-stage pipeline */
-            char *i2, *o2; int a2;
-            if (parse(line, av, &in, &out, &app) == 0) continue;
-            if (parse(rhs, rav, &i2, &o2, &a2) == 0) continue;
-            run_pipe(av, rav);
+        if (pipe_count > 0) {
+            run_pipeline(line);
             continue;
         }
 
-        int ac = parse(line, av, &in, &out, &app);
+        /* Single-command path */
+        int ac = parse(line, av, &in_f, &out_f, &app);
         if (ac == 0) continue;
+
+        /* Background flag */
+        int background = 0;
+        if (ac > 0 && strcmp(av[ac - 1], "&") == 0) {
+            background = 1; av[--ac] = (char*)0;
+        }
+        if (ac == 0) continue;
+
+        /* Builtins */
         if (strcmp(av[0], "exit") == 0) { puts("bye!\n"); return 0; }
+
         if (strcmp(av[0], "cd") == 0) {
             const char* dest = (ac > 1) ? av[1] : "/";
-            if (chdir(dest) < 0) { puts("nsh: cd: "); puts(dest); puts(": not found\n"); }
+            if (chdir(dest) < 0) fprintf(2, "nsh: cd: %s: not found\n", dest);
             continue;
         }
-        if (strcmp(av[0], "pwd") == 0) { puts(_cwd); puts("\n"); continue; }
+        if (strcmp(av[0], "pwd") == 0) { puts(cwd); puts("\n"); continue; }
+
         if (strcmp(av[0], "time") == 0) {
             if (ac < 2) { puts("usage: time <cmd>\n"); continue; }
             unsigned long t0 = uptime_ms();
-            run(av + 1, in, out, app);
+            run_one(av + 1, in_f, out_f, app, 0);
             printf("real\t%lums\n", uptime_ms() - t0);
             continue;
         }
         if (strcmp(av[0], "help") == 0) {
-            puts("builtins: cd, pwd, time, exit, help\n");
-            puts("programs: ls, cat, echo, ps, wc, head, grep, mkdir, rm, mv\n");
-            puts("  (also works with or without .elf extension)\n");
-            puts("redirection: cmd > file, cmd >> file, cmd < file\n");
-            puts("pipeline:    cmd1 | cmd2\n");
+            puts("builtins:  cd, pwd, time, exit, help\n");
+            puts("programs:  ls cat echo ps wc head tail grep sort mkdir rm mv\n");
+            puts("           (works with or without .elf suffix)\n");
+            puts("pipelines: cmd1 | cmd2 | cmd3  (up to 8 stages)\n");
+            puts("redir:     > file   >> file   < file\n");
+            puts("bg:        cmd &\n");
+            puts("scripts:   nsh script.sh\n");
             continue;
         }
-        run(av, in, out, app);
+
+        run_one(av, in_f, out_f, app, background);
     }
+
+    if (script_fd >= 0) close(script_fd);
+    return 0;
 }
