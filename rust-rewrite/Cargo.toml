@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "kernel",
+    "crates/hal",
+    "crates/mm",
+    "crates/sync",
+    "crates/drivers",
+    "crates/vfs",
+    "crates/sched",
+    "crates/syscall",
+    "crates/abi",
+    "xtask",
+]
+
+# xtask tourne sur l'hôte → pas de target bare-metal pour lui
+[profile.xtask]
+inherits = "dev"
+
+[workspace.dependencies]
+# Partagées par toutes les crates
+bitflags   = { version = "2",   default-features = false }
+spin       = { version = "0.9", default-features = false, features = ["spin_mutex", "rwlock", "once", "lazy"] }
+x86_64     = { version = "0.15", default-features = false, features = ["instructions", "abi_x86_interrupt"] }
+bootloader     = { version = "0.11" }
+bootloader-api = { version = "0.11", package = "bootloader_api" }
+
+[profile.release]
+opt-level       = 3
+lto             = "fat"
+codegen-units   = 1
+panic           = "abort"
+overflow-checks = false
+strip           = true
+
+[profile.dev]
+panic = "abort"

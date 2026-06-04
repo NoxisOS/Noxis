@@ -1,0 +1,8 @@
+[package]
+name    = "xtask"
+version = "0.1.0"
+edition = "2021"
+
+# xtask tourne sur l'hôte (Windows) — pas de target bare-metal
+[dependencies]
+bootloader = { version = "0.11" }

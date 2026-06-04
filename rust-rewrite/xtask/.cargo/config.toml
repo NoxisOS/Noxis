@@ -1,0 +1,4 @@
+# xtask tourne sur l'hôte — pas de target bare-metal.
+# Ce fichier override le .cargo/config.toml du workspace pour xtask.
+[build]
+# Pas de target custom : utiliser la cible hôte par défaut.

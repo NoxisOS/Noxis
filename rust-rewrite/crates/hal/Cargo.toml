@@ -1,0 +1,9 @@
+[package]
+name    = "hal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+x86_64   = { workspace = true }
+bitflags = { workspace = true }
+sync     = { path = "../sync" }
