@@ -6,6 +6,7 @@
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <mm/virt/vmm.h>
+#include <proc/scheduler.h>
 #include <mm/phys/pmm.h>
 #include <mm/virt/heap.h>
 #include <mm/virt/uvm.h>
@@ -139,6 +140,9 @@ void sys_exit(int code) {
 }
 
 uint64_t sys_getpid(void) { return scheduler_current()->pid; }
+
+/* setfg(pid): mark pid as the foreground process (receives Ctrl-C SIGINT). */
+void sys_setfg(uint64_t pid) { scheduler_set_fg(pid); }
 
 /* Copy the name of the idx-th VFS entry into namebuf (<=32). Returns 1 if it
    exists, 0 past the end — lets userland `ls` enumerate the directory. */

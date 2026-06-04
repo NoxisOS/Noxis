@@ -25,6 +25,7 @@ typedef long           ssize_t;
 #define SYS_KILL     14
 #define SYS_SIGNAL   15
 #define SYS_PROCINFO 16
+#define SYS_SETFG    17
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -91,6 +92,9 @@ typedef struct { long pid; long state; char name[32]; } procinfo_t;
 static inline long procinfo(long idx, procinfo_t* pi) {
     return _syscall3(SYS_PROCINFO, idx, (long)pi, 0);
 }
+/* setfg(pid): register pid as the foreground process (Ctrl-C target).
+   Pass 0 to clear (no foreground process). */
+static inline void setfg(long pid) { _syscall3(SYS_SETFG, pid, 0, 0); }
 
 static inline size_t strlen(const char* s) {
     size_t n = 0; while (s[n]) n++; return n;

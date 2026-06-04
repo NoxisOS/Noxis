@@ -55,8 +55,10 @@ static void run_pipe(char** lav, char** rav) {
     }
     close(fds[0]); close(fds[1]);
     int st = 0;
+    setfg(p1);
     waitpid(p1, &st);
     waitpid(p2, &st);
+    setfg(0);
 }
 
 /* Split `line` on a single '|'; returns the right half (NUL-terminating the
@@ -85,7 +87,9 @@ static void run(char** argv, char* infile, char* outfile, int append) {
         exit(127);
     }
     int st = 0;
+    setfg(pid);       /* Ctrl-C now routes SIGINT to the child */
     waitpid(pid, &st);
+    setfg(0);         /* no foreground process while nsh reads the next line */
 }
 
 int main(int argc, char** argv) {

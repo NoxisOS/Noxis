@@ -9,6 +9,7 @@
 #include <kernel/isr/isr.h>
 #include <kernel/hal/ports.h>
 #include <kernel/hal/pic.h>
+#include <proc/scheduler.h>
 #include <common/types.h>
 
 /* Simple input ring buffer (TTY/scheduler will replace this once ported). */
@@ -79,6 +80,10 @@ static void _kbd_isr(isr_frame_t* frame) {
     if (g_ctrl) {
         if (c >= 'a' && c <= 'z') c = (uint8_t)(c & 0x1F);
         else if (c >= 'A' && c <= 'Z') c = (uint8_t)(c & 0x1F);
+
+        /* Ctrl-C (ETX = 0x03): send SIGINT to the foreground process.
+         * Don't buffer — it's a signal, not input data. */
+        if (c == 0x03) { scheduler_sigint_fg(); return; }
     }
 
     _buf_push(c);

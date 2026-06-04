@@ -13,12 +13,14 @@
 #include <common/types.h>
 
 extern void kthread_switch(uint64_t* save_old_rsp, uint64_t new_rsp);
+extern void deliver_signals_isr(isr_frame_t* frame);  /* signal.c */
 
 process_t* g_current;
 process_t* g_ready_head;
 static process_t* g_ready_tail;
 static process_t* g_all_head;      /* every live process (for waitpid)   */
 static process_t  g_idle;          /* the bootstrap context becomes idle */
+static uint64_t   g_fg_pid;        /* foreground pid — receives Ctrl-C   */
 
 os_status_t scheduler_init(void) {
     g_ready_head = g_ready_tail = NULL;
@@ -130,8 +132,26 @@ void scheduler_yield(void) {
 }
 
 void scheduler_tick(isr_frame_t* frame) {
-    (void)frame;
     if (!g_current) return;
+
+    /* If a user-mode process has pending signals, inject them now.
+     * CS & 3 == 3 means the interrupt fired while in ring 3 (user mode).
+     * deliver_signals_isr may call sys_exit → scheduler_exit → scheduler_yield,
+     * in which case the tick never returns to the original process. */
+    if ((frame->cs & 3) == 3 && g_current->sig_pending)
+        deliver_signals_isr(frame);
+
     if (g_current->quantum_remaining > 0) g_current->quantum_remaining--;
     if (g_current->quantum_remaining == 0) scheduler_yield();
+}
+
+void scheduler_set_fg(uint64_t pid) { g_fg_pid = pid; }
+
+/* Called from the keyboard ISR on Ctrl-C: mark SIGINT pending on the
+ * foreground process.  Signal delivery happens at the next timer tick. */
+void scheduler_sigint_fg(void) {
+    if (!g_fg_pid) return;
+    process_t* p = scheduler_find(g_fg_pid);
+    if (p && p->state != PROC_ZOMBIE)
+        p->sig_pending |= (1u << SIGINT);
 }

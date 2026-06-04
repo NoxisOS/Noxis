@@ -26,6 +26,7 @@ int64_t  sys_procinfo(uint64_t idx, uint8_t* buf);
 int64_t  sys_pipe(int* fd);
 int64_t  sys_signal(int sig, uint64_t handler);
 int64_t  sys_kill(int64_t pid, int sig);
+void     sys_setfg(uint64_t pid);
 void     deliver_signals(syscall_frame_t* f);
 
 /* file descriptors live in proc/fd.c. */
@@ -75,6 +76,7 @@ enum {
     SYS_OPEN = 7, SYS_CLOSE = 8, SYS_LSEEK = 9, SYS_READDIR = 10,
     SYS_DUP = 11, SYS_DUP2 = 12, SYS_PIPE = 13,
     SYS_KILL = 14, SYS_SIGNAL = 15, SYS_PROCINFO = 16,
+    SYS_SETFG = 17,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -103,6 +105,7 @@ static void do_syscall(syscall_frame_t* f) {
     case SYS_KILL:    f->rax = (uint64_t)sys_kill((int64_t)f->rdi, (int)f->rsi); return;
     case SYS_SIGNAL:  f->rax = (uint64_t)sys_signal((int)f->rdi, f->rsi);   return;
     case SYS_PROCINFO:f->rax = (uint64_t)sys_procinfo(f->rdi, (uint8_t*)f->rsi); return;
+    case SYS_SETFG:   sys_setfg(f->rdi); f->rax = 0;                        return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

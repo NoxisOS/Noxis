@@ -8,11 +8,44 @@
  * for terminating signals is to exit the process.
  */
 #include <kernel/syscall/syscall.h>
+#include <kernel/isr/isr.h>
 #include <proc/process.h>
 #include <proc/scheduler.h>
 #include <common/types.h>
 
 void sys_exit(int code);
+
+/* ── Signal delivery at timer interrupt ────────────────────────────────────
+ * Called from scheduler_tick when the current process was interrupted in
+ * ring 3 (user mode) and has at least one signal pending.
+ *
+ * For a user handler: push the interrupted RIP onto the user stack so the
+ * handler can `ret` back, then redirect RIP → handler and set RDI = signo.
+ * The CPU restores the modified frame via IRET when the interrupt returns.
+ *
+ * For the default action (fatal signals): call sys_exit; never returns.
+ */
+void deliver_signals_isr(isr_frame_t* frame) {
+    process_t* p = scheduler_current();
+    if (!p || !p->sig_pending) return;
+
+    for (int sig = 1; sig < 32; sig++) {
+        if (!(p->sig_pending & (1u << sig))) continue;
+        p->sig_pending &= ~(1u << sig);
+
+        uint64_t h = p->sig_handler[sig];
+        if (h) {
+            /* Push return address on the user stack, redirect to handler. */
+            frame->rsp -= 8;
+            *(uint64_t*)frame->rsp = frame->rip;
+            frame->rip = h;
+            frame->rdi = (uint64_t)sig;
+            return;   /* one signal per interrupt */
+        }
+        if (sig == SIGKILL || sig == SIGTERM || sig == SIGINT)
+            sys_exit(128 + sig);   /* never returns */
+    }
+}
 
 /* signal(sig, handler): install a handler (0 = default). Returns 0/-1. */
 int64_t sys_signal(int sig, uint64_t handler) {

@@ -25,4 +25,8 @@ process_t*  scheduler_current(void);
 void        scheduler_yield(void);
 void        scheduler_tick(isr_frame_t* frame);
 
+/* Foreground process management (Ctrl-C / SIGINT delivery). */
+void        scheduler_set_fg(uint64_t pid);   /* set the foreground pid        */
+void        scheduler_sigint_fg(void);        /* send SIGINT to foreground pid */
+
 #endif /* PROC_SCHEDULER_H */
