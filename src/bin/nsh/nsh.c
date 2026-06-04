@@ -103,10 +103,16 @@ int main(int argc, char** argv) {
     for (;;) {
         char _cwd[128];
         getcwd(_cwd, sizeof(_cwd));
-        puts("nsh:"); puts(_cwd); puts("$ ");
-        ssize_t n = read(0, line, sizeof(line) - 1);
-        if (n <= 0) continue;
-        if (line[n - 1] == '\n') n--;
+
+        char prompt[160];
+        snprintf(prompt, sizeof(prompt), "nsh:%s$ ", _cwd);
+
+        char* input = readline(prompt);
+        if (!input) continue;
+        int n = (int)strlen(input);
+        if (n == 0) continue;
+        if (n >= (int)sizeof(line) - 1) n = (int)sizeof(line) - 2;
+        for (int _i = 0; _i < n; _i++) line[_i] = input[_i];
         line[n] = 0;
 
         char* rhs = split_pipe(line);

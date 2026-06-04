@@ -31,6 +31,7 @@ int64_t  sys_chdir(const uint8_t* path);
 int64_t  sys_brk(uint64_t addr);
 int64_t  sys_tcgetattr(int fd, void* out);
 int64_t  sys_tcsetattr(int fd, int when, const void* in);
+void     sys_sleep(uint32_t ms);
 int64_t  sys_mkdir(const uint8_t* path);
 int64_t  sys_unlink(const uint8_t* path);
 int64_t  sys_stat(const uint8_t* path, void* buf);
@@ -91,6 +92,7 @@ enum {
     SYS_BRK = 21,
     SYS_MKDIR = 22, SYS_UNLINK = 23, SYS_STAT = 24, SYS_RENAME = 25,
     SYS_TCGETATTR = 26, SYS_TCSETATTR = 27,
+    SYS_SLEEP = 28,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -135,6 +137,7 @@ static void do_syscall(syscall_frame_t* f) {
                                     (void*)f->rsi);                         return;
     case SYS_TCSETATTR: f->rax = (uint64_t)sys_tcsetattr((int)f->rdi,
                                     (int)f->rdx, (const void*)f->rsi);      return;
+    case SYS_SLEEP:     sys_sleep((uint32_t)f->rdi); f->rax = 0;            return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

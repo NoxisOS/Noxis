@@ -16,6 +16,7 @@
 
 void serial_write(const uint8_t* s);
 void serial_write_hex64(uint64_t v);
+uint32_t pit_uptime_ms(void);
 uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img, uint64_t* brk_out);
 void pipe_addref(int kind, void* file);
 void pipe_close(int kind, void* file);
@@ -153,6 +154,12 @@ uint64_t sys_getpid(void) { return scheduler_current()->pid; }
 
 /* setfg(pid): mark pid as the foreground process (receives Ctrl-C SIGINT). */
 void sys_setfg(uint64_t pid) { scheduler_set_fg(pid); }
+
+/* sleep(ms): block for at least `ms` milliseconds by yielding. */
+void sys_sleep(uint32_t ms) {
+    uint32_t wake = pit_uptime_ms() + ms;
+    while (pit_uptime_ms() < wake) scheduler_yield();
+}
 
 /* tcgetattr / tcsetattr — copy the global console termios to/from userland.
  * `fd` is accepted for API compatibility but only the console (fd 0) is
