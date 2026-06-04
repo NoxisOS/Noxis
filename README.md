@@ -167,12 +167,10 @@ There is no in-kernel shell. `nsh` is a ring-3 user process launched by the kern
 ```
 nsh$ ls.elf
 nsh.elf
-hello.elf
+ls.elf
 echo.elf
 cat.elf
-ls.elf
 ps.elf
-motd.txt
 
 nsh$ ls.elf | cat.elf
 nsh$ echo.elf written to a file > out.txt
@@ -183,14 +181,14 @@ written to a file
 - Pipelines: `cmd1 | cmd2`
 - Redirections: `>`, `>>`, `<`
 - Built-ins: `exit`, `help`
-- External programs on the NoxFS disk: `ls`, `echo`, `cat`, `ps`, `sigtest`, `hello`
+- External programs on the NoxFS disk: `ls`, `echo`, `cat`, `ps`
 
 </details>
 
 <details open>
 <summary><strong>📦 noxlib — User-space C Runtime</strong></summary>
 
-A minimal runtime linked into every userland ELF (`src/noxlib/`):
+A minimal runtime linked into every userland ELF (`src/lib/noxlib/`):
 
 - `crt0.asm` — `_start` reads `argc`/`argv` off the stack, calls `main`, then `exit`s with its return value
 - Inline syscall wrappers: `write`, `read`, `open`, `close`, `lseek`, `dup`/`dup2`, `pipe`, `fork`, `execv`, `waitpid`, `getpid`, `kill`, `signal`, `readdir`, `procinfo`
