@@ -1,0 +1,12 @@
+[package]
+name    = "rm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libnox = { workspace = true }
+abi    = { path = "../../crates/abi" }
+
+[[bin]]
+name = "rm"
+path = "src/main.rs"

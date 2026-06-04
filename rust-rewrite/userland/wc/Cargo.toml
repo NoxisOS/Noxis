@@ -1,0 +1,12 @@
+[package]
+name    = "wc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libnox = { workspace = true }
+abi    = { path = "../../crates/abi" }
+
+[[bin]]
+name = "wc"
+path = "src/main.rs"

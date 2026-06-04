@@ -18,12 +18,13 @@ fn main() {
     let cmd = args.get(0).map(String::as_str).unwrap_or("help");
 
     match cmd {
-        "build"         => build(false),
-        "build-release" => build(true),
-        "image"         => { build(false); image(false); }
-        "run"           => { build(false); image(false); run_uefi(); }
-        "run-bios"      => { build(false); image(false); run_bios(); }
-        "run-release"   => { build(true);  image(true);  run_uefi(); }
+        // Userland always built in release to keep ELF sizes small
+        "build"         => { build(false); build_userland(true); }
+        "build-release" => { build(true);  build_userland(true);  }
+        "image"         => { build(false); build_userland(true); image(false); }
+        "run"           => { build(false); build_userland(true); image(false); run_uefi(); }
+        "run-bios"      => { build(false); build_userland(true); image(false); run_bios(); }
+        "run-release"   => { build(true);  build_userland(true);  image(true);  run_uefi(); }
         _ => eprintln!("Usage: cargo xtask [build|image|run|run-bios|run-release]"),
     }
 }
@@ -52,6 +53,11 @@ fn out_dir() -> PathBuf {
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
+const USERLAND_PROGS: &[&str] = &[
+    "nsh", "ls", "cat", "echo", "ps", "mkdir", "rm", "cp", "wc", "grep",
+];
+// Note: nsh is installed as both "nsh" and looked up on PATH
+
 fn build(release: bool) {
     let root = workspace_root();
     let mut cmd = Command::new("cargo");
@@ -66,24 +72,88 @@ fn build(release: bool) {
     run_cmd(cmd);
 }
 
+fn build_userland(release: bool) {
+    let root = workspace_root();
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(&root);
+    cmd.arg("build");
+    for prog in USERLAND_PROGS {
+        cmd.args(["--package", prog]);
+    }
+    cmd.args([
+        "--target", "x86_64-unknown-none",
+        "-Z", "build-std=core,compiler_builtins,alloc",
+        "-Z", "build-std-features=compiler-builtins-mem",
+    ]);
+    if release { cmd.arg("--release"); }
+    run_cmd(cmd);
+    println!("[xtask] Userland programs built.");
+
+    // Bundle ELFs into a ramdisk image
+    build_ramdisk(release);
+}
+
+/// Simple ramdisk format:
+///   For each file:
+///     [u32 name_len][name bytes][u64 data_len][data bytes]
+///   Terminated by name_len = 0xFFFFFFFF
+fn build_ramdisk(release: bool) {
+    use std::io::Write;
+    let out = out_dir().join("initrd.img");
+    let mut img: Vec<u8> = Vec::new();
+
+    for prog in USERLAND_PROGS {
+        let elf = userland_elf(prog, release);
+        if !elf.exists() { continue; }
+        let data = std::fs::read(&elf).expect("cannot read elf");
+        let name = prog.as_bytes();
+        // name_len (u32 LE)
+        img.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        img.extend_from_slice(name);
+        // data_len (u64 LE)
+        img.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        img.extend_from_slice(&data);
+        println!("[xtask] initrd: {} ({} KiB)", prog, data.len() / 1024);
+    }
+    // Terminator
+    img.extend_from_slice(&0xFFFFFFFFu32.to_le_bytes());
+
+    std::fs::write(&out, &img).expect("cannot write initrd.img");
+    println!("[xtask] initrd: {} KiB total → {}", img.len() / 1024, out.display());
+}
+
+fn userland_elf(name: &str, release: bool) -> PathBuf {
+    workspace_root()
+        .join("target")
+        .join("x86_64-unknown-none")
+        .join(if release { "release" } else { "debug" })
+        .join(name)
+}
+
 // ── Image ─────────────────────────────────────────────────────────────────────
 
 fn image(release: bool) {
-    let elf  = kernel_elf(release);
-    let out  = out_dir();
-    let bios = out.join("noxis-bios.img");
-    let uefi = out.join("noxis-uefi.img");
+    let elf     = kernel_elf(release);
+    let out     = out_dir();
+    let bios    = out.join("noxis-bios.img");
+    let uefi    = out.join("noxis-uefi.img");
+    let ramdisk = out.join("initrd.img");
 
     println!("[xtask] Generating disk images...");
-    println!("        kernel ELF: {}", elf.display());
+    println!("        kernel ELF : {}", elf.display());
 
-    bootloader::BiosBoot::new(&elf)
-        .create_disk_image(&bios)
-        .expect("Failed to create BIOS image");
+    let mut bios_boot = bootloader::BiosBoot::new(&elf);
+    let mut uefi_boot = bootloader::UefiBoot::new(&elf);
 
-    bootloader::UefiBoot::new(&elf)
-        .create_disk_image(&uefi)
-        .expect("Failed to create UEFI image");
+    // Attach ramdisk if it exists
+    if ramdisk.exists() {
+        println!("        ramdisk    : {}", ramdisk.display());
+        bios_boot.set_ramdisk(&ramdisk);
+        uefi_boot.set_ramdisk(&ramdisk);
+    }
+
+    bios_boot.create_disk_image(&bios).expect("Failed to create BIOS image");
+    uefi_boot.create_disk_image(&uefi).expect("Failed to create UEFI image");
 
     println!("[xtask] BIOS image: {}", bios.display());
     println!("[xtask] UEFI image: {}", uefi.display());

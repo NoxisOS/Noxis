@@ -1,0 +1,21 @@
+{
+  "llvm-target": "x86_64-unknown-none",
+  "data-layout": "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
+  "arch": "x86_64",
+  "os": "noxis",
+  "env": "",
+  "vendor": "unknown",
+  "linker-flavor": "ld.lld",
+  "linker": "rust-lld",
+  "target-pointer-width": 64,
+  "target-c-int-width": 32,
+  "target-endian": "little",
+  "disable-redzone": false,
+  "panic-strategy": "abort",
+  "features": "-sse,-sse2",
+  "executables": true,
+  "relocation-model": "static",
+  "pre-link-args": {
+    "ld.lld": ["-T", "user.ld", "--entry", "_start"]
+  }
+}

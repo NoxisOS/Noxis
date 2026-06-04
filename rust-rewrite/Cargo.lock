@@ -98,6 +98,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "cat"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -108,6 +116,14 @@ name = "const_fn"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413d67b29ef1021b4d60f4aa1e925ca031751e213832b4b1d588fae623c05c60"
+
+[[package]]
+name = "cp"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
 
 [[package]]
 name = "crc"
@@ -131,6 +147,14 @@ dependencies = [
  "bitflags 2.12.1",
  "hal",
  "sync",
+]
+
+[[package]]
+name = "echo"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
 ]
 
 [[package]]
@@ -228,6 +252,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "grep"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
+
+[[package]]
 name = "hal"
 version = "0.1.0"
 dependencies = [
@@ -322,6 +354,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libnox"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "bitflags 2.12.1",
+]
+
+[[package]]
 name = "linked_list_allocator"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -358,6 +398,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
+name = "ls"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
+
+[[package]]
 name = "mbrman"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -377,6 +425,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
+name = "mkdir"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
+
+[[package]]
 name = "mm"
 version = "0.1.0"
 dependencies = [
@@ -386,6 +442,14 @@ dependencies = [
  "linked_list_allocator",
  "sync",
  "x86_64",
+]
+
+[[package]]
+name = "nsh"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
 ]
 
 [[package]]
@@ -420,6 +484,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -439,6 +511,14 @@ name = "radium"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
+
+[[package]]
+name = "rm"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
+]
 
 [[package]]
 name = "rustix"
@@ -762,6 +842,14 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "semver",
+]
+
+[[package]]
+name = "wc"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libnox",
 ]
 
 [[package]]

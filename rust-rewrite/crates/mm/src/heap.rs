@@ -5,7 +5,7 @@
 
 use linked_list_allocator::LockedHeap;
 
-const HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MiB
+const HEAP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
 #[repr(align(4096))]
 struct HeapBacking([u8; HEAP_SIZE]);

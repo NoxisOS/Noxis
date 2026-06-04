@@ -14,6 +14,8 @@
 
 extern crate alloc;
 
+mod initrd;
+
 use bootloader_api::{entry_point, BootInfo, BootloaderConfig};
 use bootloader_api::config::Mapping;
 use core::panic::PanicInfo;
@@ -53,9 +55,35 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     sched::register_pit_ticks(drivers::pit::ticks);
 
     // ── P7: VFS ──────────────────────────────────────────────────────────────
+    kprintln!("VFS: init...");
     init_vfs();
-    kprintln!("VFS: ramfs / procfs devfs mounted");
+    kprintln!("VFS: done");
 
+    kprintln!("Checking ramdisk...");
+    // Load ramdisk: ramdisk_addr is a virtual address mapped by the bootloader.
+    if let Some(ramdisk_virt) = boot_info.ramdisk_addr.into_option() {
+        let ramdisk_len = boot_info.ramdisk_len as usize;
+        kprintln!("ramdisk at virt {:#x}, {} KiB", ramdisk_virt, ramdisk_len / 1024);
+
+        // Sanity-check: read the first 4 bytes to verify the mapping is accessible
+        let first_bytes = unsafe {
+            let p = ramdisk_virt as *const u32;
+            kprintln!("ramdisk first u32 = {:#x}", *p);
+            *p
+        };
+
+        if ramdisk_len > 0 {
+            let ramdisk: &'static [u8] = unsafe {
+                core::slice::from_raw_parts(ramdisk_virt as *const u8, ramdisk_len)
+            };
+            initrd::load(ramdisk);
+        }
+    } else {
+        kprintln!("No ramdisk provided.");
+    }
+    kprintln!("VFS: ramfs/procfs/devfs mounted");
+
+    kprintln!("P8: syscall init...");
     // ── P8: Syscall ──────────────────────────────────────────────────────────
     syscall::init();
     kprintln!("SYSCALL/SYSRET: online");
@@ -88,12 +116,19 @@ fn init_vfs() {
     use vfs::procfs::ProcFs;
     use vfs::devfs::DevFs;
 
+    kprintln!("VFS: mounting ramfs...");
     with_vfs(|vfs| {
         vfs.mount("/",     Arc::new(RamFs::new()));
+    });
+    kprintln!("VFS: mounting procfs...");
+    with_vfs(|vfs| {
         vfs.mount("/proc", Arc::new(ProcFs));
+    });
+    kprintln!("VFS: mounting devfs...");
+    with_vfs(|vfs| {
         vfs.mount("/dev",  Arc::new(DevFs));
     });
-
+    kprintln!("VFS: creating dirs...");
     // Create basic directory structure on root ramfs
     with_vfs(|vfs| {
         let root = vfs.resolve("/").unwrap();
