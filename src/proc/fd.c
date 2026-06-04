@@ -10,6 +10,7 @@
 #include <proc/scheduler.h>
 #include <fs/vfs/vfs.h>
 #include <drivers/tty.h>
+#include <fs/devfs/devfs.h>
 #include <common/types.h>
 
 void    vga_write_buf(const uint8_t* buf, uint32_t len);
@@ -43,21 +44,49 @@ static fd_t* fd_get(int fd) {
     return e->kind == FD_CLOSED ? NULL : e;
 }
 
+/* Map a DEV_*_INO to the appropriate fd kind; return -1 if not a dev file. */
+static int _dev_kind(uint32_t ino) {
+    switch (ino) {
+    case DEV_NULL_INO:   return FD_DEV_NULL;
+    case DEV_ZERO_INO:   return FD_DEV_ZERO;
+    case DEV_TTY_INO:    return FD_DEV_TTY;
+    case DEV_RANDOM_INO: return FD_DEV_RANDOM;
+    default:             return -1;
+    }
+}
+
+/* Simple LCG for /dev/random (seeded lazily from PIT uptime). */
+static uint32_t g_rand;
+extern uint32_t pit_uptime_ms(void);
+static uint32_t _rand_next(void) {
+    if (!g_rand) {
+        g_rand = pit_uptime_ms() ^ 0xDEAD1337u;
+        if (!g_rand) g_rand = 1;
+    }
+    g_rand = g_rand * 1664525u + 1013904223u;
+    return g_rand;
+}
+
 int64_t sys_open(const uint8_t* path, int flags) {
-    process_t* cur = scheduler_current();
-    vfs_file_t* f = vfs_lookup_at(cur->cwd_ino, path);
+    process_t* p = scheduler_current();
+    vfs_file_t* f = vfs_lookup_at(p->cwd_ino, path);
     if (!f && (flags & O_CREAT)) f = vfs_creat(path);
     if (!f) return -1;
     if (flags & O_TRUNC) f->size = 0;
 
-    process_t* p = scheduler_current();
     for (int fd = 3; fd < PROC_MAX_FDS; fd++) {
-        if (p->fds[fd].kind == FD_CLOSED) {
+        if (p->fds[fd].kind != FD_CLOSED) continue;
+        int dk = _dev_kind(f->inode);
+        if (dk >= 0) {
+            p->fds[fd].kind   = dk;
+            p->fds[fd].file   = (void*)0;
+            p->fds[fd].offset = 0;
+        } else {
             p->fds[fd].kind   = FD_FILE;
             p->fds[fd].file   = f;
             p->fds[fd].offset = 0;
-            return fd;
         }
+        return fd;
     }
     return -1;                          /* table full */
 }
@@ -110,6 +139,17 @@ int64_t sys_lseek(int fd, int64_t off, int whence) {
 int64_t sys_read(int fd, uint8_t* buf, uint64_t len) {
     fd_t* e = fd_get(fd);
     if (!e) return -1;
+
+    /* ── /dev device reads ── */
+    if (e->kind == FD_DEV_NULL)   return 0;   /* EOF */
+    if (e->kind == FD_DEV_ZERO)   { for (uint64_t i=0;i<len;i++) buf[i]=0; return (int64_t)len; }
+    if (e->kind == FD_DEV_RANDOM) {
+        for (uint64_t i = 0; i < len; i++) {
+            if ((i & 3) == 0) { uint32_t r = _rand_next(); *(uint32_t*)&buf[i & ~3u] = r; }
+        }
+        return (int64_t)len;
+    }
+    if (e->kind == FD_DEV_TTY)    e = &scheduler_current()->fds[0]; /* reroute to stdin */
 
     if (e->kind == FD_CON_IN) {
         uint64_t got = 0;
@@ -171,6 +211,11 @@ int64_t sys_read(int fd, uint8_t* buf, uint64_t len) {
 int64_t sys_write(int fd, const uint8_t* buf, uint64_t len) {
     fd_t* e = fd_get(fd);
     if (!e) return -1;
+
+    /* ── /dev device writes ── */
+    if (e->kind == FD_DEV_NULL || e->kind == FD_DEV_ZERO || e->kind == FD_DEV_RANDOM)
+        return (int64_t)len;   /* discard */
+    if (e->kind == FD_DEV_TTY) e = &scheduler_current()->fds[1]; /* reroute to stdout */
 
     if (e->kind == FD_CON_OUT) {
         vga_write_buf(buf, (uint32_t)len);

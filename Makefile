@@ -68,6 +68,7 @@ KERNEL_C_OBJS = \
   build/fs/noxfs/buffer.o   \
   build/fs/noxfs/noxfs.o    \
   build/fs/procfs/procfs.o  \
+  build/fs/devfs/devfs.o    \
   build/fs/vfs/ramfs.o      \
   build/fs/vfs/vfs.o        \
   build/kernel/syscall/syscall.o

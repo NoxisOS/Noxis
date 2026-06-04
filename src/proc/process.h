@@ -19,12 +19,16 @@
 #define PROC_MAX_FDS      16         /* open files per process          */
 
 /* File-descriptor kinds. */
-#define FD_CLOSED   0
-#define FD_CON_IN   1                /* keyboard (stdin)                */
-#define FD_CON_OUT  2                /* VGA + serial (stdout/stderr)    */
-#define FD_FILE     3                /* a VFS file with a read/write head */
-#define FD_PIPE_R   4                /* read end of a pipe (file=pipe_t*) */
-#define FD_PIPE_W   5                /* write end of a pipe              */
+#define FD_CLOSED      0
+#define FD_CON_IN      1             /* keyboard (stdin)                */
+#define FD_CON_OUT     2             /* VGA + serial (stdout/stderr)    */
+#define FD_FILE        3             /* a VFS file with a read/write head */
+#define FD_PIPE_R      4             /* read end of a pipe (file=pipe_t*) */
+#define FD_PIPE_W      5             /* write end of a pipe              */
+#define FD_DEV_NULL    6             /* /dev/null                        */
+#define FD_DEV_ZERO    7             /* /dev/zero                        */
+#define FD_DEV_RANDOM  8             /* /dev/random                      */
+#define FD_DEV_TTY     9             /* /dev/tty (alias for console)     */
 
 typedef struct {
     int       kind;                  /* FD_* */

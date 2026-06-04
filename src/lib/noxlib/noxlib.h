@@ -151,6 +151,101 @@ static inline void puti(long v) {
     write(1, &buf[i], strlen(&buf[i]));
 }
 
+/* ── printf / sprintf / fprintf ─────────────────────────────────────────── */
+/* Varargs via GCC builtins (works with -nostdinc -ffreestanding). */
+typedef __builtin_va_list _va_list;
+#define _va_start(ap,l) __builtin_va_start(ap,l)
+#define _va_arg(ap,T)   __builtin_va_arg(ap,T)
+#define _va_end(ap)     __builtin_va_end(ap)
+
+static inline int vsnprintf(char* b, size_t sz, const char* fmt, _va_list ap) {
+    if (!sz) return 0;
+    size_t p = 0;
+#define _PC(c) do { if(p<sz-1) b[p++]=(char)(c); } while(0)
+    while (*fmt) {
+        if (*fmt != '%') { _PC(*fmt++); continue; }
+        fmt++;
+        int lft=0, zer=0, wid=0, lng=0;
+        for (;;) { if(*fmt=='-'){lft=1;fmt++;} else if(*fmt=='0'){zer=1;fmt++;} else break; }
+        while (*fmt>='0'&&*fmt<='9') wid=wid*10+(*fmt++-'0');
+        while (*fmt=='l') { lng++; fmt++; }
+        char sp = *fmt++;
+        if (!sp) break;
+        char tmp[32]; int tl=0;
+        if (sp=='c') { tmp[tl++]=(char)_va_arg(ap,int); }
+        else if (sp=='s') {
+            const char* s=_va_arg(ap,const char*); if(!s)s="(null)";
+            int sl=0; const char* q=s; while(*q++)sl++;
+            if(!lft&&wid>sl) for(int i=0;i<wid-sl&&p<sz-1;i++) b[p++]=' ';
+            while(*s&&p<sz-1) b[p++]=(char)*s++;
+            if(lft&&wid>sl)  for(int i=0;i<wid-sl&&p<sz-1;i++) b[p++]=' ';
+            continue;
+        }
+        else if (sp=='d'||sp=='i') {
+            long long v=(lng>=2)?_va_arg(ap,long long):(lng?_va_arg(ap,long):(long long)_va_arg(ap,int));
+            unsigned long long u=(v<0)?(unsigned long long)(-v):(unsigned long long)v;
+            if(v<0) tmp[tl++]='-';
+            char tb[24]; int ti=24; if(!u) tb[--ti]='0'; else while(u){tb[--ti]='0'+(u%10);u/=10;}
+            while(ti<24) tmp[tl++]=tb[ti++];
+        }
+        else if (sp=='u') {
+            unsigned long long u=(lng>=2)?_va_arg(ap,unsigned long long):(lng?_va_arg(ap,unsigned long):(unsigned long long)_va_arg(ap,unsigned int));
+            char tb[24]; int ti=24; if(!u)tb[--ti]='0'; else while(u){tb[--ti]='0'+(u%10);u/=10;}
+            while(ti<24) tmp[tl++]=tb[ti++];
+        }
+        else if (sp=='x'||sp=='X') {
+            unsigned long long u=(lng>=2)?_va_arg(ap,unsigned long long):(lng?_va_arg(ap,unsigned long):(unsigned long long)_va_arg(ap,unsigned int));
+            const char* hx=(sp=='x')?"0123456789abcdef":"0123456789ABCDEF";
+            char tb[24]; int ti=24; if(!u)tb[--ti]='0'; else while(u){tb[--ti]=hx[u&15];u>>=4;}
+            while(ti<24) tmp[tl++]=tb[ti++];
+        }
+        else if (sp=='p') {
+            unsigned long long u=(unsigned long long)(unsigned long)_va_arg(ap,void*);
+            tmp[tl++]='0'; tmp[tl++]='x';
+            const char* hx="0123456789abcdef"; char tb[24]; int ti=24;
+            if(!u)tb[--ti]='0'; else while(u){tb[--ti]=hx[u&15];u>>=4;}
+            while(ti<24) tmp[tl++]=tb[ti++];
+        }
+        else if (sp=='%') { tmp[tl++]='%'; }
+        else { tmp[tl++]='%'; tmp[tl++]=sp; }
+        tmp[tl]=0;
+        /* width / padding */
+        if (!lft&&wid>tl) { char pd=(zer&&sp!='s')?' ':' '; (void)pd;
+            char fp=(zer&&sp!='s')?'0':' ';
+            if(zer&&tl>0&&tmp[0]=='-'&&p<sz-1){b[p++]='-';for(int i=0;i<wid-tl&&p<sz-1;i++)b[p++]='0';for(int i=1;i<tl&&p<sz-1;i++)b[p++]=tmp[i];continue;}
+            for(int i=0;i<wid-tl&&p<sz-1;i++) b[p++]=fp; }
+        for(int i=0;i<tl&&p<sz-1;i++) b[p++]=tmp[i];
+        if (lft&&wid>tl) for(int i=0;i<wid-tl&&p<sz-1;i++) b[p++]=' ';
+    }
+#undef _PC
+    b[p]=0; return (int)p;
+}
+
+static inline int snprintf(char* b, size_t sz, const char* fmt, ...) {
+    _va_list ap; _va_start(ap, fmt);
+    int r = vsnprintf(b, sz, fmt, ap);
+    _va_end(ap); return r;
+}
+static inline int sprintf(char* b, const char* fmt, ...) {
+    _va_list ap; _va_start(ap, fmt);
+    int r = vsnprintf(b, (size_t)4096, fmt, ap);
+    _va_end(ap); return r;
+}
+static inline int printf(const char* fmt, ...) {
+    char _pb[1024]; _va_list ap; _va_start(ap, fmt);
+    int r = vsnprintf(_pb, sizeof(_pb), fmt, ap);
+    _va_end(ap);
+    if (r > 0) write(1, _pb, (size_t)r);
+    return r;
+}
+static inline int fprintf(int fd, const char* fmt, ...) {
+    char _pb[1024]; _va_list ap; _va_start(ap, fmt);
+    int r = vsnprintf(_pb, sizeof(_pb), fmt, ap);
+    _va_end(ap);
+    if (r > 0) write(fd, _pb, (size_t)r);
+    return r;
+}
+
 /* ── Terminal (termios) ──────────────────────────────────────────────────── */
 
 /* c_lflag bits */
