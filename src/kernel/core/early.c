@@ -66,6 +66,7 @@ void kernel_main(void) {
 
     serial_write((const uint8_t*)"[noxis64] IDT ... ");
     isr_init();
+    isr_register_handler(14, vmm_page_fault_handler);   /* #PF → CoW resolver */
     serial_write((const uint8_t*)"OK\n");
 
     serial_write((const uint8_t*)"[noxis64] PIC ... ");

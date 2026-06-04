@@ -13,6 +13,7 @@
 #include <mm/virt/vmm.h>
 #include <mm/phys/pmm.h>
 #include <drivers/serial.h>
+#include <kernel/isr/isr.h>
 
 void serial_write_hex64(uint64_t v);
 
@@ -149,6 +150,152 @@ int vmm_copy_user_space(uint64_t dst_pml4, uint64_t src_pml4) {
         }
     }
     return 0;
+}
+
+/* Share the user half (PML4[0]) of src into dst using copy-on-write.
+ *
+ * For every mapped leaf page:
+ *   1. Clear PAGE_RW + set PAGE_COW in the *source* PTE (makes it read-only).
+ *   2. Map the same physical frame into dst with the same read-only + CoW flags.
+ *   3. Increment the frame's refcount so it survives until both sides drop it.
+ *
+ * On the first write by either side the CPU raises a #PF (protection violation
+ * on a present page), which vmm_page_fault_handler resolves by allocating a
+ * private copy.
+ */
+int vmm_cow_user_space(uint64_t dst_pml4, uint64_t src_pml4) {
+    uint64_t* spml4 = as_table(src_pml4);
+    if (!(spml4[0] & PAGE_PRESENT)) return 0;
+    uint64_t* spdpt = as_table(spml4[0] & ~0xFFFULL);
+
+    for (uint64_t i3 = 0; i3 < ENTRIES; i3++) {
+        if (!(spdpt[i3] & PAGE_PRESENT)) continue;
+        uint64_t* spd = as_table(spdpt[i3] & ~0xFFFULL);
+        for (uint64_t i2 = 0; i2 < ENTRIES; i2++) {
+            if (!(spd[i2] & PAGE_PRESENT) || (spd[i2] & PAGE_PS)) continue;
+            uint64_t* spt = as_table(spd[i2] & ~0xFFFULL);
+            for (uint64_t i1 = 0; i1 < ENTRIES; i1++) {
+                if (!(spt[i1] & PAGE_PRESENT)) continue;
+
+                uint64_t va    = (i3 << 30) | (i2 << 21) | (i1 << 12);
+                uint64_t phys  = spt[i1] & ~0xFFFULL;
+
+                /* Shared flags: present + user + CoW, but NOT writable. */
+                uint64_t flags = (spt[i1] & 0xFFF) & ~PAGE_RW;
+                flags |= PAGE_COW;
+
+                /* Demote the source page to read-only + CoW. */
+                spt[i1] = phys | flags;
+                __asm__ __volatile__("invlpg (%0)" :: "r"(va) : "memory");
+
+                /* Map the same frame into the child (vmm_map_page_into adds PRESENT). */
+                if (vmm_map_page_into(dst_pml4, va, phys,
+                                      flags & ~PAGE_PRESENT) != 0) return -1;
+
+                /* Both parent and child now hold a reference. */
+                pmm_addref(phys);
+            }
+        }
+    }
+    return 0;
+}
+
+/* Release every user frame and every intermediate page-table frame of pml4.
+ * Leaf frames are released through pmm_free_frame (refcount-aware); table
+ * frames have refcount 1 (unique per AS) and are freed immediately.
+ * Never call this on the kernel PML4 or on 0.
+ */
+void vmm_free_user_space(uint64_t pml4_phys) {
+    if (!pml4_phys || pml4_phys == g_kernel_pml4) return;
+
+    uint64_t* pml4 = as_table(pml4_phys);
+    if (!(pml4[0] & PAGE_PRESENT)) goto free_pml4;
+
+    {
+        uint64_t pdpt_phys = pml4[0] & ~0xFFFULL;
+        uint64_t* pdpt = as_table(pdpt_phys);
+        for (uint64_t i3 = 0; i3 < ENTRIES; i3++) {
+            if (!(pdpt[i3] & PAGE_PRESENT)) continue;
+            uint64_t pd_phys = pdpt[i3] & ~0xFFFULL;
+            uint64_t* pd = as_table(pd_phys);
+            for (uint64_t i2 = 0; i2 < ENTRIES; i2++) {
+                if (!(pd[i2] & PAGE_PRESENT) || (pd[i2] & PAGE_PS)) continue;
+                uint64_t pt_phys = pd[i2] & ~0xFFFULL;
+                uint64_t* pt = as_table(pt_phys);
+                for (uint64_t i1 = 0; i1 < ENTRIES; i1++) {
+                    if (pt[i1] & PAGE_PRESENT)
+                        pmm_free_frame(pt[i1] & ~0xFFFULL);
+                }
+                pmm_free_frame(pt_phys);   /* PT frame itself (refcount 1) */
+            }
+            pmm_free_frame(pd_phys);       /* PD frame */
+        }
+        pmm_free_frame(pdpt_phys);         /* PDPT frame */
+    }
+free_pml4:
+    pmm_free_frame(pml4_phys);             /* PML4 frame */
+}
+
+/* ── #PF handler ────────────────────────────────────────────────────────────
+ * Error-code bits (Intel SDM vol.3 §6.15):
+ *   bit 0 (P)  – 0 = not-present,  1 = protection violation
+ *   bit 1 (W)  – 0 = read,         1 = write
+ *   bit 2 (U)  – 0 = supervisor,   1 = user-mode fault
+ *
+ * A CoW fault is: P=1 (page present), W=1 (write), PAGE_COW set in PTE.
+ * Anything else is a genuine fault → panic.
+ */
+void vmm_page_fault_handler(isr_frame_t* frame) {
+    uint64_t va, cr3;
+    __asm__ __volatile__("mov %%cr2, %0" : "=r"(va));
+    __asm__ __volatile__("mov %%cr3, %0" : "=r"(cr3));
+    cr3 &= ~0xFFFULL;
+
+    uint64_t ec = frame->error_code;
+
+    /* Only handle write faults on present pages in a user address space. */
+    if ((ec & 0x3) == 0x3 && cr3 && cr3 != g_kernel_pml4) {
+        /* Walk the page tables for this VA. */
+        uint64_t i4 = (va >> 39) & 0x1FF, i3 = (va >> 30) & 0x1FF;
+        uint64_t i2 = (va >> 21) & 0x1FF, i1 = (va >> 12) & 0x1FF;
+
+        uint64_t* pml4 = as_table(cr3);
+        if (!(pml4[i4] & PAGE_PRESENT)) goto not_cow;
+        uint64_t* pdpt = as_table(pml4[i4] & ~0xFFFULL);
+        if (!(pdpt[i3] & PAGE_PRESENT)) goto not_cow;
+        uint64_t* pd   = as_table(pdpt[i3] & ~0xFFFULL);
+        if (!(pd[i2] & PAGE_PRESENT) || (pd[i2] & PAGE_PS)) goto not_cow;
+        uint64_t* pt   = as_table(pd[i2] & ~0xFFFULL);
+        uint64_t  pte  = pt[i1];
+        if (!(pte & PAGE_PRESENT) || !(pte & PAGE_COW)) goto not_cow;
+
+        uint64_t old_phys = pte & ~0xFFFULL;
+        uint64_t flags    = (pte & 0xFFF) & ~PAGE_COW;   /* strip CoW bit */
+
+        if (pmm_refcount(old_phys) == 1) {
+            /* Sole owner — just make the page writable in place. */
+            pt[i1] = old_phys | flags | PAGE_RW;
+        } else {
+            /* Shared — allocate a private copy. */
+            uint64_t new_phys = pmm_alloc_frame();
+            if (!new_phys) goto not_cow;   /* OOM → treat as fatal */
+            uint8_t* src = (uint8_t*)(PHYSMAP_BASE + old_phys);
+            uint8_t* dst = (uint8_t*)(PHYSMAP_BASE + new_phys);
+            for (int b = 0; b < 4096; b++) dst[b] = src[b];
+            pmm_free_frame(old_phys);      /* drop our share of the old frame */
+            pt[i1] = new_phys | flags | PAGE_RW;
+        }
+        __asm__ __volatile__("invlpg (%0)" :: "r"(va) : "memory");
+        return;   /* resume the faulting instruction */
+    }
+
+not_cow:
+    serial_write((const uint8_t*)"\n[noxis64] PAGE FAULT  err=");
+    serial_write_hex64(ec);
+    serial_write((const uint8_t*)"  cr2="); serial_write_hex64(va);
+    serial_write((const uint8_t*)"  rip="); serial_write_hex64(frame->rip);
+    serial_write((const uint8_t*)"\n[noxis64] halted.\n");
+    for (;;) __asm__ __volatile__("cli; hlt");
 }
 
 /* Create a new address space: private user half, shared physmap + kernel. */

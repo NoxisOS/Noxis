@@ -13,6 +13,7 @@ void serial_write_hex64(uint64_t v);
 #define RESERVED_END  (2ULL * 1024 * 1024)    /* first 2 MB reserved */
 
 static uint64_t g_bitmap[BMP_WORDS];          /* 1 = used */
+static uint8_t  g_refcount[MAX_FRAMES];       /* per-frame reference count */
 static uint64_t g_nframes;
 static uint64_t g_free;
 
@@ -46,14 +47,33 @@ os_status_t pmm_init(uint64_t ram_bytes) {
 
 uint64_t pmm_alloc_frame(void) {
     for (uint64_t f = 0; f < g_nframes; f++) {
-        if (!is_used(f)) { mark_used(f); g_free--; return f * PAGE_SIZE; }
+        if (!is_used(f)) {
+            mark_used(f); g_free--;
+            g_refcount[f] = 1;
+            return f * PAGE_SIZE;
+        }
     }
     return 0;
 }
 
+/* Decrement refcount; only physically free the frame when it hits zero. */
 void pmm_free_frame(uint64_t phys) {
     uint64_t f = phys / PAGE_SIZE;
-    if (f < g_nframes && is_used(f)) { mark_free(f); g_free++; }
+    if (f >= g_nframes || !is_used(f)) return;
+    if (g_refcount[f] > 1) { g_refcount[f]--; return; }
+    g_refcount[f] = 0;
+    mark_free(f);
+    g_free++;
+}
+
+void pmm_addref(uint64_t phys) {
+    uint64_t f = phys / PAGE_SIZE;
+    if (f < g_nframes && g_refcount[f] < 255) g_refcount[f]++;
+}
+
+uint8_t pmm_refcount(uint64_t phys) {
+    uint64_t f = phys / PAGE_SIZE;
+    return (f < g_nframes) ? g_refcount[f] : 0;
 }
 
 uint64_t pmm_free_count(void) { return g_free; }

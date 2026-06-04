@@ -23,4 +23,10 @@ void        pmm_free_frame(uint64_t phys);
 /* Number of free frames. */
 uint64_t    pmm_free_count(void);
 
+/* Increment the reference count of a frame (used by CoW fork). */
+void        pmm_addref(uint64_t phys);
+
+/* Return the current reference count of a frame. */
+uint8_t     pmm_refcount(uint64_t phys);
+
 #endif /* MM_PMM_H */

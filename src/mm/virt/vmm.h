@@ -12,6 +12,7 @@
 #define PAGE_PRESENT  0x1
 #define PAGE_RW       0x2
 #define PAGE_USER     0x4
+#define PAGE_COW      0x200  /* AVL bit — software copy-on-write marker */
 
 /* Build the kernel PML4 (low identity + physmap + higher-half) and load it. */
 os_status_t vmm_init(void);
@@ -34,5 +35,18 @@ uint64_t vmm_create_address_space(void);
 
 /* Deep-copy the user half (PML4[0]) of src_pml4 into dst_pml4. Returns 0 ok. */
 int vmm_copy_user_space(uint64_t dst_pml4, uint64_t src_pml4);
+
+/* CoW fork: mark all src user pages read-only + CoW, share frames into dst.
+   Both processes fault-copy on the first write.  Returns 0 on success. */
+int vmm_cow_user_space(uint64_t dst_pml4, uint64_t src_pml4);
+
+/* Walk PML4[0] and release every user page (respecting refcounts) plus all
+   intermediate page-table frames.  Safe to call after vmm_switch away. */
+void vmm_free_user_space(uint64_t pml4_phys);
+
+/* ISR vector-14 (#PF) handler — register with isr_register_handler(14, ...).
+   Resolves CoW faults; panics on genuine protection violations. */
+#include <kernel/isr/isr.h>
+void vmm_page_fault_handler(isr_frame_t* frame);
 
 #endif /* MM_VMM_H */

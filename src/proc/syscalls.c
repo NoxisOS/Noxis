@@ -7,6 +7,7 @@
 #include <proc/scheduler.h>
 #include <mm/virt/vmm.h>
 #include <mm/phys/pmm.h>
+#include <mm/virt/heap.h>
 #include <fs/vfs/vfs.h>
 #include <common/types.h>
 
@@ -33,7 +34,7 @@ int64_t sys_fork(syscall_frame_t* f) {
 
     uint64_t child_pml4 = vmm_create_address_space();
     if (!child_pml4) return -1;
-    if (vmm_copy_user_space(child_pml4, parent->pml4) != 0) return -1;
+    if (vmm_cow_user_space(child_pml4, parent->pml4) != 0) return -1;
 
     process_t* child = proc_alloc(parent->name);
     if (!child) return -1;
@@ -109,8 +110,10 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
     off -= 8; *(uint64_t*)(page + off) = (uint64_t)argc;/* argc (rsp points here) */
 
     process_t* cur = scheduler_current();
+    uint64_t   old_pml4 = cur->pml4;
     cur->pml4 = nas;
     vmm_switch(nas);                   /* kernel half is shared, frame stays valid */
+    vmm_free_user_space(old_pml4);     /* reclaim old pages now that we've switched */
 
     f->rip    = entry;
     f->ursp   = USTACK_VA + off;
@@ -167,7 +170,10 @@ int64_t sys_waitpid(int64_t pid, int* status) {
         if (z) {
             if (status) *status = z->exit_code;
             int64_t cpid = (int64_t)z->pid;
-            scheduler_remove(z);       /* drop from the global list */
+            scheduler_remove(z);
+            vmm_free_user_space(z->pml4);      /* release all user pages */
+            kfree((void*)z->kstack_base);      /* kernel stack */
+            kfree(z);                          /* process struct */
             return cpid;
         }
         scheduler_yield();             /* let the child run, then re-check */
