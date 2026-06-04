@@ -212,8 +212,8 @@ src/
 ├── proc/        process, scheduler, fork/exec/wait, fd table, pipes, signals, ELF loader
 ├── drivers/     vga, kbd, serial, pit, ata, block, keymap
 ├── fs/          noxfs (on-disk) + vfs + buffer cache
-├── noxlib/      user-space C runtime (crt0 + syscall wrappers)
-└── userland/    nsh + coreutils (ls, echo, cat, ps, …)
+├── lib/noxlib/  user-space C runtime (crt0 + syscall wrappers + user.ld)
+└── bin/         one folder per program: nsh, ls, echo, cat, ps
 ```
 
 ---
