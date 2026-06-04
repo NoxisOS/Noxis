@@ -29,6 +29,7 @@ typedef long           ssize_t;
 #define SYS_CHDIR    18
 #define SYS_GETCWD   19
 #define SYS_GETDENTS 20
+#define SYS_BRK      21
 
 #define SIGINT   2
 #define SIGKILL  9
@@ -142,6 +143,85 @@ static inline void puti(long v) {
     do { buf[--i] = (char)('0' + (u % 10)); u /= 10; } while (u);
     if (v < 0) buf[--i] = '-';
     write(1, &buf[i], strlen(&buf[i]));
+}
+
+/* ── Memory helpers ──────────────────────────────────────────────────────── */
+
+static inline void* memcpy(void* dst, const void* src, size_t n) {
+    char* d = (char*)dst; const char* s = (const char*)src;
+    for (size_t i = 0; i < n; i++) d[i] = s[i];
+    return dst;
+}
+static inline void* memset(void* dst, int c, size_t n) {
+    char* d = (char*)dst;
+    for (size_t i = 0; i < n; i++) d[i] = (char)c;
+    return dst;
+}
+static inline int memcmp(const void* a, const void* b, size_t n) {
+    const unsigned char* p = (const unsigned char*)a;
+    const unsigned char* q = (const unsigned char*)b;
+    for (size_t i = 0; i < n; i++)
+        if (p[i] != q[i]) return (int)p[i] - (int)q[i];
+    return 0;
+}
+
+/* ── Heap allocation ─────────────────────────────────────────────────────── */
+
+/* brk(addr): set the program break.  Returns new break, or old on failure. */
+static inline long brk(long addr) {
+    return _syscall3(SYS_BRK, addr, 0, 0);
+}
+/* sbrk(incr): extend the heap by incr bytes.  Returns old break, or -1. */
+static inline void* sbrk(long incr) {
+    long cur = brk(0);
+    if (incr == 0) return (void*)cur;
+    long nb = brk(cur + incr);
+    return (nb == cur + incr) ? (void*)cur : (void*)-1;
+}
+
+/* ── malloc / free / realloc ─────────────────────────────────────────────
+ * Simple first-fit allocator over sbrk.  16-byte header per block.
+ * Not thread-safe (single-threaded user processes).                       */
+typedef struct _nh { size_t size; unsigned int free; unsigned int _pad; } _nh_t;
+#define _NH  ((size_t)sizeof(_nh_t))  /* 16 bytes */
+
+static inline void* malloc(size_t sz) {
+    static char* _hbase;
+    static char* _hend;
+    if (!_hbase) { _hbase = _hend = (char*)sbrk(0); }
+    if (!sz) return (void*)0;
+    sz = (sz + 15u) & ~(size_t)15u;
+
+    /* First-fit search */
+    _nh_t* h = (_nh_t*)_hbase;
+    while ((char*)h < _hend) {
+        if (h->free && h->size >= sz) { h->free = 0; return (void*)(h + 1); }
+        h = (_nh_t*)((char*)(h + 1) + h->size);
+    }
+
+    /* Extend heap */
+    size_t need = _NH + sz;
+    if (sbrk((long)need) == (void*)-1) return (void*)0;
+    h = (_nh_t*)_hend; _hend += (long)need;
+    h->size = sz; h->free = 0; h->_pad = 0;
+    return (void*)(h + 1);
+}
+
+static inline void free(void* ptr) {
+    if (!ptr) return;
+    ((_nh_t*)ptr - 1)->free = 1;
+}
+
+static inline void* realloc(void* ptr, size_t sz) {
+    if (!ptr)  return malloc(sz);
+    if (!sz)   { free(ptr); return (void*)0; }
+    _nh_t* h = (_nh_t*)ptr - 1;
+    if (h->size >= sz) return ptr;
+    void* n = malloc(sz);
+    if (!n) return (void*)0;
+    memcpy(n, ptr, h->size);
+    free(ptr);
+    return n;
 }
 
 #endif /* NOXLIB_H */

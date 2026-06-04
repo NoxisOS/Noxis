@@ -50,6 +50,7 @@ typedef struct process {
     uint64_t         uentry;          /* ring-3 entry point (user procs) */
     uint64_t         ursp;            /* initial ring-3 stack pointer    */
     uint64_t         stack_low;       /* lowest mapped stack VA (grows down on #PF) */
+    uint64_t         brk;             /* current program break (top of heap)        */
     uint32_t         cwd_ino;         /* current working directory inode           */
     uint8_t          cwd_path[128];   /* cwd as a canonical path string            */
     struct process*  parent;          /* creator (for waitpid)           */

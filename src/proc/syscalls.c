@@ -14,7 +14,7 @@
 
 void serial_write(const uint8_t* s);
 void serial_write_hex64(uint64_t v);
-uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
+uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img, uint64_t* brk_out);
 void pipe_addref(int kind, void* file);
 void pipe_close(int kind, void* file);
 static int fd_is_pipe(int k) { return k == FD_PIPE_R || k == FD_PIPE_W; }
@@ -42,6 +42,7 @@ int64_t sys_fork(syscall_frame_t* f) {
     child->parent    = parent;
     child->stack_low = parent->stack_low;
     child->cwd_ino   = parent->cwd_ino;
+    child->brk       = parent->brk;
     for (int i = 0; i < 128; i++) child->cwd_path[i] = parent->cwd_path[i];
     for (int i = 0; i < PROC_MAX_FDS; i++) {
         child->fds[i] = parent->fds[i];
@@ -85,7 +86,8 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
 
     uint64_t nas = vmm_create_address_space();
     if (!nas) return -1;
-    uint64_t entry = elf64_load_into(nas, prog->data);
+    uint64_t brk_init = 0;
+    uint64_t entry = elf64_load_into(nas, prog->data, &brk_init);
     if (!entry) return -1;
 
     uint64_t stk = pmm_alloc_frame();
@@ -119,6 +121,7 @@ int64_t sys_exec(syscall_frame_t* f, const uint8_t* path, const uint8_t** argv) 
     vmm_free_user_space(old_pml4);     /* reclaim old pages now that we've switched */
 
     cur->stack_low = USTACK_BASE;
+    cur->brk = brk_init;               /* heap starts right after the ELF image */
     if (cur->cwd_ino == 0) {           /* first exec: inherit root as cwd */
         cur->cwd_ino = vfs_root_ino();
         cur->cwd_path[0] = '/'; cur->cwd_path[1] = 0;
@@ -148,6 +151,29 @@ uint64_t sys_getpid(void) { return scheduler_current()->pid; }
 
 /* setfg(pid): mark pid as the foreground process (receives Ctrl-C SIGINT). */
 void sys_setfg(uint64_t pid) { scheduler_set_fg(pid); }
+
+/* brk(addr): set the program break to addr (grows the heap).
+ * addr == 0 → return current break without changing it.
+ * Maps new pages as needed; returns the new break, or the old one on failure. */
+int64_t sys_brk(uint64_t addr) {
+    process_t* p = scheduler_current();
+    if (addr == 0) return (int64_t)p->brk;
+    if (addr <= p->brk) return (int64_t)p->brk;   /* no shrink */
+    if (addr >= USER_HEAP_MAX) return (int64_t)p->brk;
+
+    /* Map every new page between old break (page-aligned up) and new break. */
+    uint64_t old_top = (p->brk  + 0xFFFULL) & ~0xFFFULL;
+    uint64_t new_top = (addr    + 0xFFFULL) & ~0xFFFULL;
+    for (uint64_t va = old_top; va < new_top; va += 0x1000) {
+        uint64_t frame = pmm_alloc_frame();
+        if (!frame) return (int64_t)p->brk;   /* OOM: return unchanged break */
+        uint8_t* pg = (uint8_t*)(PHYSMAP_BASE + frame);
+        for (int i = 0; i < 4096; i++) pg[i] = 0;
+        vmm_map_page_into(p->pml4, va, frame, PAGE_RW | PAGE_USER);
+    }
+    p->brk = addr;
+    return (int64_t)addr;
+}
 
 /* ── Path helpers ──────────────────────────────────────────────────────── */
 

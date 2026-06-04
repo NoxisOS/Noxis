@@ -33,7 +33,7 @@ os_status_t kbd_init(void);
 os_status_t syscall_init(void);
 extern void enter_ring3(uint64_t entry, uint64_t user_rsp);
 uint64_t elf64_load(const uint8_t* img);
-uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img);
+uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img, uint64_t* brk_out);
 
 
 /* Background kernel thread: prints once a second to prove that the timer
@@ -160,7 +160,8 @@ void kernel_main(void) {
         serial_write((const uint8_t*)"FAIL (nsh.elf not found)\n");
         for (;;) __asm__ __volatile__("cli; hlt");
     }
-    uint64_t entry = elf64_load_into(uas, prog->data);
+    uint64_t brk_init = 0;
+    uint64_t entry = elf64_load_into(uas, prog->data, &brk_init);
     serial_write((const uint8_t*)"entry="); serial_write_hex64(entry);
     serial_write((const uint8_t*)"\n");
 
@@ -181,7 +182,8 @@ void kernel_main(void) {
     process_t* up = proc_spawn_user((const uint8_t*)"nsh", uas,
                                     entry, ursp, 1);
     up->stack_low = USTACK_BASE;
-    up->cwd_ino   = vfs_root_ino();    /* nsh starts in the root directory */
+    up->brk       = brk_init;
+    up->cwd_ino   = vfs_root_ino();
     /* cwd_path already initialised to "/" by proc_alloc */
     scheduler_register(up);
 

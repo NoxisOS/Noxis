@@ -27,7 +27,9 @@
 #define USTACK_PAGES  64ULL                  /* maximum stack pages            */
 #define USTACK_LIMIT  (USTACK_BASE - (USTACK_PAGES - 1ULL) * 0x1000ULL)
 
-/* Heap (brk) grows UP from the end of the ELF image. */
+/* Heap: grows UP from the end of the loaded ELF image.
+ * brk_base is set by exec to the page-aligned ELF end.
+ * USER_HEAP_MAX is the hard ceiling (well below the stack region). */
 #define USER_HEAP_MAX  0x40000000ULL
 
 #endif /* MM_VIRT_UVM_H */

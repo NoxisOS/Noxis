@@ -28,6 +28,7 @@ int64_t  sys_signal(int sig, uint64_t handler);
 int64_t  sys_kill(int64_t pid, int sig);
 void     sys_setfg(uint64_t pid);
 int64_t  sys_chdir(const uint8_t* path);
+int64_t  sys_brk(uint64_t addr);
 int64_t  sys_getcwd(uint8_t* buf, uint64_t size);
 int64_t  sys_getdents(const uint8_t* path, uint8_t* buf, uint64_t len);
 void     deliver_signals(syscall_frame_t* f);
@@ -81,6 +82,7 @@ enum {
     SYS_KILL = 14, SYS_SIGNAL = 15, SYS_PROCINFO = 16,
     SYS_SETFG = 17,
     SYS_CHDIR = 18, SYS_GETCWD = 19, SYS_GETDENTS = 20,
+    SYS_BRK = 21,
 };
 
 static void do_syscall(syscall_frame_t* f) {
@@ -114,6 +116,7 @@ static void do_syscall(syscall_frame_t* f) {
     case SYS_GETCWD:  f->rax = (uint64_t)sys_getcwd((uint8_t*)f->rdi, f->rsi); return;
     case SYS_GETDENTS:f->rax = (uint64_t)sys_getdents((const uint8_t*)f->rdi,
                                   (uint8_t*)f->rsi, f->rdx);               return;
+    case SYS_BRK:     f->rax = (uint64_t)sys_brk(f->rdi);                  return;
     default:          f->rax = (uint64_t)-1;                               return;
     }
 }

@@ -45,8 +45,12 @@ static uint64_t va_to_phys(uint64_t pml4_phys, uint64_t va) {
     return (pt[i1] & ~0xFFFULL) | (va & 0xFFF);
 }
 
-/* Load an ELF64 image into the address space pml4_phys. Returns entry, or 0. */
-uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img) {
+/* Load an ELF64 image into the address space pml4_phys.
+ * Returns the entry point VA, or 0 on error.
+ * If brk_out is non-NULL it receives the page-aligned end of the highest
+ * PT_LOAD segment — the initial program break for the heap. */
+uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img,
+                          uint64_t* brk_out) {
     const elf64_ehdr* eh = (const elf64_ehdr*)img;
     if (eh->e_ident[0] != 0x7F || eh->e_ident[1] != 'E' ||
         eh->e_ident[2] != 'L'  || eh->e_ident[3] != 'F') {
@@ -58,6 +62,7 @@ uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img) {
         return 0;
     }
 
+    uint64_t load_end = 0;
     const elf64_phdr* ph = (const elf64_phdr*)(img + eh->e_phoff);
     for (uint16_t i = 0; i < eh->e_phnum; i++) {
         if (ph[i].p_type != PT_LOAD) continue;
@@ -65,6 +70,7 @@ uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img) {
         uint64_t va     = ph[i].p_vaddr;
         uint64_t vstart = va & ~0xFFFULL;
         uint64_t vend   = (va + ph[i].p_memsz + 0xFFF) & ~0xFFFULL;
+        if (vend > load_end) load_end = vend;
 
         for (uint64_t p = vstart; p < vend; p += 0x1000) {
             uint64_t fr = pmm_alloc_frame();
@@ -72,8 +78,7 @@ uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img) {
             vmm_map_page_into(pml4_phys, p, fr, PAGE_RW | PAGE_USER);
         }
 
-        /* Copy file data + zero BSS through the physmap, byte by byte
-           (segments may straddle page boundaries with non-contiguous frames). */
+        /* Copy file data + zero BSS through the physmap, byte by byte. */
         const uint8_t* src = img + ph[i].p_offset;
         for (uint64_t b = 0; b < ph[i].p_memsz; b++) {
             uint64_t phys = va_to_phys(pml4_phys, va + b);
@@ -82,10 +87,11 @@ uint64_t elf64_load_into(uint64_t pml4_phys, const uint8_t* img) {
         }
     }
 
+    if (brk_out) *brk_out = load_end;
     return eh->e_entry;
 }
 
 /* Backward-compatible wrapper: load into the current (kernel) address space. */
 uint64_t elf64_load(const uint8_t* img) {
-    return elf64_load_into(vmm_kernel_pml4(), img);
+    return elf64_load_into(vmm_kernel_pml4(), img, (uint64_t*)0);
 }
