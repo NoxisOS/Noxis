@@ -6,6 +6,7 @@
  * @date    2026-05-30
  */
 #include <fs/vfs/vfs.h>
+#include <fs/procfs/procfs.h>
 
 extern os_status_t  ramfs_init(void);
 extern uint32_t     ramfs_count(void);
@@ -70,38 +71,40 @@ uint32_t vfs_root_ino(void) {
 }
 
 uint32_t vfs_resolve_ino(uint32_t cwd_ino, const uint8_t* path) {
+    if (procfs_is_proc_path(path)) return procfs_resolve(path);
     if (!_use_noxfs) return (uint32_t)-1;
     return noxfs_resolve(cwd_ino, path);
 }
 
 vfs_file_t* vfs_lookup_at(uint32_t cwd_ino, const uint8_t* path) {
+    /* Intercept /proc paths before touching the disk FS */
+    if (procfs_is_proc_path(path)) return procfs_lookup(path);
     if (!_use_noxfs) return vfs_lookup(path);
-    /* Absolute path: delegate to plain lookup for cache hit */
     if (path[0] == '/') return noxfs_lookup(path);
-    /* Relative: resolve inode first, then build a vfs_file_t via lookup */
     uint32_t ino = noxfs_resolve(cwd_ino, path);
     if (ino == (uint32_t)-1) return (vfs_file_t*)0;
-    /* Walk noxfs file table to find by inode */
     for (uint32_t i = 0; i < noxfs_count(); i++) {
         vfs_file_t* f = noxfs_entry(i);
         if (f && f->inode == ino) return f;
     }
-    /* Not in cache yet — resolve as a path from root for the name */
     const uint8_t* base = path;
     for (const uint8_t* p = path; *p; p++)
         if (*p == '/') base = p + 1;
-    return noxfs_lookup(base);   /* fallback: look up by basename */
+    return noxfs_lookup(base);
 }
 
 int32_t vfs_getdents(uint32_t dir_ino, uint8_t* buf,
                      uint32_t len, uint32_t* off) {
+    if (IS_PROCFS_INO(dir_ino))
+        return procfs_getdents(dir_ino, buf, len, off);
     if (!_use_noxfs) return -1;
     return noxfs_getdents(dir_ino, buf, len, off);
 }
 
 int vfs_is_dir(uint32_t ino) {
+    if (IS_PROCFS_INO(ino)) return procfs_is_dir(ino);
     if (!_use_noxfs) return 0;
     vfs_file_t st;
     if (noxfs_stat(ino, &st) != 0) return 0;
-    return (st.capacity & 0x4000u) ? 1 : 0;  /* NOXFS_INO_DIR = 0x4000 */
+    return (st.capacity & 0x4000u) ? 1 : 0;
 }
