@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hal     = { path = "../hal" }
-sync    = { path = "../sync" }
-x86_64  = { workspace = true }
-bitflags = { workspace = true }
+hal                   = { path = "../hal" }
+sync                  = { path = "../sync" }
+x86_64                = { workspace = true }
+bitflags              = { workspace = true }
+linked_list_allocator = { workspace = true }
+bootloader-api        = { workspace = true }

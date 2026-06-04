@@ -4,14 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hal     = { path = "../crates/hal" }
-mm      = { path = "../crates/mm" }
-sync    = { path = "../crates/sync" }
-drivers = { path = "../crates/drivers" }
-abi     = { path = "../crates/abi" }
-x86_64  = { workspace = true }
+hal        = { path = "../crates/hal" }
+mm         = { path = "../crates/mm" }
+sync       = { path = "../crates/sync" }
+drivers    = { path = "../crates/drivers" }
+sched      = { path = "../crates/sched" }
+vfs        = { path = "../crates/vfs" }
+syscall    = { path = "../crates/syscall" }
+abi        = { path = "../crates/abi" }
+x86_64     = { workspace = true }
 bootloader-api = { workspace = true }
 
+[build-dependencies]
+# nothing yet
+
 [[bin]]
-name              = "kernel"
-path              = "src/main.rs"
+name = "kernel"
+path = "src/main.rs"

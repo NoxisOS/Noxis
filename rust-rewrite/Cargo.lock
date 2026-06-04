@@ -302,7 +302,10 @@ dependencies = [
  "drivers",
  "hal",
  "mm",
+ "sched",
  "sync",
+ "syscall",
+ "vfs",
  "x86_64",
 ]
 
@@ -319,6 +322,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "linked_list_allocator"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b23ac50abb8261cb38c6e2a7192d3302e0836dac1628f6a93b82b4fad185897"
+dependencies = [
+ "spinning_top",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -329,6 +341,15 @@ name = "llvm-tools"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "955be5d0ca0465caf127165acb47964f911e2bc26073e865deb8be7189302faf"
+
+[[package]]
+name = "lock_api"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
 
 [[package]]
 name = "log"
@@ -360,7 +381,9 @@ name = "mm"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.12.1",
+ "bootloader_api",
  "hal",
+ "linked_list_allocator",
  "sync",
  "x86_64",
 ]
@@ -441,11 +464,18 @@ name = "sched"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "bitflags 2.12.1",
  "hal",
  "mm",
  "sync",
  "x86_64",
 ]
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "semver"
@@ -518,6 +548,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
+name = "spinning_top"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -540,8 +579,13 @@ name = "syscall"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "drivers",
  "hal",
+ "mm",
+ "sched",
  "sync",
+ "vfs",
+ "x86_64",
 ]
 
 [[package]]
@@ -611,6 +655,9 @@ name = "vfs"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "drivers",
+ "mm",
+ "sched",
  "sync",
 ]
 

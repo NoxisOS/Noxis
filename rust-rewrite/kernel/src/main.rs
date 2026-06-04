@@ -1,20 +1,25 @@
 //! `kernel` — Noxis OS entry point.
 //!
 //! Boot chain:
-//!   UEFI firmware → `bootloader` crate (long mode, paging, mmap) → `kernel_main`
+//!   UEFI firmware → `bootloader` crate → `kernel_main`
 //!
-//! Tier 1: GDT + IDT + PIC + serial initialized, banner printed, then hlt loop.
+//! Initialization order:
+//!   HAL (GDT→IDT→PIC) → mm (heap→PMM→VMM) → drivers (serial→PIT→KBD)
+//!   → VFS (ramfs→procfs→devfs) → syscall (SYSCALL/SYSRET)
+//!   → scheduler → idle loop
 
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
 
+extern crate alloc;
+
 use bootloader_api::{entry_point, BootInfo, BootloaderConfig};
 use bootloader_api::config::Mapping;
 use core::panic::PanicInfo;
+use alloc::sync::Arc;
 
 // ── Bootloader config ────────────────────────────────────────────────────────
-// Request a full physical memory mapping at a dynamic virtual address.
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut c = BootloaderConfig::new_default();
     c.mappings.physical_memory = Some(Mapping::Dynamic);
@@ -25,65 +30,97 @@ entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
+    // ── P1: HAL ──────────────────────────────────────────────────────────────
     hal::gdt::init();
     hal::idt::init();
     hal::pic::init();
 
-    use core::fmt::Write;
-    {
-        let mut serial = drivers::serial::COM1_SERIAL.lock();
-        let _ = writeln!(serial, "\r\n\
-\x1b[32m╔══════════════════════════════════════════╗\r\n\
-║         N O X I S   O S  (Rust)          ║\r\n\
-║         Tier 1 — UEFI boot online        ║\r\n\
-╚══════════════════════════════════════════╝\x1b[0m\r\n");
-    }
+    // Serial online first (everything logs to it)
+    kprintln!("Noxis OS — Rust kernel booting...");
 
-    log_memory_map(boot_info);
+    // ── P3: Memory ───────────────────────────────────────────────────────────
+    mm::init(boot_info);
+    let (free, total) = mm::pmm::stats();
+    kprintln!("PMM: {}/{} frames free ({} MiB / {} MiB)",
+        free, total, free * 4 / 1024, total * 4 / 1024);
+
+    // ── P5: Drivers ──────────────────────────────────────────────────────────
+    drivers::pit::init();
+    drivers::kbd::init();
+    kprintln!("PIT: {} Hz, KBD: online", drivers::pit::TICK_HZ);
+
+    // Register PIT tick function for sched
+    sched::register_pit_ticks(drivers::pit::ticks);
+
+    // ── P7: VFS ──────────────────────────────────────────────────────────────
+    init_vfs();
+    kprintln!("VFS: ramfs / procfs devfs mounted");
+
+    // ── P8: Syscall ──────────────────────────────────────────────────────────
+    syscall::init();
+    kprintln!("SYSCALL/SYSRET: online");
+
+    // ── P6: Scheduler ────────────────────────────────────────────────────────
+    hal::idt::register_timer(sched::scheduler::tick);
+    sched::scheduler::init();
+    kprintln!("Scheduler: online");
+
+    // ── Banner ───────────────────────────────────────────────────────────────
+    kprintln!("\r\n\x1b[32m╔══════════════════════════════════════════╗");
+    kprintln!("║         N O X I S   O S  (Rust)          ║");
+    kprintln!("║      All subsystems online — ready        ║");
+    kprintln!("╚══════════════════════════════════════════╝\x1b[0m");
+
+    // Enable interrupts and idle
     hal::cpu::sti();
 
-    {
-        let mut serial = drivers::serial::COM1_SERIAL.lock();
-        let _ = writeln!(serial, "IRQs enabled — kernel idle (hlt loop).");
+    loop {
+        sched::scheduler::wake_sleepers();
+        unsafe { core::arch::asm!("hlt", options(nomem, nostack)) };
     }
-
-    hal::cpu::halt_loop();
 }
 
-fn log_memory_map(boot_info: &BootInfo) {
-    use core::fmt::Write;
-    use bootloader_api::info::MemoryRegionKind;
+// ── VFS initialization ───────────────────────────────────────────────────────
 
-    let mut serial = drivers::serial::COM1_SERIAL.lock();
-    let _ = writeln!(serial, "Memory map ({} regions):", boot_info.memory_regions.len());
+fn init_vfs() {
+    use vfs::vfs::with_vfs;
+    use vfs::ramfs::RamFs;
+    use vfs::procfs::ProcFs;
+    use vfs::devfs::DevFs;
 
-    let mut total_usable: u64 = 0;
-    for region in boot_info.memory_regions.iter() {
-        let kind_str = match region.kind {
-            MemoryRegionKind::Usable     => "Usable    ",
-            MemoryRegionKind::Bootloader => "Bootloader",
-            MemoryRegionKind::UnknownBios(_)  => "BIOS      ",
-            MemoryRegionKind::UnknownUefi(_)  => "UEFI      ",
-            _                            => "Other     ",
-        };
-        let _ = writeln!(
-            serial,
-            "  [{:#012x} – {:#012x}] {}",
-            region.start, region.end, kind_str
-        );
-        if region.kind == MemoryRegionKind::Usable {
-            total_usable += region.end - region.start;
-        }
-    }
-    let _ = writeln!(serial, "  Total usable: {} MiB", total_usable >> 20);
+    with_vfs(|vfs| {
+        vfs.mount("/",     Arc::new(RamFs::new()));
+        vfs.mount("/proc", Arc::new(ProcFs));
+        vfs.mount("/dev",  Arc::new(DevFs));
+    });
+
+    // Create basic directory structure on root ramfs
+    with_vfs(|vfs| {
+        let root = vfs.resolve("/").unwrap();
+        let _ = root.mkdir("bin",  0o755);
+        let _ = root.mkdir("etc",  0o755);
+        let _ = root.mkdir("tmp",  0o1777);
+        let _ = root.mkdir("home", 0o755);
+    });
 }
 
 // ── Panic handler ────────────────────────────────────────────────────────────
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    hal::cpu::cli();
     use core::fmt::Write;
     if let Some(mut serial) = drivers::serial::COM1_SERIAL.try_lock() {
         let _ = writeln!(serial, "\r\n\x1b[31m[KERNEL PANIC] {}\x1b[0m\r\n", info);
     }
     hal::cpu::halt_loop();
+}
+
+// ── kprintln! macro ──────────────────────────────────────────────────────────
+#[macro_export]
+macro_rules! kprintln {
+    ($($arg:tt)*) => {{
+        use core::fmt::Write;
+        let mut s = drivers::serial::COM1_SERIAL.lock();
+        let _ = writeln!(s, $($arg)*);
+    }};
 }

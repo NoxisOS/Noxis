@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hal   = { path = "../hal" }
-sync  = { path = "../sync" }
-abi   = { path = "../abi" }
+hal     = { path = "../hal" }
+sync    = { path = "../sync" }
+abi     = { path = "../abi" }
+mm      = { path = "../mm" }
+sched   = { path = "../sched" }
+vfs     = { path = "../vfs" }
+drivers = { path = "../drivers" }
+x86_64  = { workspace = true }

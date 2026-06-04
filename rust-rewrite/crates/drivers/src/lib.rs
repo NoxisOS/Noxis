@@ -6,5 +6,8 @@
 
 pub mod serial;
 pub mod vga;
+pub mod pit;
+pub mod kbd;
+pub mod tty;
 
 pub use core::fmt::Write as FmtWrite;
